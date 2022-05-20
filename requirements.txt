@@ -1,1 +1,11 @@
-grpcio-tools
+beautifulsoup4==4.11.1
+distlib==0.3.4
+filelock==3.7.0
+google==3.0.0
+grpcio==1.46.1
+grpcio-tools==1.46.1
+platformdirs==2.5.2
+protobuf==3.20.1
+six==1.16.0
+soupsieve==2.3.2.post1
+virtualenv==20.14.1
