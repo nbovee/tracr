@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+
+service colab_vision_bridge {
+rpc UploadImage(stream UploadImageRequest) returns (Ack); 
+rpc UploadWeights(stream UploadWeightsRequest) returns (Ack);
+}
+
+message UploadImageRequest{
+    // expect one but not both of the below
+    oneof test_oneof {
+          File_Metadata meta = 2;
+          bytes chunk = 1;
+    }
+}
+message File_Metadata{
+ string auth = 1;
+ string file_format = 2;
+}
+
+message Ack{
+    int32 code = 1;
+}

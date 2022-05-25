@@ -1,0 +1,1 @@
+docker build -t colab-vision-client -p 3001:3000 --build-arg branch=remote .
