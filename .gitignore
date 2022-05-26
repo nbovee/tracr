@@ -130,3 +130,7 @@ dmypy.json
 
 # VSCode environment
 .idea
+
+# Generated Code
+colab_vision_pb2_grpc.py
+colab_vision_pb2.py
