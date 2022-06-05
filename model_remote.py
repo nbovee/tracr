@@ -3,9 +3,16 @@ from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.resnet50 import preprocess_input, decode_predictions
 import numpy as np
 
+import colab_vision_client as cv_client
+
+
+target_file = cv_client.demo_funct()
 model = ResNet50(weights='imagenet')
 
-img_path = './tmp/morbius_out.jpg'
+img_path = 'cause problems'
+
+img_path = target_file if target_file is not None else img_path
+
 img = image.load_img(img_path, target_size=(224, 224))
 x = image.img_to_array(img)
 x = np.expand_dims(x, axis=0)

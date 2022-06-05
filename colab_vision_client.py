@@ -1,8 +1,7 @@
 import os
 import ColabVision.src.colab_vision as cv
 
-
-if __name__ == '__main__':
+def demo_funct():
     client = cv.FileClient('localhost:8888')
 
     # demo for file uploading
@@ -17,3 +16,7 @@ if __name__ == '__main__':
     client.download('whatever_name', out_file_name)
     os.system(f'sha1sum {in_file_name}')
     os.system(f'sha1sum {out_file_name}')
+    return out_file_name
+
+if __name__ == '__main__':
+    _ = demo_funct()

@@ -134,3 +134,5 @@ dmypy.json
 # Generated Code
 colab_vision_pb2_grpc.py
 colab_vision_pb2.py
+libcudnn8_8.4.0.27-1+cuda11.6_amd64.deb
+libcudnn8-dev_8.4.0.27-1+cuda11.6_amd64.deb

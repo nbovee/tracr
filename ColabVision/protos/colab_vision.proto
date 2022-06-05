@@ -5,6 +5,7 @@ service colab_vision {
     // the upload should be stream later
     rpc uploadFile(stream Chunk) returns (Ack); 
     rpc downloadFile(Request) returns (stream Chunk);
+    rpc resultTimeDownload(uuid) returns (result_Time_Dict);
 }
 
 message Chunk{
@@ -16,6 +17,14 @@ message Chunk{
     // }
 }
 
+message uuid{
+    string id = 1;
+}
+
+message result_Time_Dict{
+    bytes dict = 1;
+}
+
 message File_Metadata{
  string auth = 1;
  string file_format = 2;
@@ -23,6 +32,7 @@ message File_Metadata{
 
 message Ack{
     int32 code = 1;
+    string id = 2;
 }
 
 message Request{
