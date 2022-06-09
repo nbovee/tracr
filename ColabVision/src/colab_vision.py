@@ -1,26 +1,31 @@
 from concurrent import futures
+from fileinput import filename
 import sys
 import logging
 import os
 import grpc
-from timeit import default_timer as timer
+# from timeit import default_timer as timer
+import time
+from time import perf_counter_ns as timer, process_time_ns as cpu_timer
 import uuid
 import json
 
-
-import colab_vision_pb2
-import colab_vision_pb2_grpc
+sys.path.append(".")
+from . import colab_vision_pb2
+from . import colab_vision_pb2_grpc
 
 CHUNK_SIZE = 1024 * 1024  # 1MB
 dict_pattern = {
+    'overall' : None,
     'upload' : None,
-    'handling' : None,
     'inference' : None,
     'download' : None
 }
 
 
 def get_file_chunks(filename):
+    # first yield is always the filename. Later we will make this explicit
+    # yield colab_vision_pb2.Chunk(chunk = filename)
     with open(filename, 'rb') as f:
         while True:
             piece = f.read(CHUNK_SIZE);
@@ -30,11 +35,14 @@ def get_file_chunks(filename):
 
 
 def save_chunks_to_file(chunks, filename):
-    start = timer()
-    with open(filename, 'wb') as f:
+    # old_filename = next(chunks).chunk
+    # print(old_filename)
+    # file_ext = os.path.splitext(old_filename)[1]
+    full_filename = filename
+    with open(full_filename, 'wb') as f:
         for c in chunks:
             f.write(c.chunk)
-    return timer() - start
+
 
 
 class FileClient:
@@ -45,39 +53,56 @@ class FileClient:
     def upload(self, in_file_name):
         chunks_generator = get_file_chunks(in_file_name)
         response = self.stub.uploadFile(chunks_generator)
-        assert response.code == os.path.getsize(in_file_name)
+        # assert response.code == os.path.getsize(in_file_name)
+        return response
 
     def download(self, target_name, out_file_name):
-        response = self.stub.downloadFile(colab_vision_pb2.Request(target=target_name))
+        # have this time download time and report to server
+        print(target_name)
+        response = self.stub.downloadFile(colab_vision_pb2.uuid(id=target_name))
         save_chunks_to_file(response, out_file_name)
 
-    def processingTime(self, uuid):
-        response = self.stub.resultTimeDownload(colab_vision_pb2.result_Time_Dict(id=str(uuid)))
+    def processingTime(self, target_name):
+        # print("target:", end='')
+        # print(target_name)
+        response = self.stub.resultTimeDownload(colab_vision_pb2.uuid(id=target_name))
         # response better be a dict serialized in json
-        return json.loads(response)
+        new_dict = json.loads(response.dict)
+        return new_dict
 
 class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
     def __init__(self):
 
         class Servicer(colab_vision_pb2_grpc.colab_visionServicer):
             def __init__(self):
-                self.tmp_file_name = '/tmp/server_tmp'
+                self.tmp_folder = './tmp/server_tmp/'
                 self.transaction_dict = {}
+                self.filetype = ".jpg" # parametrize this later based on the upload name
 
             def uploadFile(self, request_iterator, context):
-                upload_time = save_chunks_to_file(request_iterator, self.tmp_file_name)
-                id = uuid.uuid4()
-                self.transaction_dict[id] = dict_pattern.copy()
-                self.transaction_dict[id]['upload'] = upload_time 
-                print(f"File Saved as {id}")
-                return colab_vision_pb2.Ack(code=os.path.getsize(self.tmp_file_name). id=str(id))
+                start = timer()
+                new_id = uuid.uuid4()
+                # get filename and size from first pop of request iterator
+                filepath = self.tmp_folder + str(new_id) + self.filetype
+                save_chunks_to_file(request_iterator, filepath)
+                self.transaction_dict[new_id] = dict_pattern.copy()
+                print(f"File Saved at {filepath}")
+                self.transaction_dict[new_id]['upload'] = timer() - start
+                # print(self.transaction_dict[new_id])
+                # trigger inference
+                 
+                return colab_vision_pb2.Ack(code=os.path.getsize(filepath), id=str(new_id))
 
-            def downloadFile(self, request, context):
-                if request.target:
-                    return get_file_chunks(self.tmp_file_name)
+            def downloadFile(self, uuid, context):
+                # print(uuid)
+                if uuid.id:
+                    filepath = self.tmp_folder + str(uuid.id) + self.filetype
+                    return get_file_chunks(filepath)
 
             def resultTimeDownload(self, request, context):
-                return super().resultTimeDownload(request, context)
+                result = self.transaction_dict[uuid.UUID(request.id)]
+                # print(result)
+                return colab_vision_pb2.result_Time_Dict(dict = json.dumps(result))
 
         logging.basicConfig()
         self.server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
@@ -86,10 +111,10 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
     def start(self, port):
         self.server.add_insecure_port(f'[::]:{port}')
         self.server.start()
-        self.server.wait_for_termination()
+        # self.server.wait_for_termination()
         # I think wait_for_termination() is more ideal?
-        # try:
-        #     while True:
-        #         time.sleep(60*60*24)
-        # except KeyboardInterrupt:
-        #     self.server.stop(0)
+        try:
+            while True:
+                time.sleep(60*60*24)
+        except KeyboardInterrupt:
+            self.server.stop(0)
