@@ -1,6 +1,7 @@
 from doctest import testfile
 import os
 import ColabVision.src.colab_vision as cv
+import time
 
 def demo_funct():
     client = cv.FileClient('localhost:8892')
@@ -17,7 +18,10 @@ def demo_funct():
     test_dict = client.processingTime(response.id)
     dl_time_s = cv.timer()
     client.download(response.id, out_file_name)
+    transfer_time = os.path.getsize(out_file_name) / (cv.bitrate * 2**20)
     test_dict['download'] = cv.timer() - dl_time_s
+    time.sleep(transfer_time)
+    test_dict['download_slowed'] = transfer_time*1e9
     # os.system(f'sha1sum {in_file_name}')
     # os.system(f'sha1sum {out_file_name}')
     # print(test_dict)

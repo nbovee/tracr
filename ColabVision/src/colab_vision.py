@@ -1,5 +1,7 @@
 from concurrent import futures
 from fileinput import filename
+from logging.handlers import WatchedFileHandler
+from multiprocessing.connection import wait
 import sys
 import logging
 import os
@@ -14,7 +16,11 @@ sys.path.append(".")
 from . import colab_vision_pb2
 from . import colab_vision_pb2_grpc
 
+
+bitrate = 0.100 # MB/s
+
 CHUNK_SIZE = 1024 * 1024  # 1MB
+# this should probably be an independant database that client and server can both interact with async
 dict_pattern = {
     'overall' : None,
     'upload' : None,
@@ -58,9 +64,13 @@ class FileClient:
 
     def download(self, target_name, out_file_name):
         # have this time download time and report to server
-        print(target_name)
+        start = timer()
         response = self.stub.downloadFile(colab_vision_pb2.uuid(id=target_name))
+        wait_time = (timer() - start)/1e9
         save_chunks_to_file(response, out_file_name)
+        transfer_time = os.path.getsize(out_file_name) / (bitrate * 2**20)
+        print(f"Wait time: {wait_time} Trans time: {transfer_time}")
+        time.sleep(transfer_time - wait_time) if wait_time < transfer_time else None   
 
     def processingTime(self, target_name):
         # print("target:", end='')
@@ -85,9 +95,14 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                 # get filename and size from first pop of request iterator
                 filepath = self.tmp_folder + str(new_id) + self.filetype
                 save_chunks_to_file(request_iterator, filepath)
+                wait_time = (timer() - start)/1e9
+                transfer_time = os.path.getsize(filepath) / (bitrate * 2**20)
+                print(f"Wait time: {wait_time} Trans time: {transfer_time}")
                 self.transaction_dict[new_id] = dict_pattern.copy()
+                time.sleep(transfer_time - wait_time) if wait_time < transfer_time else None   
                 print(f"File Saved at {filepath}")
-                self.transaction_dict[new_id]['upload'] = timer() - start
+                self.transaction_dict[new_id]['upload'] = wait_time*1e9
+                self.transaction_dict[new_id]['upload_slowed'] = transfer_time*1e9 - wait_time*1e9
                 # print(self.transaction_dict[new_id])
                 # trigger inference
                  
@@ -97,6 +112,9 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                 # print(uuid)
                 if uuid.id:
                     filepath = self.tmp_folder + str(uuid.id) + self.filetype
+                    transfer_time = os.path.getsize(filepath) / (bitrate * 2**20)
+                    # this will be fractionally long size the transfer still must happen
+                    time.sleep(transfer_time)
                     return get_file_chunks(filepath)
 
             def resultTimeDownload(self, request, context):
