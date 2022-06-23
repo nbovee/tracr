@@ -1,8 +1,8 @@
+import numpy as np
+from PIL import Image
 
 class Model:
     def __init__(self, selected = "MobileNet") -> None:
-        import numpy as np
-        from PIL import Image
         self.image_size = (224, 224)
         from tensorflow.keras.preprocessing import image
         if selected == "VGG":
