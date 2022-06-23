@@ -12,6 +12,8 @@ import time
 from time import perf_counter_ns as timer, process_time_ns as cpu_timer
 import uuid
 import json
+import pickle
+import numpy as np
 from PIL import Image
 
 sys.path.append(".")
@@ -33,8 +35,7 @@ dict_pattern = {
     'inference' : None,
     'download' : None,
     'download_delay' : None
-}
-
+}    
 
 def get_file_chunks(filename):
     # first yield is always the filename. Later we will make this explicit
@@ -57,8 +58,12 @@ def save_chunks_to_file(chunks, filename):
             f.write(c.chunk)
 
 def save_chunks_to_object(chunks):
-    b_array = bytes(chunks)
-    image = Image.open(io.BytesIO(b_array))
+    chunk_bytes = []
+    for c in chunks:
+        chunk_bytes.append(c.chunk)
+    img_bytes = b''.join(chunk_bytes)
+    print(len(chunk_bytes))
+    image = Image.open(io.BytesIO(img_bytes))
     return image
 
 class FileClient:
@@ -69,8 +74,8 @@ class FileClient:
     def upload(self, in_file_name):
         start = timer()
         chunks_generator = get_file_chunks(in_file_name)
-        response = self.stub.uploadFile(chunks_generator)
-        result_dict = json.loads(response.id)
+        response = self.stub.uploadImage(chunks_generator)
+        result_dict = pickle.loads(response.chunk)
         result_dict['download'] = (timer() - result_dict['download']) / 1e9
         time.sleep(result_dict['download_delay'])
         end = timer()
@@ -106,11 +111,11 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                 self.filetype = ".jpg" # parametrize this later based on the upload name
                 self.model = Model()
             
-            def uploadFile(self, request_iterator, context):
+            def uploadImage(self, request_iterator, context):
                 start = timer()
                 data_dict = dict_pattern.copy()
                 new_id = uuid.uuid4()
-                data_dict['uuid'] = new_id
+                data_dict['uuid'] = str(new_id)
                 object = True
                 filepath = self.tmp_folder + str(new_id) + self.filetype
                 if object:
@@ -127,17 +132,21 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                 prediction_timer = timer()
                 data_dict['inference'] = (prediction_timer - transfer_timer)/1e9
                 # get filename and size from first pop of request iterator
-                artificial_upload_speed = (sys.getsizeof(image) / 2 **10) / (bitrate * 2**20)
-                data_dict['upload_delay'] = artificial_upload_speed - data_dict['upload']
-                artificial_download_speed = (sys.getsizeof(data_dict) / 2 **10) / (bitrate * 2**20)
+                artificial_upload_speed = sys.getsizeof(image)/ (bitrate * 2**20) - data_dict['upload']
+                if artificial_upload_speed < 0:
+                    artificial_upload_speed = 0
+                data_dict['upload_delay'] = artificial_upload_speed
+                artificial_download_speed = sys.getsizeof(data_dict) / (bitrate * 2**20)
                 data_dict['download_delay'] = artificial_download_speed
                 # download sleep must be client side to be accurate
                 data_dict['download'] = timer()
                 sleep_time = data_dict['upload_delay']
                 time.sleep(sleep_time) if sleep_time > 0 else None   
-                
+                # print(sys.getsizeof(data_dict))
+                # for i in data_dict:
+                #     print(f"{i}: {data_dict[i]}")
                 # return colab_vision_pb2.Ack(code=os.path.getsize(filepath), id=str(new_id))
-                return colab_vision_pb2.Ack(code=0, id=str(json.dumps(data_dict)))
+                return colab_vision_pb2.Chunk(chunk=pickle.dumps(data_dict))
 
             def downloadFile(self, uuid, context):
                 # print(uuid)

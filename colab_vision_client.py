@@ -34,5 +34,10 @@ if __name__ == '__main__':
     # print(os.path.exists(in_file_name))
     results = client.upload(in_file_name)
     for i in results:
-        print(i)
+        val = results[i]
+        if i not in ["uuid", "results"]:
+            val = float(val)
+            print(f"{i} : {results[i]:.04f}")
+        else:
+            print(f"{i} : {results[i]}")
     # _ = demo_funct()

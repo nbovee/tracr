@@ -3,9 +3,14 @@ syntax = "proto3";
 
 service colab_vision {
     // the upload should be stream later
-    rpc uploadFile(stream Chunk) returns (Ack); 
+    rpc uploadFile(stream Chunk) returns (Ack);
+    rpc uploadImage(stream Chunk) returns (Dict); 
     rpc downloadFile(uuid) returns (stream Chunk);
     rpc resultTimeDownload(uuid) returns (result_Time_Dict);
+}
+
+message Dict{
+    bytes chunk = 1;
 }
 
 message Chunk{

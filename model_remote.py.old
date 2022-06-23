@@ -20,7 +20,6 @@ else:
 
 from tensorflow.keras.preprocessing import image
 import numpy as np
-
 import colab_vision_client as cv_client
 import colab_vision_server as cv_server
 
@@ -33,7 +32,6 @@ target_dict = cv_client.demo_funct()
 target_file = './tmp/morbius_out.jpg'
 
 img_path = 'cause problems'
-
 img_path = target_file if target_file is not None else img_path
 
 start_proc = timer()
