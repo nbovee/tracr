@@ -29,4 +29,10 @@ def demo_funct():
     
 
 if __name__ == '__main__':
-    _ = demo_funct()
+    client = cv.FileClient('localhost:8892')
+    in_file_name = './tmp/morbius_in.jpg'
+    # print(os.path.exists(in_file_name))
+    results = client.upload(in_file_name)
+    for i in results:
+        print(i)
+    # _ = demo_funct()

@@ -5,14 +5,17 @@ from multiprocessing.connection import wait
 import sys
 import logging
 import os
+import io
 import grpc
 # from timeit import default_timer as timer
 import time
 from time import perf_counter_ns as timer, process_time_ns as cpu_timer
 import uuid
 import json
+from PIL import Image
 
 sys.path.append(".")
+from model_wrapper import Model
 from . import colab_vision_pb2
 from . import colab_vision_pb2_grpc
 
@@ -22,10 +25,14 @@ bitrate = 0.100 # MB/s
 CHUNK_SIZE = 1024 * 1024  # 1MB
 # this should probably be an independant database that client and server can both interact with async
 dict_pattern = {
+    'uuid' : None,
+    'results' : None,
     'overall' : None,
     'upload' : None,
+    'upload_delay' : None,
     'inference' : None,
-    'download' : None
+    'download' : None,
+    'download_delay' : None
 }
 
 
@@ -49,7 +56,10 @@ def save_chunks_to_file(chunks, filename):
         for c in chunks:
             f.write(c.chunk)
 
-
+def save_chunks_to_object(chunks):
+    b_array = bytes(chunks)
+    image = Image.open(io.BytesIO(b_array))
+    return image
 
 class FileClient:
     def __init__(self, address):
@@ -57,10 +67,16 @@ class FileClient:
         self.stub = colab_vision_pb2_grpc.colab_visionStub(channel)
 
     def upload(self, in_file_name):
+        start = timer()
         chunks_generator = get_file_chunks(in_file_name)
         response = self.stub.uploadFile(chunks_generator)
+        result_dict = json.loads(response.id)
+        result_dict['download'] = (timer() - result_dict['download']) / 1e9
+        time.sleep(result_dict['download_delay'])
+        end = timer()
+        result_dict['overall'] = ( end - start) / 1e9
         # assert response.code == os.path.getsize(in_file_name)
-        return response
+        return result_dict
 
     def download(self, target_name, out_file_name):
         # have this time download time and report to server
@@ -88,25 +104,40 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                 self.tmp_folder = './tmp/server_tmp/'
                 self.transaction_dict = {}
                 self.filetype = ".jpg" # parametrize this later based on the upload name
-
+                self.model = Model()
+            
             def uploadFile(self, request_iterator, context):
                 start = timer()
+                data_dict = dict_pattern.copy()
                 new_id = uuid.uuid4()
-                # get filename and size from first pop of request iterator
+                data_dict['uuid'] = new_id
+                object = True
                 filepath = self.tmp_folder + str(new_id) + self.filetype
-                save_chunks_to_file(request_iterator, filepath)
-                wait_time = (timer() - start)/1e9
-                transfer_time = os.path.getsize(filepath) / (bitrate * 2**20)
-                print(f"Wait time: {wait_time} Trans time: {transfer_time}")
-                self.transaction_dict[new_id] = dict_pattern.copy()
-                time.sleep(transfer_time - wait_time) if wait_time < transfer_time else None   
-                print(f"File Saved at {filepath}")
-                self.transaction_dict[new_id]['upload'] = wait_time*1e9
-                self.transaction_dict[new_id]['upload_slowed'] = transfer_time*1e9 - wait_time*1e9
-                # print(self.transaction_dict[new_id])
-                # trigger inference
-                 
-                return colab_vision_pb2.Ack(code=os.path.getsize(filepath), id=str(new_id))
+                if object:
+                    #img is an object
+                    image = save_chunks_to_object(request_iterator)
+                else:
+                    #img is a filepath
+                    save_chunks_to_file(request_iterator, filepath)
+                    image = filepath
+                transfer_timer = timer()
+                data_dict['upload'] = (transfer_timer - start)/1e9
+                result = self.model.predict(image)
+                data_dict['results'] = result
+                prediction_timer = timer()
+                data_dict['inference'] = (prediction_timer - transfer_timer)/1e9
+                # get filename and size from first pop of request iterator
+                artificial_upload_speed = (sys.getsizeof(image) / 2 **10) / (bitrate * 2**20)
+                data_dict['upload_delay'] = artificial_upload_speed - data_dict['upload']
+                artificial_download_speed = (sys.getsizeof(data_dict) / 2 **10) / (bitrate * 2**20)
+                data_dict['download_delay'] = artificial_download_speed
+                # download sleep must be client side to be accurate
+                data_dict['download'] = timer()
+                sleep_time = data_dict['upload_delay']
+                time.sleep(sleep_time) if sleep_time > 0 else None   
+                
+                # return colab_vision_pb2.Ack(code=os.path.getsize(filepath), id=str(new_id))
+                return colab_vision_pb2.Ack(code=0, id=str(json.dumps(data_dict)))
 
             def downloadFile(self, uuid, context):
                 # print(uuid)
@@ -129,10 +160,10 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
     def start(self, port):
         self.server.add_insecure_port(f'[::]:{port}')
         self.server.start()
-        # self.server.wait_for_termination()
+        self.server.wait_for_termination()
         # I think wait_for_termination() is more ideal?
-        try:
-            while True:
-                time.sleep(60*60*24)
-        except KeyboardInterrupt:
-            self.server.stop(0)
+        # try:
+        #     while True:
+        #         time.sleep(60*60*24)
+        # except KeyboardInterrupt:
+        #     self.server.stop(0)
