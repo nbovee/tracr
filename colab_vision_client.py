@@ -5,7 +5,7 @@ import time
 
 def demo_funct():
     client = cv.FileClient('localhost:8892')
-
+    # client = cv.FileClient('35.222.19.165:8892')
     # demo for file uploading
     in_file_name = './tmp/morbius_in.jpg'
     # print(os.path.exists(in_file_name))
