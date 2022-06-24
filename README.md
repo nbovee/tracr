@@ -1,4 +1,5 @@
 # collaborative-vision-research
+To run, start server and wait for warmup to complete before running client.
 
 Inspiration from <https://github.com/gooooloo/grpc-file-transfer>
 Info on pita from python grpc <https://news.ycombinator.com/item?id=21873468>
