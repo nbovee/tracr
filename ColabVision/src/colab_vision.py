@@ -9,7 +9,8 @@ import io
 import grpc
 # from timeit import default_timer as timer
 import time
-from time import perf_counter_ns as timer, process_time_ns as cpu_timer
+# from time import perf_counter_ns as timer, process_time_ns as cpu_timer
+from time import time as timer
 import uuid
 import json
 import pickle
@@ -17,12 +18,12 @@ import numpy as np
 from PIL import Image
 
 sys.path.append(".")
-from model_wrapper import Model
+from model_wrapper_tf import Model
 from . import colab_vision_pb2
 from . import colab_vision_pb2_grpc
 
 
-bitrate = 0.100 # MB/s
+bitrate = 0.1 * 2 ** 20# byte/s
 
 CHUNK_SIZE = 1024 * 1024  # 1MB
 # this should probably be an independant database that client and server can both interact with async
@@ -76,10 +77,10 @@ class FileClient:
         chunks_generator = get_file_chunks(in_file_name)
         response = self.stub.uploadImage(chunks_generator)
         result_dict = pickle.loads(response.chunk)
-        result_dict['download'] = (timer() - result_dict['download']) / 1e9
+        result_dict['download'] = (timer() - result_dict['download'])
         time.sleep(result_dict['download_delay'])
         end = timer()
-        result_dict['overall'] = ( end - start) / 1e9
+        result_dict['overall'] = ( end - start)
         # assert response.code == os.path.getsize(in_file_name)
         return result_dict
 
@@ -89,7 +90,7 @@ class FileClient:
         response = self.stub.downloadFile(colab_vision_pb2.uuid(id=target_name))
         wait_time = (timer() - start)/1e9
         save_chunks_to_file(response, out_file_name)
-        transfer_time = os.path.getsize(out_file_name) / (bitrate * 2**20)
+        transfer_time = os.path.getsize(out_file_name) / (bitrate)
         print(f"Wait time: {wait_time} Trans time: {transfer_time}")
         time.sleep(transfer_time - wait_time) if wait_time < transfer_time else None   
 
@@ -126,17 +127,17 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                     save_chunks_to_file(request_iterator, filepath)
                     image = filepath
                 transfer_timer = timer()
-                data_dict['upload'] = (transfer_timer - start)/1e9
+                data_dict['upload'] = (transfer_timer - start)
                 result = self.model.predict(image)
                 data_dict['results'] = result
                 prediction_timer = timer()
-                data_dict['inference'] = (prediction_timer - transfer_timer)/1e9
+                data_dict['inference'] = (prediction_timer - transfer_timer)
                 # get filename and size from first pop of request iterator
-                artificial_upload_speed = sys.getsizeof(image)/ (bitrate * 2**20) - data_dict['upload']
+                artificial_upload_speed = sys.getsizeof(image)/(bitrate) - data_dict['upload']
                 if artificial_upload_speed < 0:
                     artificial_upload_speed = 0
                 data_dict['upload_delay'] = artificial_upload_speed
-                artificial_download_speed = sys.getsizeof(data_dict) / (bitrate * 2**20)
+                artificial_download_speed = sys.getsizeof(data_dict) / (bitrate)
                 data_dict['download_delay'] = artificial_download_speed
                 # download sleep must be client side to be accurate
                 data_dict['download'] = timer()
@@ -152,7 +153,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                 # print(uuid)
                 if uuid.id:
                     filepath = self.tmp_folder + str(uuid.id) + self.filetype
-                    transfer_time = os.path.getsize(filepath) / (bitrate * 2**20)
+                    transfer_time = os.path.getsize(filepath) / (bitrate)
                     # this will be fractionally long size the transfer still must happen
                     time.sleep(transfer_time)
                     return get_file_chunks(filepath)
