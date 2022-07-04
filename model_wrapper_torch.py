@@ -3,11 +3,13 @@ from PIL import Image
 import torch
 from torchvision import transforms
 
-selected = "AlexNet"
+selected = "MobileNet"
 if selected == "AlexNet":
     selected ="alexnet"
 elif selected == "SqueezeNet":
     selected= "squeezenet1_1"
+elif selected == "MobileNet":
+    selected ="mobilenet_v2"
 image_size = (224, 224)
 model = torch.hub.load('pytorch/vision:v0.10.0', selected, pretrained=True)
 

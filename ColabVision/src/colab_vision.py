@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.append(".")
-from model_wrapper_tf import Model
+from model_wrapper_torch import Model
 from . import colab_vision_pb2
 from . import colab_vision_pb2_grpc
 
