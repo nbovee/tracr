@@ -1,7 +1,7 @@
 import numpy as np
 from PIL import Image
 import torch
-from torchvision import transforms
+from torchvision import transforms, models
 
 selected = "MobileNet"
 if selected == "AlexNet":
@@ -9,9 +9,11 @@ if selected == "AlexNet":
 elif selected == "SqueezeNet":
     selected= "squeezenet1_1"
 elif selected == "MobileNet":
-    selected ="mobilenet_v2"
+    selected ="mobilenet_v3s"
 image_size = (224, 224)
-model = torch.hub.load('pytorch/vision:v0.10.0', selected, pretrained=True)
+# model = torch.hub.load('pytorch/vision:v0.10.0', selected, pretrained=True)
+model = models.vgg16(pretrained=True)
+mode = 'cuda'
 
 preprocess = transforms.Compose([
     transforms.Resize(256),
@@ -25,7 +27,7 @@ class Model:
         global model 
         model.eval()
         if torch.cuda.is_available():
-            model.to('cuda')
+            model.to(mode)
         with open("imagenet_classes.txt", "r") as f:
             self.categories = [s.strip() for s in f.readlines()]
         # self.model = model(weights='imagenet')
@@ -42,7 +44,7 @@ class Model:
         x = input_tensor.unsqueeze(0)
         # check if tf is lazily loading by running second image
         if torch.cuda.is_available():
-            input_batch = x.to('cuda')
+            input_batch = x.to(mode)
         with torch.no_grad():
             predictions = model(input_batch)
         probabilities = torch.nn.functional.softmax(predictions[0], dim=0)
@@ -54,7 +56,7 @@ class Model:
     
     def warmup(self, iterations = 100):
         imarray = np.random.rand(*image_size, 3) * 255
-        warmup_image = Image.fromarray(imarray.astype('uint8')).convert('RGB')
         for i in range(iterations):
+            warmup_image = Image.fromarray(imarray.astype('uint8')).convert('RGB')
             _ = self.predict(warmup_image)
         print("Warmup Complete.")
