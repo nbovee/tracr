@@ -12,7 +12,7 @@ elif selected == "MobileNet":
     selected ="mobilenet_v3s"
 image_size = (224, 224)
 # model = torch.hub.load('pytorch/vision:v0.10.0', selected, pretrained=True)
-model = models.vgg16(pretrained=True)
+model = models.alexnet(pretrained=True)
 mode = 'cuda'
 
 preprocess = transforms.Compose([

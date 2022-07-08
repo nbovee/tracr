@@ -44,7 +44,7 @@ if __name__ == '__main__':
         #         print(f"{i} : {results[i]:.04f}")
         #     else:
         #         print(f"{i} : {results[i]}")
-    print(f"Average inference over {100} runs: {overall/100:0.04f}")
+    print(f"Average over {100} runs: {overall/100:0.04f}")
     for i in results:
         val = results[i]
         if i not in ["uuid", "results"]:
