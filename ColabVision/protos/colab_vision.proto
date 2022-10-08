@@ -7,6 +7,25 @@ service colab_vision {
     rpc uploadImage(stream Chunk) returns (Dict); 
     rpc downloadFile(uuid) returns (stream Chunk);
     rpc resultTimeDownload(uuid) returns (result_Time_Dict);
+    rpc constantInference(stream Info_Chunk) returns (stream Info_Chunk);
+}
+
+// must sent that it is starting new inference
+// bytes of inference to perform
+// mark when inference complete
+// receive results
+
+
+message Info_Chunk{
+    enum Action {
+        ACT_UNK = 0; //noop
+        ACT_RESET = 1; //start new inference package.
+        ACT_Y_APPEND = 2; //indicates the previous chunks are to be stored for future inference.
+        ACT_INFERENCE = 3; //indicates inference can begin.
+    }
+    Chunk chunk = 1;
+    Action action = 2;
+    int32 layer = 3; //layer the chunks belong to. Inference would result in tensor for layer + 1. Layer of 0 indicates that an image is being sent.
 }
 
 message Dict{
