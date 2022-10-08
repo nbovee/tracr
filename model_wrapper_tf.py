@@ -42,7 +42,7 @@ class Model:
         return prediction
 
     
-    def warmup(self, iterations = 5):
+    def warmup(self, iterations = 100):
         imarray = np.random.rand(*image_size, 3) * 255
         warmup_image = Image.fromarray(imarray.astype('uint8')).convert('RGB')
         for i in range(iterations):
