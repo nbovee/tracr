@@ -24,7 +24,7 @@ message Info_Chunk{
         ACT_INFERENCE = 3; //indicates inference can begin.
     }
     Chunk chunk = 1;
-    Action action = 2;
+    repeated Action action = 2;
     int32 layer = 3; //layer the chunks belong to. Inference would result in tensor for layer + 1. Layer of 0 indicates that an image is being sent.
 }
 
