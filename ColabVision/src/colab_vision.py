@@ -14,6 +14,7 @@ from time import time as timer
 import uuid
 import json
 import pickle
+import blosc
 import numpy as np
 from PIL import Image
 
