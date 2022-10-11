@@ -34,6 +34,11 @@ class colab_visionStub(object):
                 request_serializer=colab__vision__pb2.uuid.SerializeToString,
                 response_deserializer=colab__vision__pb2.result_Time_Dict.FromString,
                 )
+        self.constantInference = channel.stream_stream(
+                '/colab_vision/constantInference',
+                request_serializer=colab__vision__pb2.Info_Chunk.SerializeToString,
+                response_deserializer=colab__vision__pb2.Response_Dict.FromString,
+                )
 
 
 class colab_visionServicer(object):
@@ -64,6 +69,12 @@ class colab_visionServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def constantInference(self, request_iterator, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_colab_visionServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -86,6 +97,11 @@ def add_colab_visionServicer_to_server(servicer, server):
                     servicer.resultTimeDownload,
                     request_deserializer=colab__vision__pb2.uuid.FromString,
                     response_serializer=colab__vision__pb2.result_Time_Dict.SerializeToString,
+            ),
+            'constantInference': grpc.stream_stream_rpc_method_handler(
+                    servicer.constantInference,
+                    request_deserializer=colab__vision__pb2.Info_Chunk.FromString,
+                    response_serializer=colab__vision__pb2.Response_Dict.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -162,5 +178,22 @@ class colab_vision(object):
         return grpc.experimental.unary_unary(request, target, '/colab_vision/resultTimeDownload',
             colab__vision__pb2.uuid.SerializeToString,
             colab__vision__pb2.result_Time_Dict.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def constantInference(request_iterator,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.stream_stream(request_iterator, target, '/colab_vision/constantInference',
+            colab__vision__pb2.Info_Chunk.SerializeToString,
+            colab__vision__pb2.Response_Dict.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

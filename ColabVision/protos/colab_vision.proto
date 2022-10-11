@@ -2,11 +2,6 @@ syntax = "proto3";
 
 
 service colab_vision {
-    // the upload should be stream later
-    rpc uploadFile(stream Chunk) returns (Ack);
-    rpc uploadImage(stream Chunk) returns (Dict); 
-    rpc downloadFile(uuid) returns (stream Chunk);
-    rpc resultTimeDownload(uuid) returns (result_Time_Dict);
     rpc constantInference(stream Info_Chunk) returns (stream Response_Dict);
 }
 
@@ -15,14 +10,7 @@ service colab_vision {
 // mark when inference complete
 // receive results
 
-
 message Info_Chunk{
-    enum Action {
-        ACT_UNK = 0; //noop
-        ACT_RESET = 1; //start new inference package with this chunk.
-        ACT_APPEND = 2; //indicates that this layers chunks are used for future inference.
-        ACT_INFERENCE = 3; //indicates inference can begin using this chunk.
-    }
     uuid id = 1; //uuid for the inference to avoid conflicts
     Chunk chunk = 2; //byte chunk, potentiall compressed with blosc
     repeated Action action = 3; //actions associated with this id & layer
@@ -33,37 +21,21 @@ message Response_Dict{
     message Keypair {
         map<string, float> result = 1;
     }
-    uuid id = 1;
-    repeated Keypair keypair = 2;
+    uuid id = 1; //uuid to match test results
+    repeated Keypair keypair = 2; //this is where we pass timing results
+    bytes results = 3; //not sure what form these should take yet (due to how we would need to handle Yolo), so we will assemble an object from bytes for now
+    repeated Action = 4; //currently the only important flag is ACT_COMPRESSED, but for large results will still be needed
 }
 
-message Dict{ //python dicts serialized to keep this easy on me. Contents differ on which method is returning.
-    bytes chunk = 1;
+enum Action {
+    ACT_UNK = 0; //noop
+    ACT_RESET = 1; //start new inference package with this chunk.
+    ACT_APPEND = 2; //indicates that this layers chunks are used for future inference.
+    ACT_INFERENCE = 3; //indicates inference can begin using this chunk.
+    ACT_END = 4; //end current session
+    ACT_COMPRESSED = 5; //this flag indicates the chunk series needs to be uncompressed with blosc
 }
 
 message Chunk{
     bytes chunk = 1;
-    // expect one but not both of the below
-    // oneof test_oneof {
-    //       File_Metadata meta = 2;
-    //       bytes chunk = 1;
-    // }
-}
-
-message uuid{
-    string id = 1;
-}
-
-message result_Time_Dict{
-    string dict = 1;
-}
-
-message File_Metadata{
- string auth = 1;
- string file_format = 2;
-}
-
-message Ack{
-    int32 code = 1;
-    string id = 2;
 }
