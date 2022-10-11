@@ -1,6 +1,7 @@
 absl-py
 astunparse
 beautifulsoup4
+bosc
 cachetools
 certifi
 charset-normalizer
