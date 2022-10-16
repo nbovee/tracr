@@ -2,7 +2,7 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-from . import colab_vision_pb2 as colab__vision__pb2
+import colab_vision_pb2 as colab__vision__pb2
 
 
 class colab_visionStub(object):
@@ -14,26 +14,6 @@ class colab_visionStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.uploadFile = channel.stream_unary(
-                '/colab_vision/uploadFile',
-                request_serializer=colab__vision__pb2.Chunk.SerializeToString,
-                response_deserializer=colab__vision__pb2.Ack.FromString,
-                )
-        self.uploadImage = channel.stream_unary(
-                '/colab_vision/uploadImage',
-                request_serializer=colab__vision__pb2.Chunk.SerializeToString,
-                response_deserializer=colab__vision__pb2.Dict.FromString,
-                )
-        self.downloadFile = channel.unary_stream(
-                '/colab_vision/downloadFile',
-                request_serializer=colab__vision__pb2.uuid.SerializeToString,
-                response_deserializer=colab__vision__pb2.Chunk.FromString,
-                )
-        self.resultTimeDownload = channel.unary_unary(
-                '/colab_vision/resultTimeDownload',
-                request_serializer=colab__vision__pb2.uuid.SerializeToString,
-                response_deserializer=colab__vision__pb2.result_Time_Dict.FromString,
-                )
         self.constantInference = channel.stream_stream(
                 '/colab_vision/constantInference',
                 request_serializer=colab__vision__pb2.Info_Chunk.SerializeToString,
@@ -44,31 +24,6 @@ class colab_visionStub(object):
 class colab_visionServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def uploadFile(self, request_iterator, context):
-        """the upload should be stream later
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def uploadImage(self, request_iterator, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def downloadFile(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def resultTimeDownload(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
     def constantInference(self, request_iterator, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -78,26 +33,6 @@ class colab_visionServicer(object):
 
 def add_colab_visionServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'uploadFile': grpc.stream_unary_rpc_method_handler(
-                    servicer.uploadFile,
-                    request_deserializer=colab__vision__pb2.Chunk.FromString,
-                    response_serializer=colab__vision__pb2.Ack.SerializeToString,
-            ),
-            'uploadImage': grpc.stream_unary_rpc_method_handler(
-                    servicer.uploadImage,
-                    request_deserializer=colab__vision__pb2.Chunk.FromString,
-                    response_serializer=colab__vision__pb2.Dict.SerializeToString,
-            ),
-            'downloadFile': grpc.unary_stream_rpc_method_handler(
-                    servicer.downloadFile,
-                    request_deserializer=colab__vision__pb2.uuid.FromString,
-                    response_serializer=colab__vision__pb2.Chunk.SerializeToString,
-            ),
-            'resultTimeDownload': grpc.unary_unary_rpc_method_handler(
-                    servicer.resultTimeDownload,
-                    request_deserializer=colab__vision__pb2.uuid.FromString,
-                    response_serializer=colab__vision__pb2.result_Time_Dict.SerializeToString,
-            ),
             'constantInference': grpc.stream_stream_rpc_method_handler(
                     servicer.constantInference,
                     request_deserializer=colab__vision__pb2.Info_Chunk.FromString,
@@ -112,74 +47,6 @@ def add_colab_visionServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class colab_vision(object):
     """Missing associated documentation comment in .proto file."""
-
-    @staticmethod
-    def uploadFile(request_iterator,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.stream_unary(request_iterator, target, '/colab_vision/uploadFile',
-            colab__vision__pb2.Chunk.SerializeToString,
-            colab__vision__pb2.Ack.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
-    def uploadImage(request_iterator,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.stream_unary(request_iterator, target, '/colab_vision/uploadImage',
-            colab__vision__pb2.Chunk.SerializeToString,
-            colab__vision__pb2.Dict.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
-    def downloadFile(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_stream(request, target, '/colab_vision/downloadFile',
-            colab__vision__pb2.uuid.SerializeToString,
-            colab__vision__pb2.Chunk.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
-    def resultTimeDownload(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/colab_vision/resultTimeDownload',
-            colab__vision__pb2.uuid.SerializeToString,
-            colab__vision__pb2.result_Time_Dict.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
     def constantInference(request_iterator,
