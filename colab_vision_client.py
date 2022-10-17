@@ -7,7 +7,13 @@ if __name__ == '__main__':
     # in_file_name = './tmp/morbius_in.jpg'
     in_file_name = './tmp/9.png'
     overall = 0
-    for i in range(100):
+    num_tests = 1
+    # Model = blah
+    # client.setModel(Model)
+    # data_loader = blah
+    # client.setDataLoader(data_loader)
+
+    for i in range(num_tests):
     # print(os.path.exists(in_file_name))
         results = client.upload(in_file_name)
         overall += results["inference"]
@@ -18,7 +24,7 @@ if __name__ == '__main__':
         #         print(f"{i} : {results[i]:.04f}")
         #     else:
         #         print(f"{i} : {results[i]}")
-    print(f"Average over {100} runs: {overall/100:0.04f}")
+    print(f"Average over {num_tests} runs: {overall/num_tests:0.04f}")
     for i in results:
         val = results[i]
         if i not in ["uuid", "results"]:

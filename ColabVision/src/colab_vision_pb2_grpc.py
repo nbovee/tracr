@@ -2,7 +2,7 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-import colab_vision_pb2 as colab__vision__pb2
+from . import colab_vision_pb2 as colab__vision__pb2
 
 
 class colab_visionStub(object):

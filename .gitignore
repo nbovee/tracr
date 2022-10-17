@@ -137,3 +137,4 @@ libcudnn8-dev_8.4.0.27-1+cuda11.6_amd64.deb
 
 # Code Specifics
 /tmp
+/test

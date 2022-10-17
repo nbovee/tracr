@@ -1,4 +1,5 @@
 from concurrent import futures
+from email import message
 import enum
 from fileinput import filename
 from logging.handlers import WatchedFileHandler
@@ -20,7 +21,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.append(".")
-# from model_wrapper_torch import Model
+from model_wrapper_torch import Model
 from . import colab_vision_pb2
 from . import colab_vision_pb2_grpc
 
@@ -29,7 +30,7 @@ bitrate = 0.1 * 2 ** 20# byte/s
 
 CHUNK_SIZE = 1024#reduce size for testing * 1024  # 1MB
 # this should probably be an independant database that client and server can both interact with async
-
+results_dict = {}
 
 def get_object_chunks(filename):
     # first yield is always the filename. Later we will make this explicit
@@ -50,20 +51,23 @@ def save_chunks_to_object(chunks):
     image = Image.open(io.BytesIO(img_bytes))
     return image
 
-def inference_generator(model_wrapper):
-    while model_wrapper.has_next():
-        current_obj = model_wrapper.next()
+def inference_generator(data_loader):
+    while data_loader.has_next():
+        current_obj = data_loader.next()
         message = colab_vision_pb2.Info_Chunk()
         message.id = uuid.UUID()
-        #split into chunks, set values, add message to messages list
-        for i, piece in enumerate(get_object_chunks(current_obj)):
-            message.action = []
-            message.chunk = piece
-            if i == 0:
-                message.action.append(1)
-            if piece is None: #current behavior will send the entirety of the current_obj, then when generator ends, follow up with action flags. small efficiency boost possible if has_next is altered
-                message.action.append(3)
-            yield message
+        results_dict[message.id]["filename"] = current_obj.name
+        for current_split_layer in range(1, Model.max_layers + 1): # we will be iterating over split layers to generate test results. 0 = server handles full inference (tbi). Max_layers + 1 = client handles full inference (tbi)
+            message.layer = current_split_layer
+            #split into chunks, set values, add message to messages list
+            for i, piece in enumerate(get_object_chunks(current_obj)):
+                message.action = colab_vision_pb2.Action()
+                message.chunk = piece
+                if i == 0:
+                    message.action.append(1)
+                if piece is None: #current behavior will send the entirety of the current_obj, then when generator ends, follow up with action flags. small efficiency boost possible if has_next is altered
+                    message.action.append(3)
+                yield message
 
 class FileClient:
     def __init__(self, address):
@@ -76,7 +80,7 @@ class FileClient:
             print("Received message from server with contents: ")
             for i in received_msg:
                 print(i)
-
+            results_dict[received_msg.pop(id)] = received_msg
         return None
 
 class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
