@@ -1,3 +1,4 @@
+from operator import mod
 import numpy as np
 from PIL import Image
 import torch
@@ -6,9 +7,9 @@ from torchvision import transforms, models
 
 image_size = (224, 224)
 # model = torch.hub.load('pytorch/vision:v0.10.0', selected, pretrained=True)
-model = models.alexnet(pretrained=True)
+model = None
 mode = 'cuda'
-max_layers = 8
+max_layers = 21
 
 preprocess = transforms.Compose([
     transforms.Resize(256),
@@ -51,20 +52,24 @@ class SplitAlex(models.AlexNet):
             nn.Linear(4096, num_classes),
         ]
 
-    def forward(self, x: torch.Tensor, start_layer = 0, end_layer = 9999) -> torch.Tensor:
-        x = self.features(x)
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.classifier(x)
+    def forward(self, x: torch.Tensor, start_layer = 0, end_layer = np.inf) -> torch.Tensor:
+        for i in range(start_layer, min(len(self.features), end_layer)):
+            x = self.features[i].forward(x)
+        for i in range(start_layer + len(self.features), min(len(self.features) + 1, end_layer)):
+            x = self.avgpool(x)
+            x = torch.flatten(x, 1)
+        for i in range(start_layer + len(self.features) + 1, min(len(self.features) + len(self.classifier) + 1, end_layer)):
+            x = self.classifier[i].forward(x)
         return x
 
 
 class Model:
     def __init__(self,) -> None:
         global model 
+        mode = SplitAlex().load_state_dict(models.alexnet(pretrained=True).state_dict())
         model.eval()
         self.max_layers =  max_layers
-        if torch.cuda.is_available():
+        if torch.cuda.is_available() and mode == 'cuda':
             model.to(mode)
         with open("imagenet_classes.txt", "r") as f:
             self.categories = [s.strip() for s in f.readlines()]
@@ -72,19 +77,19 @@ class Model:
         self.warmup()
 
 
-    def predict(self, img):
-        if isinstance(img, Image.Image):
-            if img.size != image_size:
-                img = img.resize(image_size)
-        else:
-            img = Image.load_img(img, target_size=image_size)
-        input_tensor = preprocess(img)
-        x = input_tensor.unsqueeze(0)
-        # check if tf is lazily loading by running second image
-        if torch.cuda.is_available():
-            input_batch = x.to(mode)
+    def predict(self, payload, start_layer = 0, end_layer = np.inf):
+        if isinstance(payload, Image.Image):
+            if payload.size != image_size:
+                payload = payload.resize(image_size)
+                # img = Image.load_img(img, target_size=image_size) #?
+            input_tensor = preprocess(payload)
+            input_tensor = input_tensor.unsqueeze(0)
+        elif isinstance(payload, torch.Tensor):
+            input_tensor = payload 
+        if torch.cuda.is_available() and mode == 'cuda':
+            input_batch = input_tensor.to(mode)
         with torch.no_grad():
-            predictions = model(input_batch)
+            predictions = model(input_batch, start_layer = start_layer, end_layer = end_layer)
         probabilities = torch.nn.functional.softmax(predictions[0], dim=0)
         # Show top categories per image
         top1_prob, top1_catid = torch.topk(probabilities, 1)
@@ -92,9 +97,12 @@ class Model:
         return prediction
 
     
-    def warmup(self, iterations = 100):
-        imarray = np.random.rand(*image_size, 3) * 255
-        for i in range(iterations):
-            warmup_image = Image.fromarray(imarray.astype('uint8')).convert('RGB')
-            _ = self.predict(warmup_image)
-        print("Warmup Complete.")
+    def warmup(self, iterations = 50):
+        if mode != 'cuda':
+            print("Warmup not required.")
+        else:
+            imarray = np.random.rand(*image_size, 3) * 255
+            for i in range(iterations):
+                warmup_image = Image.fromarray(imarray.astype('uint8')).convert('RGB')
+                _ = self.predict(warmup_image)
+            print("Warmup Complete.")

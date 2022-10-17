@@ -1,3 +1,4 @@
+from bz2 import compress
 from concurrent import futures
 from email import message
 import enum
@@ -14,52 +15,52 @@ import time
 # from time import perf_counter_ns as timer, process_time_ns as cpu_timer
 from time import time as timer
 import uuid
-import json
 import pickle
 import blosc
 import numpy as np
 from PIL import Image
 
 sys.path.append(".")
-from model_wrapper_torch import Model
+from alexnet_pytorch_split import Model
 from . import colab_vision_pb2
 from . import colab_vision_pb2_grpc
 
 
 bitrate = 0.1 * 2 ** 20# byte/s
-
-CHUNK_SIZE = 1024#reduce size for testing * 1024  # 1MB
+compression = False
+CHUNK_SIZE = 1024 #reduce size for testing * 1024  # 1MB
 # this should probably be an independant database that client and server can both interact with async
 results_dict = {}
 
-def get_object_chunks(filename):
-    # first yield is always the filename. Later we will make this explicit
-    # yield colab_vision_pb2.Chunk(chunk = filename)
-    with open(filename, 'rb') as f:
-        while True:
-            piece = f.read(CHUNK_SIZE);
-            if len(piece) == 0:
-                return
-            yield colab_vision_pb2.Chunk(chunk=piece)
+def get_object_chunks(object):
+    object = pickle.dumps(object)
+    for pos in range(0, len(object), CHUNK_SIZE):
+        piece = object[pos:pos + CHUNK_SIZE]
+        if len(piece) == 0:
+            return
+        yield colab_vision_pb2.Chunk(chunk=piece)
 
 def save_chunks_to_object(chunks):
-    chunk_bytes = []
+    chunk_byte_list = []
     for c in chunks:
-        chunk_bytes.append(c.chunk)
-    img_bytes = b''.join(chunk_bytes)
-    print(len(chunk_bytes))
-    image = Image.open(io.BytesIO(img_bytes))
-    return image
+        chunk_byte_list.append(c.chunk)
+    obj_bytes = b''.join(chunk_byte_list)
+    return obj_bytes
 
 def inference_generator(data_loader):
     while data_loader.has_next():
         current_obj = data_loader.next()
         message = colab_vision_pb2.Info_Chunk()
         message.id = uuid.UUID()
+        results_dict[message.id] = {}
         results_dict[message.id]["filename"] = current_obj.name
+        # getting split layer should be broken out and methodized
         for current_split_layer in range(1, Model.max_layers + 1): # we will be iterating over split layers to generate test results. 0 = server handles full inference (tbi). Max_layers + 1 = client handles full inference (tbi)
-            message.layer = current_split_layer
+            message.layer = current_split_layer - 1 # the model is zero indexed for its layers, we 
             #split into chunks, set values, add message to messages list
+            if compress:
+                message.action.append(5)
+                current_obj = blosc.compress(current_obj)
             for i, piece in enumerate(get_object_chunks(current_obj)):
                 message.action = colab_vision_pb2.Action()
                 message.chunk = piece
@@ -111,9 +112,16 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                     #continue the same inference
                     if 2 in msg.action: 
                         #convert chunks into object and save at appropriate layer
+                        current_chunks = save_chunks_to_object(current_chunks)
+                        if 5 in msg.action: # decompress
+                            current_chunks = blosc.decompress(current_chunks)
+                        pickle.loads(current_chunks)
                         pass #not yet implemented
                     if 3 in msg.action:
                         #convert chunks into object and perform inference
+                        if 5 in msg.action: # decompress
+                            current_chunks = blosc.decompress(current_chunks)
+                        pickle.loads(current_chunks)
                         pass
                         
                     
