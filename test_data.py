@@ -1,4 +1,4 @@
-from .data_wrapper import data_wrapper
+from data_wrapper import data_wrapper
 from PIL import Image
 import glob
 
