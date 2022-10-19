@@ -53,22 +53,32 @@ def save_chunks_to_object(chunks):
     return obj_bytes
 
 def inference_generator(data_loader):
+    for i in range(5):
+        yield colab_vision_pb2.Info_Chunk(id = "test")
+
+def inference_generator_1(data_loader):
+    print("inference generator")
+    print(data_loader.has_next())
     while data_loader.has_next():
-        [ current_obj, exit_layer, filename ] = data_loader.next()
+        print("inside while")
+        tmp = data_loader.next()
+        yield colab_vision_pb2.Info_Chunk()
+        if tmp is not None:
+            [ current_obj, exit_layer, filename ] = tmp
+        print(f"{current_obj}  {exit_layer}  {filename}")
+        print("msg1")
         message = colab_vision_pb2.Info_Chunk()
         message.action = colab_vision_pb2.Action()
         message.id = uuid.UUID()
         results_dict[message.id] = {}
         results_dict[message.id]["filename"] = filename
-        # getting split layer should be broken out and methodized
-        # for current_split_layer in range(1, Model.max_layers + 1): # we will be iterating over split layers to generate test results. 0 = server handles full inference (tbi). Max_layers + 1 = client handles full inference (tbi)
         message.layer = exit_layer + 1 # the server begins inference 1 layer above where the edge exited
-        #split into chunks, set values, add message to messages list
+        print("midway")
         if compress:
             message.action.append(5)
             current_obj = blosc.compress(current_obj)
         for i, piece in enumerate(get_object_chunks(current_obj)):
-            message.chunk = piece
+            message.chunk = colab_vision_pb2.Chunk(piece = piece)
             if i == 0:
                 message.action.append(1)
             if piece is None: #current behavior will send the entirety of the current_obj, then when generator ends, follow up with action flags. small efficiency boost possible if has_next is altered
@@ -79,17 +89,19 @@ def inference_generator(data_loader):
 
 class FileClient:
     def __init__(self, address):
-        channel = grpc.insecure_channel(address)
-        self.stub = colab_vision_pb2_grpc.colab_visionStub(channel)
+        self.channel = grpc.insecure_channel(address)
+        self.stub = colab_vision_pb2_grpc.colab_visionStub(self.channel)
 
+    def safeClose(self):
+        self.channel.close()
+        
     def initiateConstantInference(self, target):
         #stuff
-        for recevied_msg in self.stub.constantInference(inference_generator(target)):
+        messages = self.stub.constantInference(inference_generator(target))
+        for received_msg in messages:
             print("Received message from server with contents: ")
-            for i in received_msg:
-                print(i)
-            results_dict[received_msg.pop(id)] = received_msg
-        return None
+            print(received_msg)
+            # results_dict[received_msg.pop(id)] = received_msg
 
 class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
     def __init__(self):
@@ -100,6 +112,20 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                 # self.model = Model()
 
             def constantInference(self, request_iterator, context):
+                #unpack msg contents
+                current_chunks = []
+                last_id = None
+                print("inside bidirectional")
+                for msg in request_iterator:
+                    print(f"Message received with id {msg.id}. Responding.")
+                    yield colab_vision_pb2.Response_Dict(
+                            id = "test",
+                            keypairs = None,
+                            results = None,
+                            actions = None
+                        )
+
+            def constantInference_1(self, request_iterator, context):
                 #unpack msg contents
                 current_chunks = []
                 last_id = None
