@@ -100,6 +100,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
             def constantInference(self, request_iterator, context):
                 #unpack msg contents
                 current_chunks = []
+                last_id = None
                 for msg in request_iterator:
                     print("Received message from client with contents: ")
                     for thingy in msg:
@@ -109,6 +110,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                     if 1 in msg.action:
                         #reset operation regardless of current progress
                         current_chunks = []
+                        last_id = msg.layer
                     if msg.id == last_id:
                         current_chunks.append(msg.chunk)
                         #continue the same inference
