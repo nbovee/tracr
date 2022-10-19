@@ -1,5 +1,5 @@
 import os
-import ColabVision.src.colab_vision as cv
+import src.colab_vision as cv
 import time
 
 if __name__ == '__main__':

@@ -32,7 +32,7 @@ import colab_vision_pb2_grpc
 
 
 bitrate = 0.1 * 2 ** 20# byte/s
-compression = False
+compress = False
 CHUNK_SIZE = 1024 #reduce size for testing * 1024  # 1MB
 # this should probably be an independant database that client and server can both interact with async
 results_dict = {}
