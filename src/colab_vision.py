@@ -21,9 +21,14 @@ import numpy as np
 from PIL import Image
 
 sys.path.append(".")
+parent = os.path.abspath('.')
+sys.path.insert(1, parent)
+
 from alexnet_pytorch_split import Model
-from . import colab_vision_pb2
-from . import colab_vision_pb2_grpc
+from test_data import test_data_loader as data_loader
+
+import colab_vision_pb2
+import colab_vision_pb2_grpc
 
 
 bitrate = 0.1 * 2 ** 20# byte/s
@@ -49,26 +54,26 @@ def save_chunks_to_object(chunks):
 
 def inference_generator(data_loader):
     while data_loader.has_next():
-        current_obj = data_loader.next()
+        [ current_obj, exit_layer, filename ] = data_loader.next()
         message = colab_vision_pb2.Info_Chunk()
+        message.action = colab_vision_pb2.Action()
         message.id = uuid.UUID()
         results_dict[message.id] = {}
-        results_dict[message.id]["filename"] = current_obj.name
+        results_dict[message.id]["filename"] = filename
         # getting split layer should be broken out and methodized
-        for current_split_layer in range(1, Model.max_layers + 1): # we will be iterating over split layers to generate test results. 0 = server handles full inference (tbi). Max_layers + 1 = client handles full inference (tbi)
-            message.layer = current_split_layer - 1 # the model is zero indexed for its layers, we 
-            #split into chunks, set values, add message to messages list
-            if compress:
-                message.action.append(5)
-                current_obj = blosc.compress(current_obj)
-            for i, piece in enumerate(get_object_chunks(current_obj)):
-                message.action = colab_vision_pb2.Action()
-                message.chunk = piece
-                if i == 0:
-                    message.action.append(1)
-                if piece is None: #current behavior will send the entirety of the current_obj, then when generator ends, follow up with action flags. small efficiency boost possible if has_next is altered
-                    message.action.append(3)
-                yield message
+        # for current_split_layer in range(1, Model.max_layers + 1): # we will be iterating over split layers to generate test results. 0 = server handles full inference (tbi). Max_layers + 1 = client handles full inference (tbi)
+        message.layer = exit_layer + 1 # the server begins inference 1 layer above where the edge exited
+        #split into chunks, set values, add message to messages list
+        if compress:
+            message.action.append(5)
+            current_obj = blosc.compress(current_obj)
+        for i, piece in enumerate(get_object_chunks(current_obj)):
+            message.chunk = piece
+            if i == 0:
+                message.action.append(1)
+            if piece is None: #current behavior will send the entirety of the current_obj, then when generator ends, follow up with action flags. small efficiency boost possible if has_next is altered
+                message.action.append(3)
+            yield message
 
 class FileClient:
     def __init__(self, address):
@@ -89,7 +94,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
 
         class Servicer(colab_vision_pb2_grpc.colab_visionServicer):
             def __init__(self):
-                self.tmp_folder = './tmp/server_tmp/'
+                self.tmp_folder = './temp/'
                 # self.model = Model()
             
             def constantInference(self, request_iterator, context):
