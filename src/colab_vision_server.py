@@ -1,13 +1,8 @@
-from concurrent import futures
-from email import message
-import enum
-from fileinput import filename
-from logging.handlers import WatchedFileHandler
-from multiprocessing.connection import wait
 import sys
 import logging
 import os
 import io
+from concurrent import futures
 import grpc
 # from timeit import default_timer as timer
 import time
@@ -42,25 +37,10 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                 #unpack msg contents
                 current_chunks = []
                 last_id = None
-                print("inside bidirectional")
-                for msg in request_iterator:
-                    print(f"Message received with id {msg.id}. Responding.")
+                for msg, i in enumerate(request_iterator):
+                    print(f"Message received with id {msg.id}. Responding with Dummy.")
                     yield colab_vision_pb2.Response_Dict(
-                            id = "test",
-                            keypairs = None,
-                            results = None,
-                            actions = None
-                        )
-
-            def constantInference_1(self, request_iterator, context):
-                #unpack msg contents
-                current_chunks = []
-                last_id = None
-                print("inside bidirectional")
-                for msg in request_iterator:
-                    print(f"Message received with id {msg.id}. Responding.")
-                    yield colab_vision_pb2.Response_Dict(
-                            id = "test",
+                            id = f"test response for {msg.id} is {i}",
                             keypairs = None,
                             results = None,
                             actions = None

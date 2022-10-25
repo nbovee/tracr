@@ -1,5 +1,5 @@
 import os
-import src.colab_vision as cv
+import src.colab_vision_client as cv
 import time
 import atexit
 from test_data import test_data_loader as data_loader
@@ -15,7 +15,8 @@ if __name__ == '__main__':
     # for i in range(num_tests):
     # print(os.path.exists(in_file_name))
     test_data = data_loader()
-    client.initiateConstantInference(test_data)
+    while test_data.has_next():
+        client.initiateConstantInference(test_data)
         # overall += results["inference"]
         # for i in results:
         #     val = results[i]

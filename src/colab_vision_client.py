@@ -1,9 +1,3 @@
-from concurrent import futures
-from email import message
-import enum
-from fileinput import filename
-from logging.handlers import WatchedFileHandler
-from multiprocessing.connection import wait
 import sys
 import logging
 import os
@@ -36,47 +30,45 @@ class FileClient:
     def __init__(self, address):
         self.channel = grpc.insecure_channel(address)
         self.stub = colab_vision_pb2_grpc.colab_visionStub(self.channel)
+        self.results_dict = {}
         logging.basicConfig()
 
     def safeClose(self):
         self.channel.close()
         
-    def initiateConstantInference(self, target):
+    def initiateInference(self, target):
         #stuff
-        messages = self.stub.constantInference(inference_generator(target))
+        messages = self.stub.constantInference(self.inference_generator(target))
         for received_msg in messages:
             print("Received message from server with contents: ")
             print(received_msg)
             # results_dict[received_msg.pop(id)] = received_msg
 
-
-
-    def inference_generator(data_loader):
+    def inference_generator_test(self, data_loader):
         for i in range(5):
             yield colab_vision_pb2.Info_Chunk(id = "test")
 
-    def inference_generator_1(data_loader):
+    def inference_generator(self, data_loader):
         print("inference generator")
         print(data_loader.has_next())
-        while data_loader.has_next():
-            print("inside while")
+        if data_loader.has_next():
+            print("image available.")
             tmp = data_loader.next()
-            yield colab_vision_pb2.Info_Chunk()
             if tmp is not None:
                 [ current_obj, exit_layer, filename ] = tmp
             print(f"{current_obj}  {exit_layer}  {filename}")
-            print("msg1")
+            # print("msg1")
             message = colab_vision_pb2.Info_Chunk()
             message.action = colab_vision_pb2.Action()
             message.id = uuid.UUID()
-            results_dict[message.id] = {}
-            results_dict[message.id]["filename"] = filename
+            self.results_dict[message.id] = {}
+            self.results_dict[message.id]["filename"] = filename
             message.layer = exit_layer + 1 # the server begins inference 1 layer above where the edge exited
-            print("midway")
-            if compress:
+            # print("midway")
+            if colab_vision.USE_COMPRESSION:
                 message.action.append(5)
                 current_obj = blosc.compress(current_obj)
-            for i, piece in enumerate(get_object_chunks(current_obj)):
+            for i, piece in enumerate(colab_vision.get_object_chunks(current_obj)):
                 message.chunk = colab_vision_pb2.Chunk(piece = piece)
                 if i == 0:
                     message.action.append(1)
@@ -86,7 +78,7 @@ class FileClient:
                     print(i)
                 yield message
 
-    def start(self, port):
-        self.server.add_insecure_port(f'[::]:{port}')
-        self.server.start()
-        self.server.wait_for_termination()
+    # def start(self, port):
+    #     self.server.add_insecure_port(f'[::]:{port}')
+    #     self.server.start()
+    #     self.server.wait_for_termination()

@@ -2,7 +2,7 @@ from data_wrapper import data_wrapper
 from PIL import Image
 import glob
 
-class test_data_loader:
+class test_data_loader(data_wrapper):
 
     def __init__(self):
         self.image_list = []
@@ -23,6 +23,7 @@ class test_data_loader:
 
     def load_data(self, path):
         max_images = 2
+        self.image_list.clear()
         # print(f"len iglob {len(list(glob.iglob(path)))}")
         for image in glob.iglob(path):
             print(image)
