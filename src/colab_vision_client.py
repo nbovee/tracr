@@ -40,7 +40,7 @@ class FileClient:
         
     def initiateInference(self, target):
         #stuff
-        messages = self.stub.constantInference(self.inference_generator(target))
+        messages = self.stub.constantInference_test(self.inference_generator(target))
         for received_msg in messages:
             print("Received message from server with contents: ")
             print(received_msg)
