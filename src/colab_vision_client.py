@@ -73,10 +73,15 @@ class FileClient:
                 message.ClearField('action')#colab_vision_pb2.Action()
                 if i == 0:
                     message.action.append(1)
-                if piece is None: #current behavior will send the entirety of the current_obj, then when generator ends, follow up with action flags. small efficiency boost possible if has_next is altered
-                    message.action.append(3)
-                print(f"total messages {i}")
+                # if piece is None: #current behavior will send the entirety of the current_obj, then when generator ends, follow up with action flags. small efficiency boost possible if has_next is altered
+                #     message.action.append(3)
+                    # print(f"total messages {i}")
                 yield message
+            message.ClearField('chunk')
+            if colab_vision.USE_COMPRESSION:
+                message.action.append(5)
+            message.action.append(3)
+            yield message
 
     # def start(self, port):
     #     self.server.add_insecure_port(f'[::]:{port}')
