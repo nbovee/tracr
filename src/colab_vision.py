@@ -46,7 +46,8 @@ def save_chunks_to_object(chunks):
     for c in chunks:
         chunk_byte_list.append(c.chunk)
     obj_bytes = b''.join(chunk_byte_list)
-    return pickle.loads(obj_bytes)
+    # return pickle.loads(obj_bytes)
+    return obj_bytes
 
 def calculate_transfer_speed(data_size_MB, new_bitrate=None):
     if new_bitrate is not None:
