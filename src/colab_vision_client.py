@@ -67,7 +67,7 @@ class FileClient:
             message.layer = exit_layer + 1 # the server begins inference 1 layer above where the edge exited
             if colab_vision.USE_COMPRESSION:
                 message.action.append(5)
-                current_obj = blosc.compress(current_obj)
+                current_obj = blosc.pack_tensor(current_obj)
             for i, piece in enumerate(colab_vision.get_object_chunks(current_obj)):
                 message.chunk.CopyFrom(piece)
                 message.ClearField('action')#colab_vision_pb2.Action()
@@ -75,7 +75,7 @@ class FileClient:
                     message.action.append(1)
                 if piece is None: #current behavior will send the entirety of the current_obj, then when generator ends, follow up with action flags. small efficiency boost possible if has_next is altered
                     message.action.append(3)
-                print(message)
+                print(f"total messages {i}")
                 yield message
 
     # def start(self, port):
