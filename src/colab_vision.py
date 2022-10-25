@@ -12,7 +12,7 @@ import time
 from time import time as timer
 import uuid
 import pickle
-import blosc
+import blosc2 as blosc
 import numpy as np
 from PIL import Image
 

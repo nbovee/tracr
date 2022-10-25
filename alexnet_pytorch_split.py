@@ -94,11 +94,15 @@ class Model:
             input_tensor = input_tensor.to(mode)
         with torch.no_grad():
             predictions = model(input_tensor, start_layer = start_layer, end_layer = end_layer)
-        probabilities = torch.nn.functional.softmax(predictions[0], dim=0)
-        # Show top categories per image
-        top1_prob, top1_catid = torch.topk(probabilities, 1)
-        prediction = self.categories[top1_catid]
-        return prediction
+        if end_layer <= 21: #22 maybe? fix magic number
+            return predictions
+        else:
+            probabilities = torch.nn.functional.softmax(predictions[0], dim=0)
+            # Show top categories per image
+            top1_prob, top1_catid = torch.topk(probabilities, 1)
+            print(top1_catid)
+            prediction = self.categories[top1_catid]
+            return prediction
 
     
     def warmup(self, iterations = 50):
