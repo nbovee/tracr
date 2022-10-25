@@ -100,7 +100,7 @@ class Model:
             probabilities = torch.nn.functional.softmax(predictions[0], dim=0)
             # Show top categories per image
             top1_prob, top1_catid = torch.topk(probabilities, 1)
-            print(top1_catid)
+            # print(top1_catid)
             prediction = self.categories[top1_catid]
             return prediction
 
