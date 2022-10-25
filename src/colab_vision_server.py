@@ -21,9 +21,9 @@ sys.path.insert(1, parent)
 from alexnet_pytorch_split import Model
 from test_data import test_data_loader as data_loader
 
-import colab_vision
-import colab_vision_pb2
-import colab_vision_pb2_grpc
+from . import colab_vision
+from . import colab_vision_pb2
+from . import colab_vision_pb2_grpc
 
 class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
     def __init__(self):
@@ -37,7 +37,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                 #unpack msg contents
                 current_chunks = []
                 last_id = None
-                for msg, i in enumerate(request_iterator):
+                for i, msg in enumerate(request_iterator):
                     print(f"Message received with id {msg.id}. Responding with Dummy.")
                     yield colab_vision_pb2.Response_Dict(
                             id = f"test response for {msg.id} is {i}",
@@ -94,7 +94,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
 
 
         logging.basicConfig()
-        self.server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
+        self.server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
         colab_vision_pb2_grpc.add_colab_visionServicer_to_server(Servicer(), self.server)
 
     def start(self, port):
