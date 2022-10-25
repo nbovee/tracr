@@ -52,7 +52,10 @@ class FileClient:
         print("image available.")
         tmp = data_loader.next()
         while(tmp):
-            [ current_obj, exit_layer, filename ] = next(tmp)
+            try:
+                [ current_obj, exit_layer, filename ] = next(tmp)
+            except StopIteration:
+                return
             # print(f"{current_obj}  {exit_layer}  {filename}")
             message = colab_vision_pb2.Info_Chunk()
             message.ClearField('action')#colab_vision_pb2.Action()

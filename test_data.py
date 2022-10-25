@@ -17,8 +17,11 @@ class test_data_loader(data_wrapper):
             return None
         else:
             [val, filename] = self.image_list.pop()
-            for i in range(1,22): # hardcoded split layers for AlexNet - no full processing yet
+            i = -1
+            while True:# for i in range(1,3): # hardcoded split layers for AlexNet - no full processing yet
+                i+=1
                 print(f"yield split layer {i} remaining images {len(self.image_list)}")
+            
                 yield [ val, i, filename ]
 
     def load_data(self, path):
