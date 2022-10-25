@@ -9,19 +9,19 @@ import time
 from time import time as timer
 import uuid
 import pickle
-import blosc
+import blosc2 as blosc
 import numpy as np
 from PIL import Image
 
 from src.colab_vision import USE_COMPRESSION
-import alexnet_pytorch_split.Model as model
 
 sys.path.append(".")
 parent = os.path.abspath('.')
 sys.path.insert(1, parent)
 
-from alexnet_pytorch_split import Model
+
 from test_data import test_data_loader as data_loader
+import alexnet_pytorch_split as alex
 
 from . import colab_vision
 from . import colab_vision_pb2
@@ -33,7 +33,7 @@ class FileClient:
         self.stub = colab_vision_pb2_grpc.colab_visionStub(self.channel)
         self.results_dict = {}
         logging.basicConfig()
-        self.model = model()
+        self.model = alex.Model()
 
     def safeClose(self):
         self.channel.close()
@@ -58,7 +58,7 @@ class FileClient:
                 [ current_obj, exit_layer, filename ] = next(tmp)
             except StopIteration:
                 return
-            current_obj = model.predict(current_obj, end_layer=exit_layer)
+            current_obj = self.model.predict(current_obj, end_layer=exit_layer)
             message = colab_vision_pb2.Info_Chunk()
             message.ClearField('action')#colab_vision_pb2.Action()
             message.id = uuid.uuid4().hex # uuid4().bytes is utf8 not unicode like grpc wants
