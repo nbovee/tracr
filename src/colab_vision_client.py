@@ -4,9 +4,9 @@ import os
 import io
 import grpc
 # from timeit import default_timer as timer
-import time
 # from time import perf_counter_ns as timer, process_time_ns as cpu_timer
-from time import time as timer
+# from time import time as timer
+import time
 import uuid
 import pickle
 import blosc2 as blosc
@@ -40,7 +40,7 @@ class FileClient:
         
     def initiateInference(self, target):
         #stuff
-        messages = self.stub.constantInference_test(self.inference_generator(target))
+        messages = self.stub.constantInference(self.inference_generator(target))
         for received_msg in messages:
             print("Received message from server with contents: ")
             print(received_msg)
@@ -67,7 +67,9 @@ class FileClient:
             message.layer = exit_layer + 1 # the server begins inference 1 layer above where the edge exited
             if colab_vision.USE_COMPRESSION:
                 message.action.append(5)
+                t1 = time.time()
                 current_obj = blosc.pack_tensor(current_obj)
+                print(time.time() - t1)
             for i, piece in enumerate(colab_vision.get_object_chunks(current_obj)):
                 message.chunk.CopyFrom(piece)
                 message.ClearField('action')#colab_vision_pb2.Action()
