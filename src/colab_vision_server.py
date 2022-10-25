@@ -10,7 +10,7 @@ import time
 from time import time as timer
 import uuid
 import pickle
-import blosc
+import blosc2 as blosc
 import numpy as np
 from PIL import Image
 
@@ -18,7 +18,7 @@ sys.path.append(".")
 parent = os.path.abspath('.')
 sys.path.insert(1, parent)
 
-from alexnet_pytorch_split import Model
+import alexnet_pytorch_split as alex
 from test_data import test_data_loader as data_loader
 
 from . import colab_vision
@@ -31,9 +31,10 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
         class Servicer(colab_vision_pb2_grpc.colab_visionServicer):
             def __init__(self):
                 self.tmp_folder = './temp/'
+                self.model = alex.Model()
                 # self.model = Model()
 
-            def constantInference(self, request_iterator, context):
+            def constantInference_test(self, request_iterator, context):
                 #unpack msg contents
                 current_chunks = []
                 last_id = None
@@ -46,52 +47,47 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                             actions = None
                         )
 
-            def constantInference_1(self, request_iterator, context):
+            def constantInference(self, request_iterator, context):
                 #unpack msg contents
                 current_chunks = []
                 last_id = None
-                print("inside bidirectional")
                 for msg in request_iterator:
-                #     print("Received message from client with contents: ")
-                #     for thingy in msg:
-                #         print(thingy)
-                    # if 4 in msg.action:
-                    #     break #exit
-                    # if 1 in msg.action:
-                    #     #reset operation regardless of current progress
-                    #     current_chunks = []
-                    #     last_id = msg.layer
-                    # if msg.id == last_id:
-                    #     current_chunks.append(msg.chunk)
-                    #     #continue the same inference
-                    # else:
-                    #     current_chunks = [].append(msg.chunk)
-                    # #continue the same inference
-                    # if 2 in msg.action: 
-                    #     #convert chunks into object and save at appropriate layer
-                    #     current_chunks = save_chunks_to_object(current_chunks)
-                    #     if 5 in msg.action: # decompress
-                    #         current_chunks = blosc.decompress(current_chunks)
-                    #     pickle.loads(current_chunks)
-                    #     pass #not yet implemented
-                    # if 3 in msg.action:
-                    #     #convert chunks into object and perform inference
-                    #     if 5 in msg.action: # decompress
-                    #         current_chunks = blosc.decompress(current_chunks)
-                    #     pickle.loads(current_chunks)
-                    print(f"Message received with id {msg.id}. Responding.")
-                    yield colab_vision_pb2.Response_Dict(
-                            id = "test",
-                            keypairs = None,
-                            results = None,
-                            actions = None
-                        )
+                    if 4 in msg.action:
+                        break #exit
+                    if 1 in msg.action:
+                        #reset operation regardless of current progress
+                        current_chunks = []
+                        last_id = msg.id
+                    if msg.id == last_id:
+                        current_chunks.append(msg.chunk)
+                        #continue the same inference
+                    else:
+                        current_chunks = [].append(msg.chunk)
+                    #continue the same inference
+                    if 2 in msg.action: 
+                        #convert chunks into object and save at appropriate layer
+                        current_chunks = save_chunks_to_object(current_chunks)
+                        if 5 in msg.action: # decompress
+                            current_chunks = blosc.unpack_tensor(current_chunks)
+                        pass #not yet implemented
+                    if 3 in msg.action:
+                        #convert chunks into object and perform inference
+                        if 5 in msg.action: # decompress
+                            partial_inf_tensor = blosc.unpack_tensor(current_chunks)
+                            prediction = self.model.predict(partial_inf_tensor, start_layer=msg.layer)
+                            print(f"Inference completed for {msg.id}. Result {prediction}")
+                    # print(f"Message received with id {msg.id}. Responding.")
+                            yield colab_vision_pb2.Response_Dict(
+                                    id = str(prediction),
+                                    keypairs = None,
+                                    results = None,
+                                    actions = None
+                                )
       
                     
                 #deal with chunks
 
                 #do flag actions
-
 
         logging.basicConfig()
         self.server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
