@@ -4,7 +4,7 @@ import time
 import atexit
 from test_data import test_data_loader as data_loader
 if __name__ == '__main__':
-    client = cv.FileClient('172.17.0.3:8893')
+    client = cv.FileClient('172.17.0.2:8893')
     atexit.register(client.safeClose)
 
     # Model = blah
@@ -16,7 +16,7 @@ if __name__ == '__main__':
     # print(os.path.exists(in_file_name))
     test_data = data_loader()
     while test_data.has_next():
-        client.initiateConstantInference(test_data)
+        client.initiateInference(test_data)
         # overall += results["inference"]
         # for i in results:
         #     val = results[i]

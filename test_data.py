@@ -13,13 +13,13 @@ class test_data_loader(data_wrapper):
         return bool(len(self.image_list))
 
     def next(self):
-        if self.has_next() is not None:
-            [val, filename] = self.image_list.pop()
+        if self.has_next() is None:
+            return None
         else:
-            return
-        for i in range(1,22): # hardcoded split layers for AlexNet - no full processing yet
-            print(f"yield split layer {i} remaining images {len(self.image_list)}")
-            yield [ val.load(), i, filename ]
+            [val, filename] = self.image_list.pop()
+            for i in range(1,22): # hardcoded split layers for AlexNet - no full processing yet
+                print(f"yield split layer {i} remaining images {len(self.image_list)}")
+                yield [ val, i, filename ]
 
     def load_data(self, path):
         max_images = 2

@@ -22,9 +22,9 @@ sys.path.insert(1, parent)
 from alexnet_pytorch_split import Model
 from test_data import test_data_loader as data_loader
 
-import colab_vision
-import colab_vision_pb2
-import colab_vision_pb2_grpc
+from . import colab_vision
+from . import colab_vision_pb2
+from . import colab_vision_pb2_grpc
 
 class FileClient:
     def __init__(self, address):
@@ -49,33 +49,28 @@ class FileClient:
             yield colab_vision_pb2.Info_Chunk(id = "test")
 
     def inference_generator(self, data_loader):
-        print("inference generator")
-        print(data_loader.has_next())
-        if data_loader.has_next():
-            print("image available.")
-            tmp = data_loader.next()
-            if tmp is not None:
-                [ current_obj, exit_layer, filename ] = tmp
-            print(f"{current_obj}  {exit_layer}  {filename}")
-            # print("msg1")
+        print("image available.")
+        tmp = data_loader.next()
+        while(tmp):
+            [ current_obj, exit_layer, filename ] = next(tmp)
+            # print(f"{current_obj}  {exit_layer}  {filename}")
             message = colab_vision_pb2.Info_Chunk()
-            message.action = colab_vision_pb2.Action()
-            message.id = uuid.UUID()
-            self.results_dict[message.id] = {}
+            message.ClearField('action')#colab_vision_pb2.Action()
+            message.id = uuid.uuid4().hex # uuid4().bytes is utf8 not unicode like grpc wants
+            self.results_dict[message.id] = {} 
             self.results_dict[message.id]["filename"] = filename
             message.layer = exit_layer + 1 # the server begins inference 1 layer above where the edge exited
-            # print("midway")
             if colab_vision.USE_COMPRESSION:
                 message.action.append(5)
                 current_obj = blosc.compress(current_obj)
             for i, piece in enumerate(colab_vision.get_object_chunks(current_obj)):
-                message.chunk = colab_vision_pb2.Chunk(piece = piece)
+                message.chunk.CopyFrom(piece)
+                message.ClearField('action')#colab_vision_pb2.Action()
                 if i == 0:
                     message.action.append(1)
                 if piece is None: #current behavior will send the entirety of the current_obj, then when generator ends, follow up with action flags. small efficiency boost possible if has_next is altered
                     message.action.append(3)
-                for i in message:
-                    print(i)
+                print(message)
                 yield message
 
     # def start(self, port):
