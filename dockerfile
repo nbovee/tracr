@@ -13,12 +13,12 @@ COPY . .
 
 FROM base AS client
 CMD [ "python", "./client/grpc_testing_client.py" ]
-ENV version_name "client"
+ENV version_name "grpc_client"
 
 
 FROM base AS remote
 CMD [ "python", "./remote/grpc_testing_remote.py" ]
-ENV version_name "remote"
+ENV version_name "grpc_remote"
 
 
 FROM ${branch} AS final
