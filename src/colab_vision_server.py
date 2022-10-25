@@ -72,17 +72,18 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                         pass #not yet implemented
                     if 3 in msg.action:
                         #convert chunks into object and perform inference
+                        partial_inf_tensor = colab_vision.get_object_chunks(current_chunks)
                         if 5 in msg.action: # decompress
-                            partial_inf_tensor = blosc.unpack_tensor(current_chunks)
-                            prediction = self.model.predict(partial_inf_tensor, start_layer=msg.layer)
-                            print(f"Inference completed for {msg.id}. Result {prediction}")
+                            partial_inf_tensor = blosc.unpack_tensor(partial_inf_tensor)
+                        prediction = self.model.predict(partial_inf_tensor, start_layer=msg.layer)
+                        print(f"Inference completed for {msg.id}. Result {prediction}")
                     # print(f"Message received with id {msg.id}. Responding.")
-                            yield colab_vision_pb2.Response_Dict(
-                                    id = str(prediction),
-                                    keypairs = None,
-                                    results = None,
-                                    actions = None
-                                )
+                        yield colab_vision_pb2.Response_Dict(
+                                id = str(prediction),
+                                keypairs = None,
+                                results = None,
+                                actions = None
+                            )
       
                     
                 #deal with chunks
