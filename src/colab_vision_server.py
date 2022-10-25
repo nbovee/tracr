@@ -34,20 +34,20 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                 self.model = alex.Model()
                 # self.model = Model()
 
-            def constantInference_test(self, request_iterator, context):
+            def constantInference(self, request_iterator, context):
                 #unpack msg contents
                 current_chunks = []
                 last_id = None
                 for i, msg in enumerate(request_iterator):
                     print(f"Message received with id {msg.id}. Responding with Dummy.")
                     yield colab_vision_pb2.Response_Dict(
-                            id = f"test response for {msg.id} is {i}",
+                            id = f"reply to{msg.id}",
                             keypairs = None,
-                            results = None,
-                            actions = None
+                            results = str(i).encode(),
+                            actions = msg.action
                         )
 
-            def constantInference(self, request_iterator, context):
+            def constantInference_1(self, request_iterator, context):
                 #unpack msg contents
                 current_chunks = []
                 last_id = None
