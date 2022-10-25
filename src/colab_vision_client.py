@@ -14,6 +14,7 @@ import numpy as np
 from PIL import Image
 
 from src.colab_vision import USE_COMPRESSION
+import alexnet_pytorch_split.Model as model
 
 sys.path.append(".")
 parent = os.path.abspath('.')
@@ -32,6 +33,7 @@ class FileClient:
         self.stub = colab_vision_pb2_grpc.colab_visionStub(self.channel)
         self.results_dict = {}
         logging.basicConfig()
+        self.model = model()
 
     def safeClose(self):
         self.channel.close()
@@ -56,7 +58,7 @@ class FileClient:
                 [ current_obj, exit_layer, filename ] = next(tmp)
             except StopIteration:
                 return
-            # print(f"{current_obj}  {exit_layer}  {filename}")
+            current_obj = model.predict(current_obj, end_layer=exit_layer)
             message = colab_vision_pb2.Info_Chunk()
             message.ClearField('action')#colab_vision_pb2.Action()
             message.id = uuid.uuid4().hex # uuid4().bytes is utf8 not unicode like grpc wants
