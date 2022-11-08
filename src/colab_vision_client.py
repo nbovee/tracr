@@ -37,6 +37,7 @@ class FileClient:
 
     def safeClose(self):
         self.channel.close()
+        print(self.results_dict)
         
     def initiateInference(self, target):
         #stuff
@@ -74,7 +75,7 @@ class FileClient:
                 message.chunk.CopyFrom(piece)
                 message.ClearField('action')#colab_vision_pb2.Action()
                 if i == 0:
-                    message.action.append(1)
+                    message.action.append(colab_vision_pb2.ACT_RESET)
                 # if piece is None: #current behavior will send the entirety of the current_obj, then when generator ends, follow up with action flags. small efficiency boost possible if has_next is altered
                 #     message.action.append(3)
                     # print(f"total messages {i}")
