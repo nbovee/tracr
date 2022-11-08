@@ -72,8 +72,9 @@ class SplitAlex(models.AlexNet):
 
 
 class Model:
-    def __init__(self,) -> None:
-        global model 
+    def __init__(self, mode = "cpu") -> None:
+        global model
+        self.mode = mode
         # values = models.alexnet(pretrained=True).state_dict()
         model = SplitAlex()
         model.load_state_dict(models.alexnet(pretrained=True).state_dict())
@@ -84,7 +85,7 @@ class Model:
             print("Loading Model to CUDA.")
         else:
             print("Loading Model to CPU.")
-        model.to(mode)
+        model.to(self.mode)
         with open("imagenet_classes.txt", "r") as f:
             self.categories = [s.strip() for s in f.readlines()]
         print("Imagenet categories loaded.")
@@ -100,8 +101,8 @@ class Model:
             input_tensor = input_tensor.unsqueeze(0)
         elif isinstance(payload, torch.Tensor):
             input_tensor = payload 
-        if torch.cuda.is_available() and mode == 'cuda':
-            input_tensor = input_tensor.to(mode)
+        if torch.cuda.is_available() and self.mode == 'cuda':
+            input_tensor = input_tensor.to(self.mode)
         with torch.no_grad():
             predictions = model(input_tensor, start_layer = start_layer, end_layer = end_layer)
         if end_layer <= 21: #22 maybe? fix magic number
@@ -116,7 +117,7 @@ class Model:
 
     
     def warmup(self, iterations = 50):
-        if mode != 'cuda':
+        if self.mode != 'cuda':
             print("Warmup not required.")
         else:
             print("Starting warmup.")
