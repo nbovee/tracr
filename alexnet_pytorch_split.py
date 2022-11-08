@@ -8,7 +8,6 @@ from torchvision import transforms, models
 image_size = (224, 224)
 # model = torch.hub.load('pytorch/vision:v0.10.0', selected, pretrained=True)
 model = None
-mode = 'cpu'
 max_layers = 21
 
 preprocess = transforms.Compose([
