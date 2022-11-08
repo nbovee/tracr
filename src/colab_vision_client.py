@@ -47,7 +47,9 @@ class FileClient:
             # print(f"Received message from server for id:{received_msg.id} ")
             self.results_dict[received_msg.id]["server_result_class"] = received_msg.results
             self.results_dict[received_msg.id]["client_complete_time"] = time.time()
+            print(received_msg)
             for key, val in received_msg.keypairs.items():
+                # print(f"{key}, {val}")
                 self.results_dict[received_msg.id][key] = val
 
     def inference_generator_test(self, data_loader):
