@@ -7,7 +7,7 @@ import grpc
 # from timeit import default_timer as timer
 import time
 # from time import perf_counter_ns as timer, process_time_ns as cpu_timer
-from time import time as timer
+import time
 import uuid
 import pickle
 import blosc2 as blosc
@@ -42,7 +42,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                     # print(f"Message received with id {msg.id}.")
                     m = colab_vision_pb2.Response_Dict(
                             id = msg.id,
-                            results = str(i).encode(),
+                            results = None,
                             actions = msg.action
                         )
                     if colab_vision_pb2.ACT_END in msg.action:
@@ -55,14 +55,14 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                         last_id = msg.id
                         m.keypairs["server_start_time"] = time.time()
                     # rebuild data
-                    if msg.id == last_id:
+                    if msg.id == last_id and colab_vision_pb2.ACT_INFERENCE not in msg.action:
                         current_chunks.append(msg.chunk)
                     if colab_vision_pb2.ACT_APPEND in msg.action:
                         raise Exception("Append Unsupported")
                     if colab_vision_pb2.ACT_INFERENCE in msg.action:
-                        print(len(current_chunks))
                         current_chunks = colab_vision.save_chunks_to_object(current_chunks)
-                        print(len(current_chunks))
+                        # print(len(current_chunks[:-2]))
+                        # print(current_chunks[-27:-2].hex()) # investigate
                         m.keypairs["server_assemble_time"] = time.time()
                         # decompress if needed
                         if colab_vision_pb2.ACT_COMPRESSED in msg.action:
@@ -70,6 +70,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                             m.keypairs["server_compression_time"] = time.time() #not sure if this can even be done on instantiation
                         # start inference
                         prediction = self.model.predict(current_chunks, start_layer=msg.layer)
+                        m.results = prediction.encode()
                         m.keypairs["server_inference_time"] = time.time()
                         # clean results
                         # m.keypairs["server_processing_time"] = time.time()
