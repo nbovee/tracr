@@ -34,27 +34,29 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                 self.model = alex.Model()
                 # self.model = Model()
 
-            def constantInference_test(self, request_iterator, context):
+            def constantInference(self, request_iterator, context):
                 #unpack msg contents
                 current_chunks = []
                 last_id = None
                 for i, msg in enumerate(request_iterator):
                     print(f"Message received with id {msg.id}. Responding with Dummy.")
-                    yield colab_vision_pb2.Response_Dict(
-                            id = f"test response for {msg.id} is {i}",
-                            keypairs = None,
-                            results = None,
-                            actions = None
+                    m = colab_vision_pb2.Response_Dict(
+                            id = f"reply to{msg.id}",
+                            results = str(i).encode(),
+                            actions = msg.action
                         )
+                    m.keypairs.append(colab_vision_pb2.Response_Dict.Keypair())
+                    m.keypairs["test"] = 1 #not sure if this can even be done on instantiation
+                    yield m
 
-            def constantInference(self, request_iterator, context):
+            def constantInference_1(self, request_iterator, context):
                 #unpack msg contents
                 current_chunks = []
                 last_id = None
                 for msg in request_iterator:
-                    if 4 in msg.action:
+                    if colab_vision_pb2.ACT_END in msg.action:
                         break #exit
-                    if 1 in msg.action:
+                    if colab_vision_pb2.ACT_RESET in msg.action:
                         #reset operation regardless of current progress
                         current_chunks = []
                         last_id = msg.id
@@ -64,16 +66,16 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                     else:
                         current_chunks = [].append(msg.chunk)
                     #continue the same inference
-                    if 2 in msg.action: 
+                    if colab_vision_pb2.ACT_APPEND in msg.action: 
                         #convert chunks into object and save at appropriate layer
                         current_chunks = save_chunks_to_object(current_chunks)
-                        if 5 in msg.action: # decompress
+                        if colab_vision_pb2.ACT_COMPRESSED in msg.action: # decompress
                             current_chunks = blosc.unpack_tensor(current_chunks)
                         pass #not yet implemented
-                    if 3 in msg.action:
+                    if colab_vision_pb2.ACT_INFERENCE in msg.action:
                         #convert chunks into object and perform inference
                         partial_inf_tensor = colab_vision.get_object_chunks(current_chunks)
-                        if 5 in msg.action: # decompress
+                        if colab_vision_pb2.ACT_COMPRESSED in msg.action: # decompress
                             partial_inf_tensor = blosc.unpack_tensor(partial_inf_tensor)
                         prediction = self.model.predict(partial_inf_tensor, start_layer=msg.layer)
                         print(f"Inference completed for {msg.id}. Result {prediction}")

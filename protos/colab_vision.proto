@@ -18,11 +18,8 @@ message Info_Chunk{
 }
 
 message Response_Dict{
-    message Keypair {
-        map<string, float> result = 1;
-    }
     string id = 1; //uuid to match test results
-    repeated Keypair keypairs = 2; //this is where we pass timing results
+    map<string, float> keypairs = 2; //this is where we pass timing results. Yes they are a default option, but I want more flex
     bytes results = 3; //not sure what form these should take yet (due to how we would need to handle Yolo), so we will assemble an object from bytes for now
     repeated Action actions = 4; //currently the only important flag is ACT_COMPRESSED, but for large results will still be needed
 }
