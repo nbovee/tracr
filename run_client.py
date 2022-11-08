@@ -4,7 +4,7 @@ import time
 import atexit
 from test_data import test_data_loader as data_loader
 if __name__ == '__main__':
-    client = cv.FileClient('172.17.0.3:8893')
+    client = cv.FileClient('172.17.0.2:8893')
     atexit.register(client.safeClose)
 
     # Model = blah
