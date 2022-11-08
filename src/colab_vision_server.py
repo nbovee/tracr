@@ -4,9 +4,6 @@ import os
 import io
 from concurrent import futures
 import grpc
-# from timeit import default_timer as timer
-import time
-# from time import perf_counter_ns as timer, process_time_ns as cpu_timer
 import time
 import uuid
 import pickle
@@ -43,7 +40,8 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                     m = colab_vision_pb2.Response_Dict(
                             id = msg.id,
                             results = None,
-                            actions = msg.action
+                            actions = msg.action,
+                            keypairs = None
                         )
                     if colab_vision_pb2.ACT_END in msg.action:
                         #hard exit, dont do it
