@@ -3,9 +3,7 @@ import logging
 import os
 import io
 import grpc
-# from timeit import default_timer as timer
-# from time import perf_counter_ns as timer, process_time_ns as cpu_timer
-# from time import time as timer
+
 import time
 import uuid
 import pickle
@@ -47,6 +45,7 @@ class FileClient:
         messages = self.stub.constantInference(self.inference_generator(target))
         for received_msg in messages:
             # print(f"Received message from server for id:{received_msg.id} ")
+            self.results_dict[received_msg.id]["server_result_class"] = received_msg.results
             self.results_dict[received_msg.id]["client_complete_time"] = time.time()
             for key, val in received_msg.keypairs.items():
                 self.results_dict[received_msg.id][key] = val
@@ -67,12 +66,13 @@ class FileClient:
             message = colab_vision_pb2.Info_Chunk()
             message.ClearField('action')#colab_vision_pb2.Action()
             message.id = uuid.uuid4().hex # uuid4().bytes is utf8 not unicode like grpc wants
-            message.layer = exit_layer + 1 # the server begins inference 1 layer above where the edge exited
+            message.layer = exit_layer # the server begins inference 1 layer above where the edge exited
             self.results_dict[message.id] = {} 
             self.results_dict[message.id]["filename"] = filename
             self.results_dict[message.id]["split_layer"] = exit_layer
             self.results_dict[message.id]["compression_level"] = "default"
             self.results_dict[message.id]["client_start_time"] = time.time()
+            # print(f"exit layer: {exit_layer}")
             current_obj = self.model.predict(current_obj, end_layer=exit_layer)
             self.results_dict[message.id]["client_predict_time"] = time.time()
 
@@ -81,6 +81,9 @@ class FileClient:
             if colab_vision.USE_COMPRESSION:
                 message.action.append(colab_vision_pb2.ACT_COMPRESSED)
                 current_obj = blosc.pack_tensor(current_obj)
+                test_ob = blosc.unpack_tensor(current_obj)
+                print(len(current_obj))
+                print(current_obj[-25:].hex())
                 self.results_dict[message.id]["client_compression_time"] = time.time()
             # send all pieces
             for i, piece in enumerate(colab_vision.get_object_chunks(current_obj)):
@@ -93,6 +96,7 @@ class FileClient:
                 yield message
                 number_packets += 1
             message.ClearField('chunk')
+            message.chunk.CopyFrom(colab_vision_pb2.Chunk())
             # send blank message with process flag
             message.action.append(3)
             yield message
