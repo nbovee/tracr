@@ -65,7 +65,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                         # decompress if needed
                         if colab_vision_pb2.ACT_COMPRESSED in msg.action:
                             current_chunks = blosc.unpack_tensor(current_chunks)
-                            m.keypairs["server_compression_time"] = time.time() #not sure if this can even be done on instantiation
+                            m.keypairs["server_decompression_time"] = time.time() #not sure if this can even be done on instantiation
                         # start inference
                         prediction = self.model.predict(current_chunks, start_layer=msg.layer)
                         m.results = prediction.encode()
