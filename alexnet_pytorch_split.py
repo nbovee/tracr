@@ -8,7 +8,7 @@ from torchvision import transforms, models
 image_size = (224, 224)
 # model = torch.hub.load('pytorch/vision:v0.10.0', selected, pretrained=True)
 model = None
-mode = 'cuda'
+mode = 'cpu'
 max_layers = 21
 
 preprocess = transforms.Compose([
@@ -52,14 +52,22 @@ class SplitAlex(models.AlexNet):
         ])
 
     def forward(self, x: torch.Tensor, start_layer = 0, end_layer = np.inf) -> torch.Tensor:
-        i = 0
+        prints = False
+        # if end_layer != np.inf:
+        #     prints = True
         for i in range(start_layer, min(len(self.features), end_layer)):
+            if prints:
+                print(i)
             x = self.features[i].forward(x)
-        for i in range(start_layer + len(self.features), min(len(self.features) + 1, end_layer)):
+        for i in range(len(self.features), min(len(self.features) + 1, end_layer)):
+            if prints:
+                print(i)
             x = self.avgpool(x)
             x = torch.flatten(x, 1)
-        for i in range(start_layer + len(self.features) + 1, min(len(self.features) + len(self.classifier) + 1, end_layer)):
-            x = self.classifier[i - 14].forward(x) #fix magic offset later
+        for i in range(len(self.features) + 1, min(len(self.features) + len(self.classifier) + 1, end_layer)):
+            if prints:
+                print(i)
+            x = self.classifier[i-14].forward(x) #fix magic offset later
         return x
 
 
@@ -74,7 +82,9 @@ class Model:
         self.max_layers =  max_layers
         if torch.cuda.is_available() and mode == 'cuda':
             print("Loading Model to CUDA.")
-            model.to(mode)
+        else:
+            print("Loading Model to CPU.")
+        model.to(mode)
         with open("imagenet_classes.txt", "r") as f:
             self.categories = [s.strip() for s in f.readlines()]
         print("Imagenet categories loaded.")
