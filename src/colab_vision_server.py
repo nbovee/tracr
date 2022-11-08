@@ -39,58 +39,41 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                 current_chunks = []
                 last_id = None
                 for i, msg in enumerate(request_iterator):
-                    print(f"Message received with id {msg.id}. Responding with Dummy.")
+                    # print(f"Message received with id {msg.id}.")
                     m = colab_vision_pb2.Response_Dict(
-                            id = f"reply to{msg.id}",
+                            id = msg.id,
                             results = str(i).encode(),
                             actions = msg.action
                         )
-                    m.keypairs.append(colab_vision_pb2.Response_Dict.Keypair())
-                    m.keypairs["test"] = 1 #not sure if this can even be done on instantiation
-                    yield m
-
-            def constantInference_1(self, request_iterator, context):
-                #unpack msg contents
-                current_chunks = []
-                last_id = None
-                for msg in request_iterator:
                     if colab_vision_pb2.ACT_END in msg.action:
-                        break #exit
+                        #hard exit, dont do it
+                        raise Exception("Hard Exit called")
+                    # if new id
                     if colab_vision_pb2.ACT_RESET in msg.action:
-                        #reset operation regardless of current progress
+                        m.keypairs.clear()
                         current_chunks = []
                         last_id = msg.id
+                        m.keypairs["server_start_time"] = time.time()
+                    # rebuild data
                     if msg.id == last_id:
                         current_chunks.append(msg.chunk)
-                        #continue the same inference
-                    else:
-                        current_chunks = [].append(msg.chunk)
-                    #continue the same inference
-                    if colab_vision_pb2.ACT_APPEND in msg.action: 
-                        #convert chunks into object and save at appropriate layer
-                        current_chunks = save_chunks_to_object(current_chunks)
-                        if colab_vision_pb2.ACT_COMPRESSED in msg.action: # decompress
-                            current_chunks = blosc.unpack_tensor(current_chunks)
-                        pass #not yet implemented
+                    if colab_vision_pb2.ACT_APPEND in msg.action:
+                        raise Exception("Append Unsupported")
                     if colab_vision_pb2.ACT_INFERENCE in msg.action:
-                        #convert chunks into object and perform inference
-                        partial_inf_tensor = colab_vision.get_object_chunks(current_chunks)
-                        if colab_vision_pb2.ACT_COMPRESSED in msg.action: # decompress
-                            partial_inf_tensor = blosc.unpack_tensor(partial_inf_tensor)
-                        prediction = self.model.predict(partial_inf_tensor, start_layer=msg.layer)
-                        print(f"Inference completed for {msg.id}. Result {prediction}")
-                    # print(f"Message received with id {msg.id}. Responding.")
-                        yield colab_vision_pb2.Response_Dict(
-                                id = str(prediction),
-                                keypairs = None,
-                                results = None,
-                                actions = None
-                            )
-      
-                    
-                #deal with chunks
-
-                #do flag actions
+                        print(len(current_chunks))
+                        current_chunks = colab_vision.save_chunks_to_object(current_chunks)
+                        print(len(current_chunks))
+                        m.keypairs["server_assemble_time"] = time.time()
+                        # decompress if needed
+                        if colab_vision_pb2.ACT_COMPRESSED in msg.action:
+                            current_chunks = blosc.unpack_tensor(current_chunks)
+                            m.keypairs["server_compression_time"] = time.time() #not sure if this can even be done on instantiation
+                        # start inference
+                        prediction = self.model.predict(current_chunks, start_layer=msg.layer)
+                        m.keypairs["server_inference_time"] = time.time()
+                        # clean results
+                        # m.keypairs["server_processing_time"] = time.time()
+                    yield m
 
         logging.basicConfig()
         self.server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
