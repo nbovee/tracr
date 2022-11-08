@@ -15,7 +15,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12\x63olab_vision.proto\"W\n\nInfo_Chunk\x12\n\n\x02id\x18\x01 \x01(\t\x12\x15\n\x05\x63hunk\x18\x02 \x01(\x0b\x32\x06.Chunk\x12\x17\n\x06\x61\x63tion\x18\x03 \x03(\x0e\x32\x07.Action\x12\r\n\x05layer\x18\x04 \x01(\x05\"\xde\x01\n\rResponse_Dict\x12\n\n\x02id\x18\x01 \x01(\t\x12(\n\x08keypairs\x18\x02 \x03(\x0b\x32\x16.Response_Dict.Keypair\x12\x0f\n\x07results\x18\x03 \x01(\x0c\x12\x18\n\x07\x61\x63tions\x18\x04 \x03(\x0e\x32\x07.Action\x1al\n\x07Keypair\x12\x32\n\x06result\x18\x01 \x03(\x0b\x32\".Response_Dict.Keypair.ResultEntry\x1a-\n\x0bResultEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x02:\x02\x38\x01\"\x16\n\x05\x43hunk\x12\r\n\x05\x63hunk\x18\x01 \x01(\x0c*h\n\x06\x41\x63tion\x12\x0b\n\x07\x41\x43T_UNK\x10\x00\x12\r\n\tACT_RESET\x10\x01\x12\x0e\n\nACT_APPEND\x10\x02\x12\x11\n\rACT_INFERENCE\x10\x03\x12\x0b\n\x07\x41\x43T_END\x10\x04\x12\x12\n\x0e\x41\x43T_COMPRESSED\x10\x05\x32\x44\n\x0c\x63olab_vision\x12\x34\n\x11\x63onstantInference\x12\x0b.Info_Chunk\x1a\x0e.Response_Dict(\x01\x30\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12\x63olab_vision.proto\"W\n\nInfo_Chunk\x12\n\n\x02id\x18\x01 \x01(\t\x12\x15\n\x05\x63hunk\x18\x02 \x01(\x0b\x32\x06.Chunk\x12\x17\n\x06\x61\x63tion\x18\x03 \x03(\x0e\x32\x07.Action\x12\r\n\x05layer\x18\x04 \x01(\x05\"\xa7\x01\n\rResponse_Dict\x12\n\n\x02id\x18\x01 \x01(\t\x12.\n\x08keypairs\x18\x02 \x03(\x0b\x32\x1c.Response_Dict.KeypairsEntry\x12\x0f\n\x07results\x18\x03 \x01(\x0c\x12\x18\n\x07\x61\x63tions\x18\x04 \x03(\x0e\x32\x07.Action\x1a/\n\rKeypairsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x02:\x02\x38\x01\"\x16\n\x05\x43hunk\x12\r\n\x05\x63hunk\x18\x01 \x01(\x0c*h\n\x06\x41\x63tion\x12\x0b\n\x07\x41\x43T_UNK\x10\x00\x12\r\n\tACT_RESET\x10\x01\x12\x0e\n\nACT_APPEND\x10\x02\x12\x11\n\rACT_INFERENCE\x10\x03\x12\x0b\n\x07\x41\x43T_END\x10\x04\x12\x12\n\x0e\x41\x43T_COMPRESSED\x10\x05\x32\x44\n\x0c\x63olab_vision\x12\x34\n\x11\x63onstantInference\x12\x0b.Info_Chunk\x1a\x0e.Response_Dict(\x01\x30\x01\x62\x06proto3')
 
 _ACTION = DESCRIPTOR.enum_types_by_name['Action']
 Action = enum_type_wrapper.EnumTypeWrapper(_ACTION)
@@ -29,8 +29,7 @@ ACT_COMPRESSED = 5
 
 _INFO_CHUNK = DESCRIPTOR.message_types_by_name['Info_Chunk']
 _RESPONSE_DICT = DESCRIPTOR.message_types_by_name['Response_Dict']
-_RESPONSE_DICT_KEYPAIR = _RESPONSE_DICT.nested_types_by_name['Keypair']
-_RESPONSE_DICT_KEYPAIR_RESULTENTRY = _RESPONSE_DICT_KEYPAIR.nested_types_by_name['ResultEntry']
+_RESPONSE_DICT_KEYPAIRSENTRY = _RESPONSE_DICT.nested_types_by_name['KeypairsEntry']
 _CHUNK = DESCRIPTOR.message_types_by_name['Chunk']
 Info_Chunk = _reflection.GeneratedProtocolMessageType('Info_Chunk', (_message.Message,), {
   'DESCRIPTOR' : _INFO_CHUNK,
@@ -41,17 +40,10 @@ _sym_db.RegisterMessage(Info_Chunk)
 
 Response_Dict = _reflection.GeneratedProtocolMessageType('Response_Dict', (_message.Message,), {
 
-  'Keypair' : _reflection.GeneratedProtocolMessageType('Keypair', (_message.Message,), {
-
-    'ResultEntry' : _reflection.GeneratedProtocolMessageType('ResultEntry', (_message.Message,), {
-      'DESCRIPTOR' : _RESPONSE_DICT_KEYPAIR_RESULTENTRY,
-      '__module__' : 'colab_vision_pb2'
-      # @@protoc_insertion_point(class_scope:Response_Dict.Keypair.ResultEntry)
-      })
-    ,
-    'DESCRIPTOR' : _RESPONSE_DICT_KEYPAIR,
+  'KeypairsEntry' : _reflection.GeneratedProtocolMessageType('KeypairsEntry', (_message.Message,), {
+    'DESCRIPTOR' : _RESPONSE_DICT_KEYPAIRSENTRY,
     '__module__' : 'colab_vision_pb2'
-    # @@protoc_insertion_point(class_scope:Response_Dict.Keypair)
+    # @@protoc_insertion_point(class_scope:Response_Dict.KeypairsEntry)
     })
   ,
   'DESCRIPTOR' : _RESPONSE_DICT,
@@ -59,8 +51,7 @@ Response_Dict = _reflection.GeneratedProtocolMessageType('Response_Dict', (_mess
   # @@protoc_insertion_point(class_scope:Response_Dict)
   })
 _sym_db.RegisterMessage(Response_Dict)
-_sym_db.RegisterMessage(Response_Dict.Keypair)
-_sym_db.RegisterMessage(Response_Dict.Keypair.ResultEntry)
+_sym_db.RegisterMessage(Response_Dict.KeypairsEntry)
 
 Chunk = _reflection.GeneratedProtocolMessageType('Chunk', (_message.Message,), {
   'DESCRIPTOR' : _CHUNK,
@@ -73,20 +64,18 @@ _COLAB_VISION = DESCRIPTOR.services_by_name['colab_vision']
 if _descriptor._USE_C_DESCRIPTORS == False:
 
   DESCRIPTOR._options = None
-  _RESPONSE_DICT_KEYPAIR_RESULTENTRY._options = None
-  _RESPONSE_DICT_KEYPAIR_RESULTENTRY._serialized_options = b'8\001'
-  _ACTION._serialized_start=360
-  _ACTION._serialized_end=464
+  _RESPONSE_DICT_KEYPAIRSENTRY._options = None
+  _RESPONSE_DICT_KEYPAIRSENTRY._serialized_options = b'8\001'
+  _ACTION._serialized_start=305
+  _ACTION._serialized_end=409
   _INFO_CHUNK._serialized_start=22
   _INFO_CHUNK._serialized_end=109
   _RESPONSE_DICT._serialized_start=112
-  _RESPONSE_DICT._serialized_end=334
-  _RESPONSE_DICT_KEYPAIR._serialized_start=226
-  _RESPONSE_DICT_KEYPAIR._serialized_end=334
-  _RESPONSE_DICT_KEYPAIR_RESULTENTRY._serialized_start=289
-  _RESPONSE_DICT_KEYPAIR_RESULTENTRY._serialized_end=334
-  _CHUNK._serialized_start=336
-  _CHUNK._serialized_end=358
-  _COLAB_VISION._serialized_start=466
-  _COLAB_VISION._serialized_end=534
+  _RESPONSE_DICT._serialized_end=279
+  _RESPONSE_DICT_KEYPAIRSENTRY._serialized_start=232
+  _RESPONSE_DICT_KEYPAIRSENTRY._serialized_end=279
+  _CHUNK._serialized_start=281
+  _CHUNK._serialized_end=303
+  _COLAB_VISION._serialized_start=411
+  _COLAB_VISION._serialized_end=479
 # @@protoc_insertion_point(module_scope)
