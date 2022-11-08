@@ -37,15 +37,19 @@ class FileClient:
 
     def safeClose(self):
         self.channel.close()
-        print(self.results_dict)
+        for result, dic in self.results_dict.items():
+            print(f"{result}:")
+            for key, val in dic.items():
+                print(f"\t{key}\t{val}")
         
     def initiateInference(self, target):
         #stuff
         messages = self.stub.constantInference(self.inference_generator(target))
         for received_msg in messages:
-            print("Received message from server with contents: ")
-            print(received_msg)
-            # results_dict[received_msg.pop(id)] = received_msg
+            # print(f"Received message from server for id:{received_msg.id} ")
+            self.results_dict[received_msg.id]["client_complete_time"] = time.time()
+            for key, val in received_msg.keypairs.items():
+                self.results_dict[received_msg.id][key] = val
 
     def inference_generator_test(self, data_loader):
         for i in range(5):
@@ -55,36 +59,47 @@ class FileClient:
         print("image available.")
         tmp = data_loader.next()
         while(tmp):
+            number_packets = 0
             try:
                 [ current_obj, exit_layer, filename ] = next(tmp)
             except StopIteration:
                 return
-            current_obj = self.model.predict(current_obj, end_layer=exit_layer)
             message = colab_vision_pb2.Info_Chunk()
             message.ClearField('action')#colab_vision_pb2.Action()
             message.id = uuid.uuid4().hex # uuid4().bytes is utf8 not unicode like grpc wants
+            message.layer = exit_layer + 1 # the server begins inference 1 layer above where the edge exited
             self.results_dict[message.id] = {} 
             self.results_dict[message.id]["filename"] = filename
-            message.layer = exit_layer + 1 # the server begins inference 1 layer above where the edge exited
+            self.results_dict[message.id]["split_layer"] = exit_layer
+            self.results_dict[message.id]["compression_level"] = "default"
+            self.results_dict[message.id]["client_start_time"] = time.time()
+            current_obj = self.model.predict(current_obj, end_layer=exit_layer)
+            self.results_dict[message.id]["client_predict_time"] = time.time()
+
+            message.ClearField('action')
+            message.action.append(colab_vision_pb2.ACT_RESET)
             if colab_vision.USE_COMPRESSION:
-                message.action.append(5)
-                t1 = time.time()
+                message.action.append(colab_vision_pb2.ACT_COMPRESSED)
                 current_obj = blosc.pack_tensor(current_obj)
-                print(time.time() - t1)
+                self.results_dict[message.id]["client_compression_time"] = time.time()
+            # send all pieces
             for i, piece in enumerate(colab_vision.get_object_chunks(current_obj)):
                 message.chunk.CopyFrom(piece)
-                message.ClearField('action')#colab_vision_pb2.Action()
-                if i == 0:
-                    message.action.append(colab_vision_pb2.ACT_RESET)
+                if i == 1:
+                    message.action.remove(colab_vision_pb2.ACT_RESET)
                 # if piece is None: #current behavior will send the entirety of the current_obj, then when generator ends, follow up with action flags. small efficiency boost possible if has_next is altered
                 #     message.action.append(3)
                     # print(f"total messages {i}")
                 yield message
+                number_packets += 1
             message.ClearField('chunk')
-            if colab_vision.USE_COMPRESSION:
-                message.action.append(5)
+            # send blank message with process flag
             message.action.append(3)
             yield message
+            number_packets += 1
+            self.results_dict[message.id]["client_upload_time"] = time.time()
+            self.results_dict[message.id]["client_number_packets"] = number_packets
+
 
     # def start(self, port):
     #     self.server.add_insecure_port(f'[::]:{port}')
