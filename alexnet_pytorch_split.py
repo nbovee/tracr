@@ -51,7 +51,7 @@ class SplitAlex(models.AlexNet):
         ])
 
     def forward(self, x: torch.Tensor, start_layer = 0, end_layer = np.inf) -> torch.Tensor:
-        prints = False
+        prints = True
         # if start_layer != 0:
         #     prints = True
         active_layer = start_layer
@@ -60,9 +60,10 @@ class SplitAlex(models.AlexNet):
                 print(f"features{active_layer}")
             x = self.features[active_layer].forward(x)
             active_layer += 1
-        while(active_layer == len(self.features)):
+        while(active_layer == len(self.features) && active_layer != end_layer):
             if prints:
                 print(f"pool{active_layer}")
+                print(x)
             x = self.avgpool(x)
             x = torch.flatten(x, 1)
             active_layer += 1
