@@ -80,7 +80,7 @@ class Model:
         # print(model)
         model.eval()
         self.max_layers =  max_layers
-        if torch.cuda.is_available() and mode == 'cuda':
+        if torch.cuda.is_available() and self.mode == 'cuda':
             print("Loading Model to CUDA.")
         else:
             print("Loading Model to CPU.")
