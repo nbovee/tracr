@@ -38,7 +38,6 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                 last_id = None
                 reference_time = 0
                 for i, msg in enumerate(request_iterator):
-                    # print(f"Message received with id {msg.id}.")
                     m = colab_vision_pb2.Response_Dict(
                             id = msg.id,
                             results = None,
@@ -62,7 +61,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                     if colab_vision_pb2.ACT_APPEND in msg.action:
                         raise Exception("Append Unsupported")
                     if colab_vision_pb2.ACT_INFERENCE in msg.action:
-                        print(f"Chunks to convert: {len(current_chunks)}")
+                        # print(f"Chunks to convert: {len(current_chunks)}")
                         current_chunks = colab_vision.save_chunks_to_object(current_chunks)
                         # print(current_chunks[-27:-2].hex()) # investigate
                         m.keypairs["server_assemble_time"] = time.time()-reference_time
@@ -77,6 +76,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                         m.keypairs["server_inference_time"] = time.time()-reference_time
                         # clean results
                         # m.keypairs["server_processing_time"] = time.time()
+                    print(f"Returning prediction for {msg.id}.")
                     yield m
 
         logging.basicConfig()
