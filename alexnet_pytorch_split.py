@@ -60,7 +60,7 @@ class SplitAlex(models.AlexNet):
                 print(f"features{active_layer}")
             x = self.features[active_layer].forward(x)
             active_layer += 1
-        while(active_layer == len(self.features) && active_layer != end_layer):
+        while(active_layer == len(self.features) and active_layer != end_layer):
             if prints:
                 print(f"pool{active_layer}")
                 print(x)
