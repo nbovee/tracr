@@ -39,7 +39,7 @@ def get_object_chunks(object):
         piece = object[pos:pos + CHUNK_SIZE]
         if len(piece) == 0:
             return
-        yield colab_vision_pb2.Chunk(chunk=piece)
+        yield piece
 
 def save_chunks_to_object(chunks):
     chunk_byte_list = []

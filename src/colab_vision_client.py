@@ -3,7 +3,7 @@ import logging
 import os
 import io
 import grpc
-
+import pandas as pd
 import time
 import re
 import uuid
@@ -36,6 +36,8 @@ class FileClient:
 
     def safeClose(self):
         self.channel.close()
+        df = pd.DataFrame(data = self.results_dict)
+        df.to_csv('/test_results/test_results-11-15-22.csv')
         for result, dic in self.results_dict.items():
             if 'client_complete_time' in dic.keys():
                 print(f"{result}:\n\tOverall Time\t{dic['client_complete_time'] - dic['client_start_time']}")
@@ -62,7 +64,7 @@ class FileClient:
             yield colab_vision_pb2.Info_Chunk(id = "test")
 
     def inference_generator(self, data_loader):
-        print("image available.")
+        # print("image available.")
         tmp = data_loader.next()
         while(tmp):
             size_packets = 0
@@ -87,20 +89,23 @@ class FileClient:
             message.action.append(colab_vision_pb2.ACT_RESET)
             if colab_vision.USE_COMPRESSION:
                 message.action.append(colab_vision_pb2.ACT_COMPRESSED)
+                # Custom compression sizes require we provide tensor shape info to the server
+                # current_obj = blosc.compress(current_obj.numpy().to_bytes(), clevel = 9) #force = True if we move to 1.13
                 current_obj = blosc.pack_tensor(current_obj)
-                test_ob = blosc.unpack_tensor(current_obj)
                 self.results_dict[message.id]["client_compression_time"] = time.time()
             # send all pieces
             for i, piece in enumerate(colab_vision.get_object_chunks(current_obj)):
-                message.chunk.CopyFrom(piece)
+                message.chunk.chunk = piece
+                # message.chunk.CopyFrom(piece)
                 if i == 1:
                     message.action.remove(colab_vision_pb2.ACT_RESET)
                 yield message
                 size_packets += len(message.chunk.chunk)
             message.ClearField('chunk')
-            message.chunk.CopyFrom(colab_vision_pb2.Chunk())
+            message.chunk.chunk = b''
             # send blank message with process flag
-            message.action.append(3)
+            message.action.remove(colab_vision_pb2.ACT_RESET)
+            message.action.append(colab_vision_pb2.ACT_INFERENCE)
             yield message
             self.results_dict[message.id]["client_upload_time"] = time.time()
             self.results_dict[message.id]["client_upload_bytes"] = size_packets
