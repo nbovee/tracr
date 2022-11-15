@@ -28,7 +28,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
         class Servicer(colab_vision_pb2_grpc.colab_visionServicer):
             def __init__(self):
                 self.tmp_folder = './temp/'
-                self.model = alex.Model()
+                self.model = alex.Model(mode = 'cpu')
                 # self.model = Model()
 
             def constantInference(self, request_iterator, context):
@@ -58,8 +58,8 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                     if colab_vision_pb2.ACT_APPEND in msg.action:
                         raise Exception("Append Unsupported")
                     if colab_vision_pb2.ACT_INFERENCE in msg.action:
+                        print(f"Chunks to convert: {len(current_chunks)}")
                         current_chunks = colab_vision.save_chunks_to_object(current_chunks)
-                        # print(len(current_chunks[:-2]))
                         # print(current_chunks[-27:-2].hex()) # investigate
                         m.keypairs["server_assemble_time"] = time.time()
                         # decompress if needed
