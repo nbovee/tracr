@@ -52,23 +52,24 @@ class SplitAlex(models.AlexNet):
 
     def forward(self, x: torch.Tensor, start_layer = 0, end_layer = np.inf) -> torch.Tensor:
         prints = False
-        if start_layer != 0:
-            prints = True
+        # if start_layer != 0:
+        #     prints = True
         active_layer = start_layer
         while(active_layer < min(len(self.features), end_layer)):
             if prints:
                 print(f"features{active_layer}")
             x = self.features[active_layer].forward(x)
+            active_layer += 1
         while(active_layer == len(self.features)):
             if prints:
                 print(f"pool{active_layer}")
             x = self.avgpool(x)
             x = torch.flatten(x, 1)
             active_layer += 1
-        while(active_layer < min(len(self.features)+len(self.classifier), end_layer)):
+        while(active_layer < min(len(self.features)+len(self.classifier)+1, end_layer)):
             if prints:
-                print(f"class{active_layer}")
-            x = self.classifier[active_layer].forward(x) #fix magic offset later
+                print(f"class{active_layer-len(self.features)-1}")
+            x = self.classifier[active_layer-(len(self.features)+1)].forward(x) #fix magic offset later
             active_layer += 1
         return x
 
@@ -77,10 +78,8 @@ class Model:
     def __init__(self, mode = "cpu") -> None:
         global model
         self.mode = mode
-        # values = models.alexnet(pretrained=True).state_dict()
         model = SplitAlex()
         model.load_state_dict(models.alexnet(pretrained=True).state_dict())
-        # print(model)
         model.eval()
         self.max_layers =  max_layers
         if torch.cuda.is_available() and self.mode == 'cuda':
@@ -98,7 +97,6 @@ class Model:
         if isinstance(payload, Image.Image):
             if payload.size != image_size:
                 payload = payload.resize(image_size)
-                # img = Image.load_img(img, target_size=image_size) #?
             input_tensor = preprocess(payload)
             input_tensor = input_tensor.unsqueeze(0)
         elif isinstance(payload, torch.Tensor):
@@ -107,7 +105,7 @@ class Model:
             input_tensor = input_tensor.to(self.mode)
         with torch.no_grad():
             predictions = model(input_tensor, start_layer = start_layer, end_layer = end_layer)
-        if end_layer <= 21: #22 maybe? fix magic number
+        if end_layer < 21: #22 maybe? fix magic number
             return predictions
         else:
             probabilities = torch.nn.functional.softmax(predictions[0], dim=0)

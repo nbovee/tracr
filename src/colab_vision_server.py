@@ -70,7 +70,6 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                             current_chunks = blosc.unpack_tensor(current_chunks)
                             m.keypairs["server_decompression_time"] = time.time()-reference_time #not sure if this can even be done on instantiation
                         # start inference
-                        print(f"msg layer {msg.layer}")
                         prediction = self.model.predict(current_chunks, start_layer=msg.layer)
                         m.results = prediction.encode()
                         m.keypairs["server_inference_time"] = time.time()-reference_time
