@@ -37,7 +37,8 @@ class FileClient:
     def safeClose(self):
         self.channel.close()
         for result, dic in self.results_dict.items():
-            print(f"{result}:\n\tOverall Time\t{dic['client_complete_time'] - dic['client_start_time']}")
+            if 'client_complete_time' in dic.keys():
+                print(f"{result}:\n\tOverall Time\t{dic['client_complete_time'] - dic['client_start_time']}")
             for key, val in dic.items():
                 if re.search("^server.*time$", key):
                     val += dic["server_reference_float"]
