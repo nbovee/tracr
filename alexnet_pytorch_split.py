@@ -105,7 +105,7 @@ class Model:
             input_tensor = input_tensor.to(self.mode)
         with torch.no_grad():
             predictions = model(input_tensor, start_layer = start_layer, end_layer = end_layer)
-        if end_layer < 21: #22 maybe? fix magic number
+        if end_layer < 20: # fix magic number
             return predictions
         else:
             probabilities = torch.nn.functional.softmax(predictions[0], dim=0)
