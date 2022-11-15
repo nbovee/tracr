@@ -5,6 +5,7 @@ import io
 import grpc
 
 import time
+import re
 import uuid
 import pickle
 import blosc2 as blosc
@@ -36,9 +37,12 @@ class FileClient:
     def safeClose(self):
         self.channel.close()
         for result, dic in self.results_dict.items():
-            print(f"{result}:")
+            print(f"{result}:\n\tOverall Time\t{dic['client_complete_time'] - dic['client_start_time']}")
             for key, val in dic.items():
-                print(f"\t{key}\t{val}")
+                if re.search("^server.*time$", key):
+                    val += dic["server_reference_float"]
+                if key != "server_reference_float": #lazy
+                    print(f"\t{key}\t{val}")
         
     def initiateInference(self, target):
         #stuff
@@ -47,10 +51,10 @@ class FileClient:
             # print(f"Received message from server for id:{received_msg.id} ")
             self.results_dict[received_msg.id]["server_result_class"] = received_msg.results
             self.results_dict[received_msg.id]["client_complete_time"] = time.time()
-            print(received_msg)
             for key, val in received_msg.keypairs.items():
                 # print(f"{key}, {val}")
                 self.results_dict[received_msg.id][key] = val
+            # self.results_dict[received_msg.id].pop("server_reference_float")
 
     def inference_generator_test(self, data_loader):
         for i in range(5):
@@ -60,7 +64,7 @@ class FileClient:
         print("image available.")
         tmp = data_loader.next()
         while(tmp):
-            number_packets = 0
+            size_packets = 0
             try:
                 [ current_obj, exit_layer, filename ] = next(tmp)
             except StopIteration:
@@ -84,27 +88,21 @@ class FileClient:
                 message.action.append(colab_vision_pb2.ACT_COMPRESSED)
                 current_obj = blosc.pack_tensor(current_obj)
                 test_ob = blosc.unpack_tensor(current_obj)
-                print(len(current_obj))
-                print(current_obj[-25:].hex())
                 self.results_dict[message.id]["client_compression_time"] = time.time()
             # send all pieces
             for i, piece in enumerate(colab_vision.get_object_chunks(current_obj)):
                 message.chunk.CopyFrom(piece)
                 if i == 1:
                     message.action.remove(colab_vision_pb2.ACT_RESET)
-                # if piece is None: #current behavior will send the entirety of the current_obj, then when generator ends, follow up with action flags. small efficiency boost possible if has_next is altered
-                #     message.action.append(3)
-                    # print(f"total messages {i}")
                 yield message
-                number_packets += 1
+                size_packets += len(message.chunk.chunk)
             message.ClearField('chunk')
             message.chunk.CopyFrom(colab_vision_pb2.Chunk())
             # send blank message with process flag
             message.action.append(3)
             yield message
-            number_packets += 1
             self.results_dict[message.id]["client_upload_time"] = time.time()
-            self.results_dict[message.id]["client_number_packets"] = number_packets
+            self.results_dict[message.id]["client_upload_bytes"] = size_packets
 
 
     # def start(self, port):
