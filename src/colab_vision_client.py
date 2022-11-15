@@ -37,15 +37,15 @@ class FileClient:
     def safeClose(self):
         self.channel.close()
         df = pd.DataFrame(data = self.results_dict)
-        df.to_csv('/test_results/test_results-11-15-22.csv')
-        for result, dic in self.results_dict.items():
-            if 'client_complete_time' in dic.keys():
-                print(f"{result}:\n\tOverall Time\t{dic['client_complete_time'] - dic['client_start_time']}")
-            for key, val in dic.items():
-                if re.search("^server.*time$", key):
-                    val += dic["server_reference_float"]
-                if key != "server_reference_float": #lazy
-                    print(f"\t{key}\t{val}")
+        df.to_csv('./test_results/test_results-11-15-22.csv')
+        # for result, dic in self.results_dict.items():
+        #     if 'client_complete_time' in dic.keys():
+        #         print(f"{result}:\n\tOverall Time\t{dic['client_complete_time'] - dic['client_start_time']}")
+        #     for key, val in dic.items():
+        #         if re.search("^server.*time$", key):
+        #             val += dic["server_reference_float"]
+        #         if key != "server_reference_float": #lazy
+        #             print(f"\t{key}\t{val}")
         
     def initiateInference(self, target):
         #stuff
@@ -103,8 +103,9 @@ class FileClient:
                 size_packets += len(message.chunk.chunk)
             message.ClearField('chunk')
             message.chunk.chunk = b''
-            # send blank message with process flag
-            message.action.remove(colab_vision_pb2.ACT_RESET)
+            # clear RESET from single msg inferences
+            if(colab_vision_pb2.ACT_RESET in message.action):
+                message.action.remove(colab_vision_pb2.ACT_RESET)
             message.action.append(colab_vision_pb2.ACT_INFERENCE)
             yield message
             self.results_dict[message.id]["client_upload_time"] = time.time()
