@@ -29,7 +29,7 @@ from . import colab_vision_pb2_grpc
 
 BITRATE = 0.1 * 2 ** 20 # byte/s
 USE_COMPRESSION = True
-CHUNK_SIZE = 1024 #* 1024  # 1MB
+CHUNK_SIZE = 1024 * 1024  # 1MB
 # this should probably be an independant database that client and server can both interact with async
 
 
@@ -39,7 +39,7 @@ def get_object_chunks(object):
         piece = object[pos:pos + CHUNK_SIZE]
         if len(piece) == 0:
             return
-        yield colab_vision_pb2.Chunk(chunk=piece)
+        yield piece
 
 def save_chunks_to_object(chunks):
     chunk_byte_list = []
