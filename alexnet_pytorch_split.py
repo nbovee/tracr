@@ -4,6 +4,11 @@ from PIL import Image
 import torch
 import torch.nn as nn
 from torchvision import transforms, models
+import time
+import pandas as pd
+from test_data import test_data_loader as data_loader
+import atexit
+
 
 image_size = (224, 224)
 # model = torch.hub.load('pytorch/vision:v0.10.0', selected, pretrained=True)
@@ -128,5 +133,26 @@ class Model:
                 _ = self.predict(warmup_image)
             print("Warmup complete.")
 
+    def safeClose(self):
+        df = pd.DataFrame(data = self.baseline_dict)
+        df.to_csv('./test_results/test_results-desktop_cuda.csv')
+        torch.cuda.empty_cache()
+
+
 if __name__ == "__main__":
-    m = Model()
+    # running as main will test baselines on the running platform
+    m = Model(mode = "cuda")
+    atexit.register(m.safeClose)
+    m.baseline_dict = {}
+    test_data = data_loader()
+    i = 0
+    for [data, filename] in test_data.image_list:
+        t1 = time.time()
+        prediction = m.predict(data)
+        print(i)
+        i+=1
+        m.baseline_dict[filename] = {
+            "source" : "desktop_cuda",
+            "prediction" : prediction,
+            "inference_time" : time.time()-t1}
+

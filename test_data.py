@@ -26,7 +26,7 @@ class test_data_loader(data_wrapper):
         self.image_list.clear()
         # print(f"len iglob {len(list(glob.iglob(path)))}")
         for image in glob.iglob(path):
-            print(image)
-            self.image_list.append([ Image.open(image), image ])
+            # print(image)
+            self.image_list.append([ Image.open(image).convert('RGB'), image ])
             if len(self.image_list) >= max_images:
                 break
