@@ -37,7 +37,7 @@ class FileClient:
     def safeClose(self):
         self.channel.close()
         df = pd.DataFrame(data = self.results_dict)
-        df.to_csv('./test_results/test_results-11-22-cCPU-sCUDA_1.csv')
+        df.to_csv('./test_results/test_results-11-22-cCPU-sCUDA.csv')
         # for result, dic in self.results_dict.items():
         #     if 'client_complete_time' in dic.keys():
         #         print(f"{result}:\n\tOverall Time\t{dic['client_complete_time'] - dic['client_start_time']}")
@@ -99,7 +99,7 @@ class FileClient:
                 # message.chunk.CopyFrom(piece)
                 if i == 1:
                     message.action.remove(colab_vision_pb2.ACT_RESET)
-                yield message
+                yield message # might be sending twice?
                 size_packets += len(message.chunk.chunk)
             message.ClearField('chunk')
             message.chunk.chunk = b''
@@ -107,7 +107,7 @@ class FileClient:
             if(colab_vision_pb2.ACT_RESET in message.action):
                 message.action.remove(colab_vision_pb2.ACT_RESET)
             message.action.append(colab_vision_pb2.ACT_INFERENCE)
-            yield message
+            yield message # might be sending twice?
             self.results_dict[message.id]["client_upload_time"] = time.time()
             self.results_dict[message.id]["client_upload_bytes"] = size_packets
 
