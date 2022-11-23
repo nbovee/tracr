@@ -4,7 +4,7 @@ import time
 import atexit
 from test_data import test_data_loader as data_loader
 if __name__ == '__main__':
-    client = cv.FileClient('172.17.0.3:8893')
+    client = cv.FileClient('172.17.0.2:8893')
     atexit.register(client.safeClose)
 
     # Model = blah
@@ -33,3 +33,4 @@ if __name__ == '__main__':
     #         print(f"{i} : {results[i]:.04f}")
     #     else:
     #         print(f"{i} : {results[i]}")
+ # docker run --gpus all --name "grpc_server" -t -rm --mount type=bind,source="F:\Nick\Documents\Code\Work\Summer Research\collab-vision",target=/app nvcr.io/nvidia/pytorch:21.08-py3 nvidia-smi

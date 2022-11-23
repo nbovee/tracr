@@ -1,9 +1,10 @@
 blosc2==0.5.2
 grpc==1.0.0
 grpc_tools==1.0.0
-grpcio==1.39.0
+grpcio==1.50.0
+grpcio_tools==1.50.0
 numpy==1.21.2
-pandas==1.5.1
+pandas==1.5.2
 Pillow==9.3.0
 protobuf==4.21.9
 tensorflow==2.11.0

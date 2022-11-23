@@ -37,7 +37,7 @@ class FileClient:
     def safeClose(self):
         self.channel.close()
         df = pd.DataFrame(data = self.results_dict)
-        df.to_csv('./test_results/test_results-11-15-22.csv')
+        df.to_csv('./test_results/test_results-11-22-cCPU-sCUDA_1.csv')
         # for result, dic in self.results_dict.items():
         #     if 'client_complete_time' in dic.keys():
         #         print(f"{result}:\n\tOverall Time\t{dic['client_complete_time'] - dic['client_start_time']}")

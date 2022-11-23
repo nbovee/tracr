@@ -29,7 +29,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
         class Servicer(colab_vision_pb2_grpc.colab_visionServicer):
             def __init__(self):
                 self.tmp_folder = './temp/'
-                self.model = alex.Model(mode = 'cpu')
+                self.model = alex.Model(mode = 'cuda')
                 # self.model = Model()
 
             def constantInference(self, request_iterator, context):
