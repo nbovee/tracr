@@ -107,7 +107,7 @@ class Model:
             input_tensor = input_tensor.unsqueeze(0)
         elif isinstance(payload, torch.Tensor):
             input_tensor = payload 
-        if torch.cuda.is_available() and self.mode == 'cuda' and input_tensor.device == 'cpu':
+        if torch.cuda.is_available() and self.mode == 'cuda' and input_tensor.device != self.mode:
             input_tensor = input_tensor.to(self.mode)
         with torch.no_grad():
             predictions = model(input_tensor, start_layer = start_layer, end_layer = end_layer)
