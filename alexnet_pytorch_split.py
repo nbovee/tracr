@@ -56,6 +56,7 @@ class SplitAlex(models.AlexNet):
         ])
 
     def forward(self, x: torch.Tensor, start_layer = 0, end_layer = np.inf) -> torch.Tensor:
+        # end layer will not be processed
         prints = False
         # if start_layer != 0:
         #     prints = True
@@ -77,6 +78,7 @@ class SplitAlex(models.AlexNet):
                 print(f"class{active_layer-len(self.features)-1}")
             x = self.classifier[active_layer-(len(self.features)+1)].forward(x) #fix magic offset later
             active_layer += 1
+        # print(f"{active_layer} {end_layer}")
         return x
 
 
@@ -111,7 +113,7 @@ class Model:
             input_tensor = input_tensor.to(self.mode)
         with torch.no_grad():
             predictions = model(input_tensor, start_layer = start_layer, end_layer = end_layer)
-        if end_layer < 20: # fix magic number
+        if end_layer < 21: # fix magic number
             return predictions
         else:
             probabilities = torch.nn.functional.softmax(predictions[0], dim=0)

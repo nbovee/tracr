@@ -17,8 +17,8 @@ class test_data_loader(data_wrapper):
             return None
         else:
             [val, filename] = self.image_list.pop()
-            print(f"Testing \"{filename}\": # left={len(self.image_list)}")
-            for i in range(1,20): # hardcoded split layers for AlexNet - no full processing yet -1 would be full server, 21 would be full client            
+            print(f"Testing \"{filename}\": # images left={len(self.image_list)}")            
+            for i in range(1,21): # hardcoded split layers for AlexNet - no full processing yet. Layer 0 would be full server, 21 would be full client
                 yield [ val, i, filename ]
 
     def load_data(self, path):
