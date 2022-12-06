@@ -30,29 +30,29 @@ class SplitAlex(models.AlexNet):
         # _log_api_usage_once(self) #idk what this is
 
         self.features = nn.ModuleList([
-            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2),
-            nn.Conv2d(64, 192, kernel_size=5, padding=2),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2),
-            nn.Conv2d(192, 384, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(384, 256, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 256, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),  # 0
+            nn.ReLU(inplace=True),                                  # 1
+            nn.MaxPool2d(kernel_size=3, stride=2),                  # 2
+            nn.Conv2d(64, 192, kernel_size=5, padding=2),           # 3
+            nn.ReLU(inplace=True),                                  # 4
+            nn.MaxPool2d(kernel_size=3, stride=2),                  # 5
+            nn.Conv2d(192, 384, kernel_size=3, padding=1),          # 6
+            nn.ReLU(inplace=True),                                  # 7
+            nn.Conv2d(384, 256, kernel_size=3, padding=1),          # 8
+            nn.ReLU(inplace=True),                                  # 9
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),          # 10
+            nn.ReLU(inplace=True),                                  # 11
+            nn.MaxPool2d(kernel_size=3, stride=2),                  # 12
         ])
-        self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
+        self.avgpool = nn.AdaptiveAvgPool2d((6, 6))                 # 13 + flatten
         self.classifier = nn.ModuleList([
-            nn.Dropout(p=dropout),
-            nn.Linear(256 * 6 * 6, 4096),
-            nn.ReLU(inplace=True),
-            nn.Dropout(p=dropout),
-            nn.Linear(4096, 4096),
-            nn.ReLU(inplace=True),
-            nn.Linear(4096, num_classes),
+            nn.Dropout(p=dropout),                                  # 14
+            nn.Linear(256 * 6 * 6, 4096),                           # 15
+            nn.ReLU(inplace=True),                                  # 16
+            nn.Dropout(p=dropout),                                  # 17
+            nn.Linear(4096, 4096),                                  # 18
+            nn.ReLU(inplace=True),                                  # 19
+            nn.Linear(4096, num_classes),                           # 20
         ])
 
     def forward(self, x: torch.Tensor, start_layer = 0, end_layer = np.inf) -> torch.Tensor:
