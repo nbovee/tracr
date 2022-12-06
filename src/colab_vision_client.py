@@ -26,13 +26,15 @@ from . import colab_vision
 from . import colab_vision_pb2
 from . import colab_vision_pb2_grpc
 
+client_mode = 'cpu'
+
 class FileClient:
     def __init__(self, address):
         self.channel = grpc.insecure_channel(address)
         self.stub = colab_vision_pb2_grpc.colab_visionStub(self.channel)
         self.results_dict = {}
         logging.basicConfig()
-        self.model = alex.Model()
+        self.model = alex.Model(mode = client_mode)
 
     def safeClose(self):
         self.channel.close()
@@ -73,20 +75,17 @@ class FileClient:
             except StopIteration:
                 return
             message = colab_vision_pb2.Info_Chunk()
-            message.ClearField('action')#colab_vision_pb2.Action()
             message.id = uuid.uuid4().hex # uuid4().bytes is utf8 not unicode like grpc wants
             message.layer = exit_layer # the server begins inference 1 layer above where the edge exited
             self.results_dict[message.id] = {} 
             self.results_dict[message.id]["filename"] = filename
+            self.results_dict[message.id]["client_mode"] = client_mode
             self.results_dict[message.id]["split_layer"] = exit_layer
-            self.results_dict[message.id]["compression_level"] = "default"
+            self.results_dict[message.id]["compression_level"] = "9"
             self.results_dict[message.id]["client_start_time"] = time.time()
             # print(f"exit layer: {exit_layer}")
             current_obj = self.model.predict(current_obj, end_layer=exit_layer)
             self.results_dict[message.id]["client_predict_time"] = time.time()
-
-            message.ClearField('action')
-            message.action.append(colab_vision_pb2.ACT_RESET)
             if colab_vision.USE_COMPRESSION:
                 message.action.append(colab_vision_pb2.ACT_COMPRESSED)
                 # Custom compression sizes require we provide tensor shape info to the server
@@ -94,6 +93,7 @@ class FileClient:
                 current_obj = blosc.pack_tensor(current_obj)
                 self.results_dict[message.id]["client_compression_time"] = time.time()
             # send all pieces
+            message.action.append(colab_vision_pb2.ACT_RESET)
             for i, piece in enumerate(colab_vision.get_object_chunks(current_obj)):
                 message.chunk.chunk = piece
                 # message.chunk.CopyFrom(piece)

@@ -23,13 +23,16 @@ from . import colab_vision
 from . import colab_vision_pb2
 from . import colab_vision_pb2_grpc
 
+
+server_mode = 'cuda'
+
 class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
     def __init__(self):
 
         class Servicer(colab_vision_pb2_grpc.colab_visionServicer):
             def __init__(self):
                 self.tmp_folder = './temp/'
-                self.model = alex.Model(mode = 'cuda')
+                self.model = alex.Model(mode = server_mode)
                 # self.model = Model()
 
             def constantInference(self, request_iterator, context):
@@ -53,6 +56,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                         m.keypairs.clear()
                         current_chunks = []
                         last_id = msg.id
+                        m.keypairs["server_mode"] = server_mode
                         m.keypairs["server_reference_float"] = reference_time
                         m.keypairs["server_start_time"] = time.time()-reference_time
                     # rebuild data
@@ -69,18 +73,21 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                         if colab_vision_pb2.ACT_COMPRESSED in msg.action:
                             # current_chunks = torch.from_numpy(blosc.decompress(current_chunks))
                             current_chunks = blosc.unpack_tensor(current_chunks)
-                            m.keypairs["server_decompression_time"] = time.time()-reference_time #not sure if this can even be done on instantiation
+                        m.keypairs["server_decompression_time"] = time.time()-reference_time #not sure if this can even be done on instantiation
                         # start inference
+                        if torch.cuda.is_available() and self.mode == 'cuda':
+                            input_tensor = input_tensor.to(self.mode)
+                        m.keypairs["tensor_mode_convert"] = time.time()-reference_time
                         prediction = self.model.predict(current_chunks, start_layer=msg.layer)
                         m.results = prediction.encode()
                         m.keypairs["server_inference_time"] = time.time()-reference_time
                         # clean results
                         # m.keypairs["server_processing_time"] = time.time()
-                    print(f"Returning prediction for {msg.id}.")
+                        print(f"Returning prediction for {msg.id}.")
                     yield m
 
         logging.basicConfig()
-        self.server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
+        self.server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
         colab_vision_pb2_grpc.add_colab_visionServicer_to_server(Servicer(), self.server)
 
     def start(self, port):
