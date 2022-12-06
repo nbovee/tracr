@@ -75,7 +75,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                             current_chunks = blosc.unpack_tensor(current_chunks)
                         m.keypairs["server_decompression_time"] = time.time()-reference_time #not sure if this can even be done on instantiation
                         # start inference
-                        if torch.cuda.is_available() and self.mode == 'cuda':
+                        if torch.cuda.is_available() and self.mode == 'cuda' and input_tensor.device != self.mode:
                             input_tensor = input_tensor.to(self.mode)
                         m.keypairs["tensor_mode_convert"] = time.time()-reference_time
                         prediction = self.model.predict(current_chunks, start_layer=msg.layer)
