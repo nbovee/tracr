@@ -86,6 +86,7 @@ class FileClient:
             # print(f"exit layer: {exit_layer}")
             current_obj = self.model.predict(current_obj, end_layer=exit_layer)
             self.results_dict[message.id]["client_predict_time"] = time.time()
+            self.results_dict[message.id]["client_tensor_raw_bytes"] = 32 * np.prod(list(current_obj.size()))
             if colab_vision.USE_COMPRESSION:
                 message.action.append(colab_vision_pb2.ACT_COMPRESSED)
                 # Custom compression sizes require we provide tensor shape info to the server
