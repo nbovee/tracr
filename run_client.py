@@ -34,4 +34,5 @@ if __name__ == '__main__':
     #         print(f"{i} : {results[i]:.04f}")
     #     else:
     #         print(f"{i} : {results[i]}")
- # docker run --gpus all --name "grpc_server" -t -rm --mount type=bind,source="F:\Nick\Documents\Code\Work\Summer Research\collab-vision",target=/app nvcr.io/nvidia/pytorch:21.08-py3 nvidia-smi
+ # docker run --gpus all --name "grpc_server" -t --mount type=bind,source="F:\Nick\Documents\Code\Work\Summer Research\collab-vision",target=/app nvcr.io/nvidia/pytorch:21.08-py3 nvidia-smi
+# docker run --gpus all --name "grpc_server" -t --mount type=bind,source="F:\Nick\Documents\Code\Work\Summer Research\collab-vision",target=/app nvcr.io/nvidia/pytorch:21.08-py3
