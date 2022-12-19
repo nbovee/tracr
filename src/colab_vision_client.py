@@ -9,6 +9,7 @@ import re
 import uuid
 import pickle
 import blosc2 as blosc
+# import blosc
 import numpy as np
 from PIL import Image
 
@@ -39,7 +40,7 @@ class FileClient:
     def safeClose(self):
         self.channel.close()
         df = pd.DataFrame(data = self.results_dict)
-        df.to_csv('./test_results/test_results-12-6.csv')
+        df.to_csv('./test_results/test_results-12-18-cpu.csv')
         # for result, dic in self.results_dict.items():
         #     if 'client_complete_time' in dic.keys():
         #         print(f"{result}:\n\tOverall Time\t{dic['client_complete_time'] - dic['client_start_time']}")
@@ -91,7 +92,8 @@ class FileClient:
                 message.action.append(colab_vision_pb2.ACT_COMPRESSED)
                 # Custom compression sizes require we provide tensor shape info to the server
                 # current_obj = blosc.compress(current_obj.numpy().to_bytes(), clevel = 9) #force = True if we move to 1.13
-                current_obj = blosc.pack_tensor(current_obj)
+                # current_obj = blosc.pack_tensor(current_obj)
+                current_obj = blosc.pack_array(current_obj.cpu().numpy())
                 self.results_dict[message.id]["client_compression_time"] = time.time()
             # send all pieces
             message.action.append(colab_vision_pb2.ACT_RESET)
