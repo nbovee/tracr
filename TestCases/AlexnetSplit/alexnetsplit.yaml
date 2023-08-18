@@ -1,0 +1,3 @@
+model : 'alexnet'
+dataset : 'imagenet_singleton'
+partitioner : 'linreg'
