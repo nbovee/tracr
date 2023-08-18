@@ -9,7 +9,7 @@ from rpyc import ThreadedServer
 import threading
 import blosc2
 import time
-import copy
+import sys
 import pickle
 
 timer = time.perf_counter_ns
@@ -103,6 +103,7 @@ if __name__ == "__main__":
         print(f"Start inference {x_uuid}")
         x = m(i, inference_id = x_uuid, end=s)
         x = blosc2.pack_tensor(x)
+        master_dictionary[x_uuid]["compressed_size"] = sys.getsizeof(x)
         timestamp = timer()
         cloud_conn.root.complete_inference(x, x_uuid, s)
         master_dictionary[x_uuid]["transfer_time"] = timer() - timestamp
