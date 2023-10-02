@@ -9,7 +9,7 @@ import atexit
 import copy
 import yaml
 
-from client_rpc_node import ParticipantService
+from participant_rpc_node import ParticipantService
 from observer_rpc_node import ObserverServer
 
 participant_servers = []

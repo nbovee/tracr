@@ -4,9 +4,6 @@ import time
 import rpyc
 from rpyc import ThreadedServer
 import atexit
-import copy
-import yaml
-import asyncio
 from observer_rpc_node import ObserverService
 
 def main():

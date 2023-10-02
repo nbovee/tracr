@@ -7,6 +7,7 @@ import time
 import atexit
 import threading
 import pickle
+import json
 
 timer = time.perf_counter_ns
 
@@ -58,7 +59,7 @@ class CloudService(ParticipantService):
         
         def complete_inference(x, inference_id = parent_uuid+".0", start = start_layer):
             x = self.model(x, inference_id = inference_id, start = start)
-            self.master_dict[inference_id.split(".")[0]]["result"] = x
+            # self.master_dict[inference_id.split(".")[0]]["result"] = x
         # complete the inference outside of this timed method
         threading.Thread(target=complete_inference, args = [x], kwargs={"start":start_layer,"inference_id":parent_uuid+".0"}).start()
         return timer() - timestamp

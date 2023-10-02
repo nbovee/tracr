@@ -190,13 +190,14 @@ class WrappedModel(nn.Module):
         self.current_module_start_index = start
 
         # prepare inference_id for storing results
-        inference_id = str(uuid.uuid4()) if inference_id is None else inference_id
-        if len(str(inference_id).split(".")) > 1:
-            suffix = int(str(inference_id).split(".")[-1]) + 1
+        _inference_id = "unlogged" if inference_id is None else inference_id
+        if len(str(_inference_id).split(".")) > 1:
+            suffix = int(str(_inference_id).split(".")[-1]) + 1
         else:
             suffix = 0
-        self.inference_dict['inference_id'] = str(str(inference_id).split(".")[0])+f'.{suffix}'
-        
+        _inference_id = str(str(_inference_id).split(".")[0])+f'.{suffix}'
+        self.inference_dict['inference_id'] = _inference_id
+        print(f"{_inference_id} id beginning.")
         # actually run the forward pass
         try:
             if self.mode != "train":
@@ -213,13 +214,14 @@ class WrappedModel(nn.Module):
         # process and clean dicts before leaving forward
         self.inference_dict['layer_information'] = self.forward_dict
         if log:
-            self.master_dict[str(inference_id).split(".")[0]] = copy.deepcopy(self.inference_dict) # only one deepcopy needed
+            self.master_dict[str(_inference_id).split(".")[0]] = copy.deepcopy(self.inference_dict) # only one deepcopy needed
         self.inference_dict = {}
         self.forward_dict = copy.deepcopy(self.empty_buffer_dict)
 
         # reset hook variables
         self.current_module_stop_index = None
         self.current_module_index = None
+        print(f"{_inference_id} end.")
         return out
 
     def parse_input(self, input):

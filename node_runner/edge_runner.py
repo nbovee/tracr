@@ -1,4 +1,5 @@
 from partitioner.linreg_partitioner import RegressionPartitioner
+from partitioner.iter_partitioner import CyclePartitioner
 from model.model_hooked import WrappedModel
 from participant_rpc_node import EdgeService
 import uuid
@@ -10,6 +11,7 @@ import threading
 import blosc2
 import time
 import sys
+import json
 import pickle
 
 timer = time.perf_counter_ns
@@ -68,8 +70,10 @@ atexit.register(safeClose)
 if __name__ == "__main__":
     global master_dictionary
     master_dictionary = dict()
+
     m = WrappedModel(dict = master_dictionary, depth = 2)
     Scheduler = RegressionPartitioner(m.splittable_layer_count)
+    # Scheduler = CyclePartitioner(m.splittable_layer_count, clip_min_max=False)
     Scheduler.create_data(m)
     Scheduler.update_regression()
     this_server = ThreadedServer(EdgeService(), auto_register=True)
@@ -93,19 +97,23 @@ if __name__ == "__main__":
 
 
     # start our server after finding cloud, so we don't grab it! Would be easier to avoid if we parsed our own IP
+
     start_server(this_server)
     Scheduler.add_server_module(pickle.loads(cloud_conn.root.get_scheduler_dict()))
 
     while keepalive:
         s = Scheduler()
-        i = torch.randn(1, *m.base_input_size)
+        input = torch.randn(1, *m.base_input_size)
         x_uuid = str(uuid.uuid4())
-        print(f"Start inference {x_uuid}")
-        x = m(i, inference_id = x_uuid, end=s)
+        print(f"Split point: {s} Start inference {x_uuid}")
+        x = m(input, inference_id = x_uuid, end=s)
         x = blosc2.pack_tensor(x)
         master_dictionary[x_uuid]["compressed_size"] = sys.getsizeof(x)
         timestamp = timer()
         cloud_conn.root.complete_inference(x, x_uuid, s)
         master_dictionary[x_uuid]["transfer_time"] = timer() - timestamp
-        time.sleep(.2) # server callback and queue need some work so this is our ratelimit for now
+        time.sleep(.1) 
         obs_conn.root.inference_completed_signal(x_uuid)
+        time.sleep(1) # server callback and queue need some work so this is our ratelimit for now
+        
+    keepalive = False

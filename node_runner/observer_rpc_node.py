@@ -6,4 +6,5 @@ class ObserverService(rpyc.Service):
 
     def exposed_inference_completed_signal(self, uuid):
         # to be implemented by Steve
+        print(f"callback for {uuid} triggered.")
         pass
