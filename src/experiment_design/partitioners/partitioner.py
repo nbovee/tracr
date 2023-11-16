@@ -2,7 +2,11 @@ import abc
 from typing import Any
 
 class Partitioner:
-    """factory class for the method of determining split location in a model. Custom partitioners can be written in their own module and dropped into this directory for automatic import."""
+    """
+    Factory class for the method of determining split location in a model. Custom partitioners
+    can be written in their own module and dropped into this directory for automatic import.
+    """
+    _TYPE: str = "base"
 
     subclasses = {}
 

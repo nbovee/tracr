@@ -1,10 +1,10 @@
-from .partitioner import Partitioner
+from partitioner import Partitioner
 from itertools import cycle
 from typing import Any
 
 
 class CyclePartitioner(Partitioner):
-    _TYPE = "cycle"
+    _TYPE: str = "cycle"
 
     def __init__(self, num_breakpoints, clip_min_max=True, repeats = 1) -> None:
         super().__init__()
