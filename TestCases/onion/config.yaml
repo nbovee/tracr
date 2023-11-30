@@ -1,0 +1,26 @@
+#file path information
+File_path:
+    balanced:
+        source_annotation_folder_location: "C:\\Paolo-Project-Data-Models\\Onion Datasets\\onion_balanced\\onion_balanced\\Annotations\\"
+        modified_annotation_folder_location: "C:\\Paolo-Project-Data-Models\\Onion Datasets\\onion_balanced\\test_run\\balanced\\modified_annotation\\"
+        images_split_files_location: "C:\\Paolo-Project-Data-Models\\Onion Datasets\\onion_balanced\\onion_balanced\\ImageSets\\Main\\"
+        actual_images_files_location: "C:\\Paolo-Project-Data-Models\\Onion Datasets\\onion_balanced\\onion_balanced\\JPEGImages\\"
+        actual_images_files_split_location: "C:\\Paolo-Project-Data-Models\\Onion Datasets\\onion_balanced\\test_run\\balanced\\"
+    unbalanced:
+        source_annotation_folder_location: "C:\\Paolo-Project-Data-Models\\Onion Datasets\\onion_unbalanced\\onion\\Annotations\\"
+        modified_annotation_folder_location: "C:\\Paolo-Project-Data-Models\\Onion Datasets\\onion_balanced\\test_run\\unbalanced\\Modified_Annotations\\"
+        images_split_files_location: "C:\\Paolo-Project-Data-Models\\Onion Datasets\\onion_unbalanced\\onion\\ImageSets\\Main\\"
+        actual_images_files_location: "C:\\Paolo-Project-Data-Models\\Onion Datasets\\onion_unbalanced\\onion\\JPEGImages\\"
+        actual_images_files_split_location: "C:\\Paolo-Project-Data-Models\\Onion Datasets\\onion_balanced\\test_run\\unbalanced\\"
+
+# Mandatory information
+Data_splitting_file_information:
+    training: "train.txt"
+    testing: "test.txt"
+    train_validation: "trainval.txt"
+    test_validation: "val.txt"
+
+#run details
+yaml_label_information_path: "C:\\Paolo-Project-Data-Models\\RACR_AI\\node_runner\\model\\weed.yaml"
+    
+    
