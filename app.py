@@ -10,6 +10,7 @@ the word "python".
 """
 
 import logging
+
 logger = logging.getLogger("tracr_logger")
 
 import argparse
@@ -90,7 +91,7 @@ def device_ls(args):
         )
         ready = (
             "[bold green]Yes[/bold green]"
-            if False #d.is_setup()
+            if can_be_reached  # False
             else "[bold red]No[/bold red]"
         )
         host = d.get_current("host")
@@ -143,7 +144,7 @@ def experiment_run(args):
     """
     exp_name = args.name
     logger.info(f"Attempting to set up experiment {exp_name}.")
-    testcase_dir = PROJECT_ROOT / "MyData" / "TestCases"
+    testcase_dir = PROJECT_ROOT / "UserData" / "TestCases"
     manifest_yaml_fp = next(testcase_dir.glob(f"**/*{exp_name}.yaml"))
     logger.debug(f"Found manifest at {str(manifest_yaml_fp)}.")
     rlog_server = log_handling.get_server_running_in_thread()
@@ -189,7 +190,13 @@ def setup(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="A CLI for conducting collaborative AI experiments.",
+        description=""" | |                      
+ | |_ _ __ __ _  ___ _ __ 
+ | __| '__/ _` |/ __| '__|
+ | |_| | | (_| | (__| |   
+  \__|_|  \__,_|\___|_|   
+
+A CLI for conducting collaborative AI experiments.""",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -234,13 +241,6 @@ def main():
         help="specify the username to connect with via SSH",
         nargs=1,
         dest="user",
-    )
-    parser_device_add.add_argument(
-        "-p",
-        "--pass",
-        help="specify the password for SSH connections to the device",
-        nargs=1,
-        dest="pw",
     )
     parser_device_add.add_argument(
         "-k",
@@ -374,6 +374,5 @@ def main():
 
 
 if __name__ == "__main__":
-
     # Run the main function
     main()

@@ -9,7 +9,7 @@ class BaseDataset(Dataset):
     Implements basic functionality required for any dataset.
     """
 
-    DATA_SOURCE_DIRECTORY: Path = get_repo_root() / "MyData" / "Dataset_Data"
+    DATA_SOURCE_DIRECTORY: Path = get_repo_root() / "UserData" / "Dataset_Data"
 
     length: int
 
@@ -24,4 +24,3 @@ class BaseDataset(Dataset):
         Either set the value for self.length during construction or override this method.
         """
         return self.length
-

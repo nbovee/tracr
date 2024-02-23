@@ -11,7 +11,7 @@ from rich.console import Console
 from src.app_api import utils
 
 
-MAIN_LOG_FP = utils.get_repo_root() / "src" / "app_api" / "AppData" / "app.log"
+MAIN_LOG_FP = utils.get_repo_root() / "AppData" / "app.log"
 
 
 logger = logging.getLogger("tracr_logger")
@@ -66,15 +66,17 @@ class ColorByDeviceFormatter(logging.Formatter):
         ("cyan1", "cyan2"),
         ("plum2", "thistle3"),
         ("chartreuse3", "sea_green3"),
-        ("gold1", "tan")
+        ("gold1", "tan"),
     ]
 
-    device_color_map: dict[str, tuple[str, str]] = {"OBSERVER": ("bright_white", "grey70")}
+    device_color_map: dict[str, tuple[str, str]] = {
+        "OBSERVER": ("bright_white", "grey70")
+    }
 
     def format(self, record):
         msg_body = super().format(record)
         tag = str(record.origin)  # type: ignore
-        device_name = tag.split('@')[0].upper()
+        device_name = tag.split("@")[0].upper()
 
         ctag, cbody = self.get_color(device_name)
         message = f"[bold {ctag}]{tag}[/]: [{cbody}]{msg_body}[/]"
@@ -121,11 +123,11 @@ class DaemonThreadMixin(socketserver.ThreadingMixIn):
     daemon_threads = True
 
 
-class DaemonThreadingTCPServer(DaemonThreadMixin, socketserver.TCPServer): pass
+class DaemonThreadingTCPServer(DaemonThreadMixin, socketserver.TCPServer):
+    pass
 
 
 def get_server_running_in_thread():
-
     server = DaemonThreadingTCPServer(("", 9000), LogRecordStreamHandler)
 
     def shutdown_backup():
@@ -147,7 +149,6 @@ def shutdown_gracefully(running_server: DaemonThreadingTCPServer):
 
 
 if __name__ == "__main__":
-
     tracr_logger = setup_logging()
 
     def test_client_connection():
@@ -169,4 +170,3 @@ if __name__ == "__main__":
 
     running_server = get_server_running_in_thread()
     test_client_connection()
-

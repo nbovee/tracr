@@ -3,26 +3,26 @@ import shutil
 import xml.etree.ElementTree as ET
 
 class CustomYOLODataLoader:
-    def __init__(self, file_path_info):
+    def __init__(self, file_path_info,dataset_type):
         self.path_info = file_path_info
         self.file_info = file_path_info["Data_splitting_file_information"]
-        
+        self.dataset_type = dataset_type
+
 
     def prepare_dataset(self):
         # Process XML annotations
-        for key in self.path_info["File_path"]:
-            self._process_xml_annotations(
-                self.path_info["File_path"][key]['source_annotation_folder_location'], 
-                self.path_info["File_path"][key]['modified_annotation_folder_location']
-            )
+        self._process_xml_annotations(
+                self.path_info["File_path"][self.dataset_type ]['source_annotation_folder_location'],
+                self.path_info["File_path"][self.dataset_type ]['modified_annotation_folder_location']
+                )
+
 
         # Arrange files
-        for key in self.path_info["File_path"]:
-            self._arrange_files(
-                self.path_info["File_path"][key]['images_split_files_location'],
-                self.path_info["File_path"][key]['actual_images_files_location'],
-                self.path_info["File_path"][key]['modified_annotation_folder_location'],
-                self.path_info["File_path"][key]['actual_images_files_split_location']
+        self._arrange_files(
+                self.path_info["File_path"][self.dataset_type ]['images_split_files_location'],
+                self.path_info["File_path"][self.dataset_type ]['actual_images_files_location'],
+                self.path_info["File_path"][self.dataset_type ]['modified_annotation_folder_location'],
+                self.path_info["File_path"][self.dataset_type ]['actual_images_files_split_location']
             )
 
     def _process_xml_annotations(self, source_path, destination_path):
@@ -64,7 +64,7 @@ class CustomYOLODataLoader:
         for file_key in self.file_info:
             target_file = os.path.join(files_location, self.file_info[file_key])
             destination = os.path.join(target_location, file_key)
-            
+
             if os.path.exists(destination):
                 shutil.rmtree(destination)
             os.makedirs(destination)

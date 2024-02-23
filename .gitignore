@@ -147,3 +147,9 @@ TestCases/AlexnetSplit/partitioner_datapoints/external/*
 
 pyrightconfig.json
 TEST
+
+# nn weights
+*.pt
+
+# set up locally
+AppData/known_devices.yaml

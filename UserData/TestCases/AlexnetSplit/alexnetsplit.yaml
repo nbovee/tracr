@@ -8,11 +8,7 @@ participant_types:
       class: ClientService
     # "default" tells WrappedModel just to use AlexNet
     model:
-      model_name: alexnet
-      device: cpu
-      mode: eval
-      depth: np.inf
-      input_size: [3, 224, 224]
+      module: default
       class: default
   edge:
     service:
@@ -33,7 +29,7 @@ participant_instances:
     # how the instance will be referred to throughout the experiment
     instance_name: client1
     # specify one of the known devices in known_devices.yaml
-  - device: SteveOldLaptop
+  - device: any
     node_type: edge
     instance_name: edge1
 
@@ -47,6 +43,6 @@ playbook:
       # params have to match the required params exactly. check tasks.py.
       params:
         dataset_module: imagenet
-        dataset_instance: imagenet10_tr
+        dataset_instance: imagenet2_tr
       # the finish signal task requires no parameters
     - task_type: finish_signal

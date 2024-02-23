@@ -8,18 +8,14 @@ participant_types:
       class: ClientService
     # "default" tells WrappedModel just to use AlexNet
     model:
-      model_name: alexnet
-      device: cpu
-      mode: eval
-      depth: np.inf
-      input_size: [3, 224, 224]
+      module: yolov5s
       class: default
   edge:
     service:
       module: basic_split_inference
       class: EdgeService
     model:
-      module: default
+      module: yolov5s
       class: default
 
 # there may be multiple instances of each type; this is where we map types to devices

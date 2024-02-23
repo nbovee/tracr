@@ -1,0 +1,11 @@
+# directories
+train: 'C:/Paolo-Project-Data-Models/Onion Datasets/onion_unbalanced/training'
+val: 'C:/Paolo-Project-Data-Models/Onion Datasets/onion_unbalanced/train_validation'
+
+# number of classes
+nc: 2
+
+# class names
+names:
+     0: with_weeds
+     1: without_weeds

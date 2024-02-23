@@ -71,7 +71,6 @@ class RegressionPartitioner(Partitioner):
             else:
                 server_time_est_s = int(self.server_regression[module].forward(torch.as_tensor(float(param_bytes))))*1e-9 # get server_regression from grpc
             output_transfer_time = output_bytes/self._get_network_speed_bytes()
-
             if local_time_est_s < output_transfer_time + server_time_est_s:
                 starting_layer += 1
             else:
@@ -123,7 +122,7 @@ class RegressionPartitioner(Partitioner):
                             current_linreg.train_pass(z, pred)
                     # then scale b by mmax, our data is not normalized to the same range
                     current_linreg.manually_scale_bias(mmax)
-
+                    
     def _get_network_speed_bytes(self, artificial_value = 4 * 1024**2):
         # needs work, ideal methodology to have a thread checking this continuously.
         return artificial_value if artificial_value else None # change none to the thread value 

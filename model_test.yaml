@@ -8,12 +8,12 @@ participant_types:
       class: ClientService
     # "default" tells WrappedModel just to use AlexNet
     model:
-      model_name: alexnet
+      model_name: yolov8s # alexnet or yolov8s
       device: cpu
       mode: eval
-      depth: np.inf
       input_size: [3, 224, 224]
       class: default
+      node_name: "tester script"
   edge:
     service:
       module: basic_split_inference

@@ -18,7 +18,7 @@ import src.experiment_design.tasks.tasks as tasks
 import src.app_api.utils as utils
 import src.app_api.device_mgmt as dm
 from src.app_api.deploy import ZeroDeployedServer
-from src.experiment_design.node_behavior.base import ObserverService
+from src.experiment_design.services.base import ObserverService
 
 
 # overwrite default rpyc configs to allow pickling and public attribute access
@@ -26,7 +26,7 @@ rpyc.core.protocol.DEFAULT_CONFIG["allow_pickle"] = True
 rpyc.core.protocol.DEFAULT_CONFIG["allow_public_attrs"] = True
 
 
-TEST_CASE_DIR: pathlib.Path = utils.get_repo_root() / "MyData" / "TestCases"
+TEST_CASE_DIR: pathlib.Path = utils.get_repo_root() / "UserData" / "TestCases"
 
 logger = logging.getLogger("tracr_logger")
 
@@ -35,7 +35,6 @@ class ExperimentManifest:
     """
     A representation of the yaml file used to specify experiment parameters.
     """
- 
     participant_types: dict[str, dict[str, dict[str, str]]]
     participant_instances: list[dict[str, str]]
     playbook: dict[str, list[tasks.Task]]
@@ -49,14 +48,13 @@ class ExperimentManifest:
         self.create_and_set_playbook(playbook_as_dict)
 
     def read_and_parse_file(
-            self,
-            manifest_fp: pathlib.Path
-        ) -> tuple[dict[str, dict], list[dict[str, str]], dict[str, list]]:
+        self, manifest_fp: pathlib.Path
+    ) -> tuple[dict[str, dict], list[dict[str, str]], dict[str, list]]:
         """
         Reads the given file and returns the three subsections as a tuple:
         `(participant_types, participant_instances, playbook)`
         """
-        with open(manifest_fp, 'r') as file:
+        with open(manifest_fp, "r") as file:
             manifest_dict = yaml.load(file, yaml.Loader)
         participant_types = manifest_dict["participant_types"]
         participant_instances = manifest_dict["participant_instances"]
@@ -70,8 +68,8 @@ class ExperimentManifest:
         self.participant_instances = pinstances
 
     def create_and_set_playbook(
-            self, playbook: dict[str, list[dict[str, Union[str, dict[str, str]]]]]
-        ) -> None:
+        self, playbook: dict[str, list[dict[str, Union[str, dict[str, str]]]]]
+    ) -> None:
         new_playbook = {instance_name: [] for instance_name in playbook.keys()}
         for instance_name, tasklist in playbook.items():
             assert len(tasklist)
@@ -97,14 +95,19 @@ class ExperimentManifest:
         self.playbook = new_playbook
 
     def get_participant_instance_names(self) -> list[str]:
-        return [participant["instance_name"].upper() for participant in self.participant_instances]
+        return [
+            participant["instance_name"].upper()
+            for participant in self.participant_instances
+        ]
 
     def get_zdeploy_params(
-            self, available_devices: list[dm.Device]
-        ) -> list[tuple[dm.Device, str, tuple[str, str], tuple[str, str]]]:
+        self, available_devices: list[dm.Device]
+    ) -> list[tuple[dm.Device, str, tuple[str, str], tuple[str, str]]]:
         result = []
         # instances where device is "any" go last since they don't care
-        for instance in sorted(self.participant_instances, key=lambda x: 1 if x["device"] == "any" else 0):
+        for instance in sorted(
+            self.participant_instances, key=lambda x: 1 if x["device"] == "any" else 0
+        ):
             device = instance["device"]
             for d in available_devices:
                 if d._name == device or device.lower() == "any":
@@ -113,7 +116,9 @@ class ExperimentManifest:
                     model = tuple([model_specs["module"], model_specs["class"]])
                     if "default" in model:
                         model = tuple(["", ""])
-                    service_specs = self.participant_types[instance["node_type"]]["service"]
+                    service_specs = self.participant_types[instance["node_type"]][
+                        "service"
+                    ]
                     service = tuple([service_specs["module"], service_specs["class"]])
                     param_tuple = tuple([d, node_name, model, service])
                     result.append(param_tuple)
@@ -121,8 +126,8 @@ class ExperimentManifest:
                     break
             else:
                 raise dm.DeviceUnavailableException(
-                    f"Experiment manifest specifies device {device} for" +
-                    f" {instance['instance_name']}, but it is unavailable."
+                    f"Experiment manifest specifies device {device} for"
+                    + f" {instance['instance_name']}, but it is unavailable."
                 )
         return result
 
@@ -142,12 +147,16 @@ class Experiment:
     events: dict[str, threading.Event]
     report_dataframe: pd.DataFrame
 
-    def __init__(self, manifest: ExperimentManifest, available_devices: list[dm.Device]):
+    def __init__(
+        self, manifest: ExperimentManifest, available_devices: list[dm.Device]
+    ):
         self.available_devices = available_devices
         self.manifest = manifest
         self.threads = {
             "registry_svr": threading.Thread(target=self.start_registry, daemon=True),
-            "observer_svr": threading.Thread(target=self.start_observer_node, daemon=True),
+            "observer_svr": threading.Thread(
+                target=self.start_observer_node, daemon=True
+            ),
         }
         self.events = {
             "registry_ready": threading.Event(),
@@ -176,11 +185,12 @@ class Experiment:
         self.cleanup_after_finished()
 
     def start_registry(self) -> None:
-
         def close_registry_gracefully():
             try:
                 self.registry_server.close()
-                logger.info("closed registry server gracefully during atexit invocation")
+                logger.info(
+                    "closed registry server gracefully during atexit invocation"
+                )
             except ValueError:
                 pass
 
@@ -207,7 +217,9 @@ class Experiment:
 
         observer_service = ObserverService(all_node_names, playbook)
         self.observer_node = ThreadedServer(
-            observer_service, auto_register=True, protocol_config=rpyc.core.protocol.DEFAULT_CONFIG
+            observer_service,
+            auto_register=True,
+            protocol_config=rpyc.core.protocol.DEFAULT_CONFIG,
         )
 
         atexit.register(self.observer_node.close)
@@ -224,7 +236,9 @@ class Experiment:
         raise TimeoutError(f"observer took too long to become available")
 
     def start_participant_nodes(self) -> None:
-        zdeploy_node_param_list = self.manifest.get_zdeploy_params(self.available_devices)
+        zdeploy_node_param_list = self.manifest.get_zdeploy_params(
+            self.available_devices
+        )
         for params in zdeploy_node_param_list:
             self.participant_nodes.append(ZeroDeployedServer(*params))
 
@@ -258,9 +272,11 @@ class Experiment:
         while n_attempts > 0:
             if self.observer_conn.get_status() == "ready":
                 return
-            n_attempts -= 1 
-            sleep(2)
-        raise TimeoutError("experiment object waited too long for observer to be ready.")
+            n_attempts -= 1
+            sleep(8)
+        raise TimeoutError(
+            "experiment object waited too long for observer to be ready."
+        )
 
     def send_start_signal_to_observer(self) -> None:
         self.observer_conn.run()
@@ -288,7 +304,7 @@ class Experiment:
     def save_report(self, format: str = "csv", summary: bool = False) -> None:
         """
         Saves the results stored in the observer's `master_dict` after the experiment has
-        concluded. Available options for the `format` kwarg are "csv" and "pickled_df". Set 
+        concluded. Available options for the `format` kwarg are "csv" and "pickled_df". Set
         `summary` to True to save a report that skips layer data, only using one row for each
         inference_id.
         """
@@ -296,18 +312,28 @@ class Experiment:
 
         file_ext = "csv" if format == "csv" else "pkl"
         fn = f"{self.manifest.name}__{datetime.now().strftime('%Y-%m-%dT%H%M%S')}.{file_ext}"
-        fp = utils.get_repo_root() / "MyData" / "TestResults" / fn
+        fp = utils.get_repo_root() / "UserData" / "TestResults" / fn
 
         logger.info(f"saving results to {str(fp)}")
 
         if summary:
             logger.info("summarizing report")
-            summary_cols = ["inference_id", "split_layer", "total_time_ns", "inf_time_client", "inf_time_edge", "transmission_latency_ns"]
-            self.report_dataframe = self.report_dataframe[summary_cols].drop_duplicates().reset_index(drop=True)
+            summary_cols = [
+                "inference_id",
+                "split_layer",
+                "total_time_ns",
+                "inf_time_client",
+                "inf_time_edge",
+                "transmission_latency_ns",
+            ]
+            self.report_dataframe = (
+                self.report_dataframe[summary_cols]
+                .drop_duplicates()
+                .reset_index(drop=True)
+            )
 
         if format == "csv":
             self.report_dataframe.to_csv(fp)
         else:
-            with open(fp, 'wb') as file:
+            with open(fp, "wb") as file:
                 pickle.dump(self.report_dataframe, file)  # type: ignore
-

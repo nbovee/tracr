@@ -22,7 +22,7 @@ class SSHAuthenticationException(Exception):
 
 class DeviceUnavailableException(Exception):
     """
-    Raised if an attempt is made to connect to a device that is either unavailable or not 
+    Raised if an attempt is made to connect to a device that is either unavailable or not
     listening on the specified port.
     """
     def __init__(self, message):
@@ -33,11 +33,14 @@ class LAN:
     """
     Helps with general networking tasks that are not specific to one host.
     """
-    LOCAL_CIDR_BLOCK: list[str] = [str(ip)
-        for ip in ipaddress.ip_network("192.168.1.0/24").hosts()]
+    LOCAL_CIDR_BLOCK: list[str] = [
+        str(ip) for ip in ipaddress.ip_network("192.168.1.0/24").hosts()
+    ]
 
     @classmethod
-    def host_is_reachable(cls, host: str, port: int, timeout: Union[int, float]) -> bool:
+    def host_is_reachable(
+        cls, host: str, port: int, timeout: Union[int, float]
+    ) -> bool:
         """
         Checks if the host is available at all, but does not attempt to authenticate.
         """
@@ -49,11 +52,13 @@ class LAN:
             return False
 
     @classmethod
-    def get_available_hosts(cls,
+    def get_available_hosts(
+        cls,
         try_hosts: list[str] = LOCAL_CIDR_BLOCK,
-        port: int =22,
+        port: int = 22,
         timeout: Union[int, float] = 0.5,
-        max_threads: int = 50) -> list[str]:
+        max_threads: int = 50,
+    ) -> list[str]:
         """
         Takes a list of strings (ip or hostname) and returns a new list containing only those that
         are available, without attempting to authenticate. Uses threading.
@@ -91,11 +96,13 @@ class SSHConnectionParams:
 
     _host_reachable: bool  # set during constructor
 
-    def __init__(self,
-                 host: str,
-                 username: str,
-                 rsa_pkey_path: Union[pathlib.Path, str],
-                 default: bool = True) -> None:
+    def __init__(
+        self,
+        host: str,
+        username: str,
+        rsa_pkey_path: Union[pathlib.Path, str],
+        default: bool = True,
+    ) -> None:
         """
         Both parameters are validated and the given pkey path is converted to a paramiko.RSAKey
         instance before being stored as attributes.
@@ -110,7 +117,12 @@ class SSHConnectionParams:
         """
         Construct an instance of SSHConnectionParams from its dictionary representation.
         """
-        host, user, pkey_fp, default = source["host"], source["user"], source["pkey_fp"], source.get("default")
+        host, user, pkey_fp, default = (
+            source["host"],
+            source["user"],
+            source["pkey_fp"],
+            source.get("default"),
+        )
         if default is None:
             return cls(host, user, pkey_fp)
         else:
@@ -118,11 +130,13 @@ class SSHConnectionParams:
 
     def _set_host(self, host: str) -> None:
         """
-        Validates the given hostname or IP and stores it, updating the `_host_reachable` attribute 
+        Validates the given hostname or IP and stores it, updating the `_host_reachable` attribute
         accordingly.
         """
         self.host = host
-        self._host_reachable = LAN.host_is_reachable(host, self.SSH_PORT, self.TIMEOUT_SECONDS)
+        self._host_reachable = LAN.host_is_reachable(
+            host, self.SSH_PORT, self.TIMEOUT_SECONDS
+        )
 
     def _set_user(self, username: str) -> None:
         """
@@ -184,8 +198,10 @@ class Device:
     def __init__(self, name: str, record: dict) -> None:
         self._name = name
         self._type = record["device_type"]
-        self._cparams = [SSHConnectionParams.from_dict(d) for d in record["connection_params"]] 
-        
+        self._cparams = [
+            SSHConnectionParams.from_dict(d) for d in record["connection_params"]
+        ]
+
         # check the default method first
         self._cparams.sort(key=lambda x: 1 if x.is_default() else 0, reverse=True)
         self.working_cparams = None
@@ -205,7 +221,10 @@ class Device:
         Used to serialize Device objects.
         """
         key = self._name
-        value = {"device_type": self._type, "connection_params": [c.as_dict() for c in self._cparams]}
+        value = {
+            "device_type": self._type,
+            "connection_params": [c.as_dict() for c in self._cparams],
+        }
         return key, value
 
     def get_current(self, attr: str) -> Union[str, None]:
@@ -226,11 +245,16 @@ class Device:
         Returns a plumbum.SshMachine instance to represent the device.
         """
         if self.working_cparams is not None:
-            return SshMachine(self.working_cparams.host,
-                              user=self.working_cparams.user,
-                              keyfile=str(self.working_cparams.pkey_fp))
+            return SshMachine(
+                self.working_cparams.host,
+                user=self.working_cparams.user,
+                keyfile=str(self.working_cparams.pkey_fp),
+                ssh_opts=["-o StrictHostKeyChecking=no"],
+            )
         else:
-            raise DeviceUnavailableException(f"Cannot make plumbum object from device {self._name}: not available.")
+            raise DeviceUnavailableException(
+                f"Cannot make plumbum object from device {self._name}: not available."
+            )
 
 
 class DeviceMgr:
@@ -238,8 +262,9 @@ class DeviceMgr:
     Manages a collection of SSHConnectionParams objects. Responsible for reading and writing serialized
     instances to/from the persistent datafile.
     """
-
-    DATAFILE_PATH: pathlib.Path = utils.get_repo_root() / "src" / "app_api" / "AppData" / "known_devices.yaml"
+    DATAFILE_PATH: pathlib.Path = (
+        utils.get_repo_root() / "AppData" / "known_devices.yaml"
+    )
 
     devices: list[Device]
     datafile_path: pathlib.Path
@@ -257,19 +282,21 @@ class DeviceMgr:
         return self.devices
 
     def _load(self) -> None:
-        with open(self.datafile_path, 'r') as file:
+        with open(self.datafile_path, "r") as file:
             data = yaml.load(file, Loader=yaml.SafeLoader)
         self.devices = [Device(dname, drecord) for dname, drecord in data.items()]
 
     def _save(self) -> None:
-        serialized_devices = {name: details for name, details in [d.serialized() for d in self.devices]}
-        with open(self.datafile_path, 'w') as file:
+        serialized_devices = {
+            name: details for name, details in [d.serialized() for d in self.devices]
+        }
+        with open(self.datafile_path, "w") as file:
             yaml.dump(serialized_devices, file)
 
 
 class SSHSession(paramiko.SSHClient):
     """
-    Because we're enforcing a specific authentication strategy, we can abstract away lots of the 
+    Because we're enforcing a specific authentication strategy, we can abstract away lots of the
     setup involved with the paramiko.SSHClient class by automatically attempting authentication
     and updating an instance's state depending on the results. This class assumes the given host
     has already been validated as available (listening on port 22).
@@ -281,7 +308,7 @@ class SSHSession(paramiko.SSHClient):
     def __init__(self, device: Device) -> None:
         """
         Automatically attempts to connect, raising diffent exceptions for different points of
-        failure. 
+        failure.
         """
         super().__init__()
         if device.working_cparams is None:
@@ -309,16 +336,11 @@ class SSHSession(paramiko.SSHClient):
         pkey = self.login_params.pkey
 
         self.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self.connect(self.host, username=user, pkey=pkey, auth_timeout=5, timeout=1)
 
-        self.connect(
-            self.host,
-            username=user,
-            pkey=pkey,
-            auth_timeout=5,
-            timeout=1
-        )
-
-    def copy_over(self, from_path: pathlib.Path, to_path: pathlib.Path, exclude: list = []):
+    def copy_over(
+        self, from_path: pathlib.Path, to_path: pathlib.Path, exclude: list = []
+    ):
         """
         Copy a file or directory over to the remote device.
         """
@@ -348,4 +370,3 @@ class SSHSession(paramiko.SSHClient):
 
     def rpc_container_up(self):
         pass
-
