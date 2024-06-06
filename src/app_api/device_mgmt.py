@@ -16,6 +16,7 @@ class SSHAuthenticationException(Exception):
     Raised if an authentication error occurs while attempting to connect to a device over SSH, but
     the device is available and listening.
     """
+
     def __init__(self, message):
         super().__init__(message)
 
@@ -25,6 +26,7 @@ class DeviceUnavailableException(Exception):
     Raised if an attempt is made to connect to a device that is either unavailable or not
     listening on the specified port.
     """
+
     def __init__(self, message):
         super().__init__(message)
 
@@ -33,6 +35,7 @@ class LAN:
     """
     Helps with general networking tasks that are not specific to one host.
     """
+
     LOCAL_CIDR_BLOCK: list[str] = [
         str(ip) for ip in ipaddress.ip_network("192.168.1.0/24").hosts()
     ]
@@ -262,6 +265,7 @@ class DeviceMgr:
     Manages a collection of SSHConnectionParams objects. Responsible for reading and writing serialized
     instances to/from the persistent datafile.
     """
+
     DATAFILE_PATH: pathlib.Path = (
         utils.get_repo_root() / "AppData" / "known_devices.yaml"
     )
@@ -282,7 +286,7 @@ class DeviceMgr:
         return self.devices
 
     def _load(self) -> None:
-        with open(self.datafile_path, "r") as file:
+        with open(self.datafile_path) as file:
             data = yaml.load(file, Loader=yaml.SafeLoader)
         self.devices = [Device(dname, drecord) for dname, drecord in data.items()]
 
@@ -345,7 +349,7 @@ class SSHSession(paramiko.SSHClient):
         Copy a file or directory over to the remote device.
         """
         sftp = self.open_sftp()
-        if not from_path.name in exclude:
+        if from_path.name not in exclude:
             if from_path.is_dir():
                 try:
                     sftp.stat(str(to_path))
@@ -364,7 +368,7 @@ class SSHSession(paramiko.SSHClient):
         sftp = self.open_sftp()
         try:
             sftp.mkdir(str(to_path), perms)
-        except IOError:
+        except OSError:
             print(f"directory {to_path} already exists on remote device")
         sftp.close()
 

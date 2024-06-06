@@ -64,7 +64,7 @@ The tracr source code is split into two main sections: `app_api` and `experiment
 The `experiment_design` directory is split into a number of subdirectories, each representing a customizable part of an experiment. These subdirectories are structured as Python packages, and generally, the user will add a new file to the package and build subclasses of the base classes already defined in the package to implement custom behavior. The subdirectories are as follows:
 
 1. **datasets**: Implements a base class for datasets that can be used in experiments. This is where you will define custom datasets for your experiments. An `imagenet.py` file is included as an example.
-2. **models**: Defines the model wrapper used to record fine-grained information about model performance during experiments. 
+2. **models**: Defines the model wrapper used to record fine-grained information about model performance during experiments.
 3. **partitioners**: Defines the partitioner used to split a model into multiple parts for collaborative inference.
 4. **records**: Defines the format of the data collected during experiments, as well as the format of the final report.
 5. **services**: The most important subdirectory. Defines the base classes for the RPC services that are deployed to each node during experiment runtime. This is where you will define custom behavior for your experiments.
@@ -91,7 +91,7 @@ The vast majority of node behavior is controlled by extending the `ParticipantSe
 3. **Override methods associated with each type of task** that this node can perform. The dictionary defining these associations is implemented in the base class as the attribute `self.task_map`. To program the node to handle a certain task in a specific way, simply override the method associated with that task.
 
 #### Listing the Tasks
-Once the node behavior has been defined, the next step is to list the tasks that must be performed during the experiment. This is done inside the *Experiment Manifest* file, which is a YAML file that contains all of the information needed to run an experiment. It should live inside of its own directory within `UserData/TestCases`. An example manifest can be found in `UserData/TestCases/AlexnetSplit/alexnetsplit.yaml`. 
+Once the node behavior has been defined, the next step is to list the tasks that must be performed during the experiment. This is done inside the *Experiment Manifest* file, which is a YAML file that contains all of the information needed to run an experiment. It should live inside of its own directory within `UserData/TestCases`. An example manifest can be found in `UserData/TestCases/AlexnetSplit/alexnetsplit.yaml`.
 
 The manifest is split into three sections:
 
@@ -108,7 +108,7 @@ The last step is to specify other parameters, such as which nodes are deployed t
 
 ### Running Experiments
 Once an experiment has been designed, it can be run with a single command:
-  
+
 ```bash
 tracr experiment run <YOUR_EXPERIMENT_NAME>  # the manifest filename without the .yaml extension
 ```

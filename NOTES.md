@@ -36,4 +36,3 @@ custom install of <https://developer.download.nvidia.com/compute/cuda/repos/ubun
   * There is a docker-compose.yml file that doesn't work as intended (yet).
 * I added a text file named "device_info" to the .gitignore file since it contains semi-private information about device IPs and passwords, but the info has been posted in the RACR discord.
 * We are successfully running PyTorch and torchvision on the Raspberry Pi 3 devices inside a docker container.
-

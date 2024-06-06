@@ -21,7 +21,7 @@ logger = logging.getLogger("tracr_logger")
 
 
 class NotDict:
-    """Wrapper for a dict to circumenvent some of Ultralytics forward pass handling"""
+    """Wrapper for a dict to circumenvent some of Ultralytics forward pass handling. Uses a class instead of tuple in case additional handling is added later."""
 
     def __init__(self, passed_dict) -> None:
         self.inner_dict = passed_dict
@@ -286,7 +286,7 @@ class WrappedModel(torch.nn.Module):
             _inference_id = "unlogged"
             self.log = False
         else:
-            _inference_id = inference_id 
+            _inference_id = inference_id
         if len(str(_inference_id).split(".")) > 1:
             suffix = int(str(_inference_id).rsplit(".", maxsplit=1)[-1]) + 1
         else:
@@ -310,10 +310,8 @@ class WrappedModel(torch.nn.Module):
         # process and clean dicts before leaving forward
         self.inference_dict["layer_information"] = self.forward_dict
         if log and self.master_dict:
-            self.io_buf_dict[
-                str(_inference_id).split(".", maxsplit=1)[0]
-            ] = copy.deepcopy(
-                self.inference_dict
+            self.io_buf_dict[str(_inference_id).split(".", maxsplit=1)[0]] = (
+                copy.deepcopy(self.inference_dict)
             )  # only one deepcopy needed
             if len(self.io_buf_dict) >= self.flush_buffer_size:
                 self.update_master_dict()

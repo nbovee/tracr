@@ -162,15 +162,17 @@ finally:
 
 class ZeroDeployedServer(DeployedServer):
 
-    def __init__(self,
-                 device: dm.Device,
-                 node_name: str,
-                 model: tuple[str, str],
-                 participant_service: tuple[str, str],
-                 server_class="rpyc.utils.server.ThreadedServer",
-                 python_executable=None,
-                 timeout_s: int = 600):
-        logger.debug( f"Constructing ZeroDeployedServer for {node_name}.")
+    def __init__(
+        self,
+        device: dm.Device,
+        node_name: str,
+        model: tuple[str, str],
+        participant_service: tuple[str, str],
+        server_class="rpyc.utils.server.ThreadedServer",
+        python_executable=None,
+        timeout_s: int = 600,
+    ):
+        logger.debug(f"Constructing ZeroDeployedServer for {node_name}.")
         assert device.working_cparams is not None
         self.name = device._name
         self.proc = None
@@ -189,34 +191,23 @@ class ZeroDeployedServer(DeployedServer):
         copy(src_root, tmp / "src")
 
         # Substitute placeholders in the remote script and send it over
-        script = (tmp / "deployed-rpyc.py")
+        script = tmp / "deployed-rpyc.py"
         modname, clsname = server_class.rsplit(".", 1)
         m_module, m_class = model
         ps_module, ps_class = participant_service
         observer_ip = utils.get_local_ip()
         participant_host = device.working_cparams.host
         script.write(
-            SERVER_SCRIPT.replace(    # type: ignore
-                "$SVR-MODULE$", modname
-            ).replace(
-                "$SVR-CLASS$", clsname
-            ).replace(
-                "$MOD-MODULE$", m_module
-            ).replace(
-                "$MOD-CLASS$", m_class
-            ).replace(
-                "$PS-MODULE$", ps_module
-            ).replace(
-                "$PS-CLASS$", ps_class
-            ).replace(
-                "$NODE-NAME$", node_name
-            ).replace(
-                "$OBS-IP$", observer_ip
-            ).replace(
-                "$PRT-HOST$", participant_host
-            ).replace(
-                "$MAX-UPTIME$", str(timeout_s)
-            )
+            SERVER_SCRIPT.replace("$SVR-MODULE$", modname)  # type: ignore
+            .replace("$SVR-CLASS$", clsname)
+            .replace("$MOD-MODULE$", m_module)
+            .replace("$MOD-CLASS$", m_class)
+            .replace("$PS-MODULE$", ps_module)
+            .replace("$PS-CLASS$", ps_class)
+            .replace("$NODE-NAME$", node_name)
+            .replace("$OBS-IP$", observer_ip)
+            .replace("$PRT-HOST$", participant_host)
+            .replace("$MAX-UPTIME$", str(timeout_s))
         )
         if isinstance(python_executable, BoundCommand):
             cmd = python_executable
@@ -240,7 +231,9 @@ class ZeroDeployedServer(DeployedServer):
                 else:
                     break
             if not cmd:
-                logger.warning(f"Had to use the default python interpreter, which could cause problems.")
+                logger.warning(
+                    "Had to use the default python interpreter, which could cause problems."
+                )
                 cmd = self.remote_machine.python
 
         assert isinstance(cmd, RemoteCommand)
@@ -286,5 +279,3 @@ class ZeroDeployedServer(DeployedServer):
             except Exception:
                 pass
             self._tmpdir_ctx = None
-
-

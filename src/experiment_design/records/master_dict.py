@@ -25,7 +25,7 @@ class MasterDict:
                     }
                 else:
                     raise ValueError(
-                        f"Cannot integrate inference_dict without 'layer_information' field"
+                        "Cannot integrate inference_dict without 'layer_information' field"
                     )
                 return
             self.inner_dict[key] = value
@@ -53,7 +53,9 @@ class MasterDict:
         if split_layer == 0:
             sent_output_size_bytes = 602112
         else:
-            sent_output_size_bytes = inf_data["layer_information"][send_layer]["output_bytes"]
+            sent_output_size_bytes = inf_data["layer_information"][send_layer][
+                "output_bytes"
+            ]
         bytes_per_second = mb_per_s * 1e6
         latency_s = sent_output_size_bytes / bytes_per_second
         latency_ns = int(latency_s * 1e9)
@@ -61,7 +63,7 @@ class MasterDict:
 
     def get_total_inference_time(self, inference_id: str) -> tuple[int, int]:
         inf_data = self.inner_dict[inference_id]
-        
+
         # layer_times = [
         #     layer["inference_time"]
         #     for layer in inf_data["layer_information"].values()

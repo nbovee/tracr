@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-This script runs the "tracr" CLI, which is powered by the API that lives in 
+This script runs the "tracr" CLI, which is powered by the API that lives in
 the "api" folder on this repo.
 
 For a cleaner experience, add this directory to your PATH, which will allow
@@ -138,6 +138,7 @@ def experiment_ls(args):
     """
     pass
 
+
 def experiment_run(args):
     """
     Runs an experiment.
@@ -162,6 +163,7 @@ def experiment_run(args):
     log_handling.shutdown_gracefully(rlog_server)
     sleep(2)  # give the remaining remote logs a second to be displayed
     logger.info("Congratulations! The experiment has concluded successfully.")
+
 
 def network(args):
     if args.d:
@@ -190,11 +192,11 @@ def setup(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description=""" | |                      
- | |_ _ __ __ _  ___ _ __ 
+        description=r""" | |
+ | |_ _ __ __ _  ___ _ __
  | __| '__/ _` |/ __| '__|
- | |_| | | (_| | (__| |   
-  \__|_|  \__,_|\___|_|   
+ | |_| | | (_| | (__| |
+  \__|_|  \__,_|\___|_|
 
 A CLI for conducting collaborative AI experiments.""",
         formatter_class=argparse.RawDescriptionHelpFormatter,

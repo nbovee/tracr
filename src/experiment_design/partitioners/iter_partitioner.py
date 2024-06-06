@@ -6,7 +6,7 @@ from typing import Any
 class CyclePartitioner(Partitioner):
     _TYPE: str = "cycle"
 
-    def __init__(self, num_breakpoints, clip_min_max=True, repeats = 1) -> None:
+    def __init__(self, num_breakpoints, clip_min_max=True, repeats=1) -> None:
         super().__init__()
         self.breakpoints = num_breakpoints
         self.repeats = repeats if repeats > 0 else 1

@@ -35,6 +35,7 @@ class ExperimentManifest:
     """
     A representation of the yaml file used to specify experiment parameters.
     """
+
     participant_types: dict[str, dict[str, dict[str, str]]]
     participant_instances: list[dict[str, str]]
     playbook: dict[str, list[tasks.Task]]
@@ -54,7 +55,7 @@ class ExperimentManifest:
         Reads the given file and returns the three subsections as a tuple:
         `(participant_types, participant_instances, playbook)`
         """
-        with open(manifest_fp, "r") as file:
+        with open(manifest_fp) as file:
             manifest_dict = yaml.load(file, yaml.Loader)
         participant_types = manifest_dict["participant_types"]
         participant_instances = manifest_dict["participant_instances"]
@@ -233,7 +234,7 @@ class Experiment:
             if "OBSERVER" in services:
                 self.events["observer_up"].set()
                 return
-        raise TimeoutError(f"observer took too long to become available")
+        raise TimeoutError("observer took too long to become available")
 
     def start_participant_nodes(self) -> None:
         zdeploy_node_param_list = self.manifest.get_zdeploy_params(

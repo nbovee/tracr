@@ -28,6 +28,7 @@ def get_local_ip():
         s.close()
     return local_ip
 
+
 def registry_server_is_up():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     with closing(sock):
@@ -37,15 +38,14 @@ def registry_server_is_up():
         sock.settimeout(1)
         try:
             data, _ = sock.recvfrom(MAX_DGRAM_SIZE)
-        except (socket.error, socket.timeout):
+        except (OSError, socket.timeout):
             return False
         return True
+
 
 def log_server_is_up(port=REMOTE_LOG_SVR_PORT, timeout=1):
     try:
         with socket.create_connection(("localhost", port), timeout=timeout) as _:
             return True
-    except (socket.error, socket.timeout, ConnectionRefusedError):
+    except (OSError, socket.timeout, ConnectionRefusedError):
         return False
-
-

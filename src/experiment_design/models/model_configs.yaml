@@ -1,4 +1,4 @@
-yolov8s:
+yolo:
   depth: 2
   hook_style: post # must be done at the end of a layer due to the internal results catalog
 alexnet:

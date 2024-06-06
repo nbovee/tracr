@@ -1,11 +1,13 @@
 import abc
 from typing import Any
 
+
 class Partitioner:
     """
     Factory class for the method of determining split location in a model. Custom partitioners
     can be written in their own module and dropped into this directory for automatic import.
     """
+
     _TYPE: str = "base"
 
     subclasses = {}
@@ -20,7 +22,11 @@ class Partitioner:
     @classmethod
     def create(cls, class_type, *args, **kwargs):
         if class_type not in cls.subclasses:
-            raise ValueError("Bad or unknown type {}. Does the subclass specify _TYPE ?".format(class_type))
+            raise ValueError(
+                "Bad or unknown type {}. Does the subclass specify _TYPE ?".format(
+                    class_type
+                )
+            )
         return cls.subclasses[class_type](*args, **kwargs)
 
     @abc.abstractmethod
