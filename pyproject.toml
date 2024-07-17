@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel>=0.37.0", "pip>=21.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tracr"
+version = "0.1.0"
+description = "A platform for collaborative AI experiments"
+readme = "README.md"
+authors = [
+    {name = "Izhar Ali", email = "aliizh94@students.rowan.edu"},
+]
+license = {text = "MIT"}
+requires-python = ">=3.6"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "blosc2>=2.5.1",
+    "bpython>=0.24",
+    "cmake>=3.29.3",
+    "getmac>=0.9.4",
+    "lit>=18.1.6",
+    "oyaml>=1.0",
+    "pandas>=2.0.3",
+    "paramiko>=3.4.0",
+    "rich>=13.7.1",
+    "rpyc>=6.0.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/ali-izhar/RACR_AI"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tracr*"]
+
+[tool.setuptools.package-data]
+"tracr" = ["**/*.yaml"]
+
+[tool.setuptools]
+py-modules = []
+
+[tool.setuptools.dynamic]
+version = {attr = "tracr.__version__"}

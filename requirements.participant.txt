@@ -1,0 +1,12 @@
+numpy
+pandas
+paramiko
+Pillow
+plumbum
+PyYAML
+rich
+rpyc
+torch
+torchinfo
+torchvision
+ultralytics

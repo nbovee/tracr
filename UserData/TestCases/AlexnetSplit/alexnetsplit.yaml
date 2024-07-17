@@ -1,14 +1,16 @@
+# alexnet_split.yaml
 # define the types of participants that will be used in the experiment
 participant_types:
-  # top-level keys are used for "node_type" down below
   client:
-    # each participant type is defined by their service and model
     service:
       module: basic_split_inference
       class: ClientService
-    # "default" tells WrappedModel just to use AlexNet
     model:
-      module: default
+      model_name: alexnet
+      device: cpu
+      mode: eval
+      depth: np.inf
+      input_size: [3, 224, 224]
       class: default
   edge:
     service:
@@ -19,30 +21,22 @@ participant_types:
       class: default
 
 # there may be multiple instances of each type; this is where we map types to devices
-# and provide unique names for each instance (not necessary if there's only one of each,
-# but it's done here to disambiguate)
+# and provide unique names for each instance
 participant_instances:
-  # just find any available device
-  - device: any
-    # must correspond to one of the types defined above
+  - device: localhost
     node_type: client
-    # how the instance will be referred to throughout the experiment
-    instance_name: client1
-    # specify one of the known devices in known_devices.yaml
-  - device: any
+    instance_name: CLIENT1
+  - device: racr
     node_type: edge
-    instance_name: edge1
+    instance_name: EDGE1
 
 # define the initial tasks that will be sent out to each participant to begin the experiment
 playbook:
-  # top-level keys correspond to INSTANCE name
-  client1:
-    # task_type should correspond to one of the Task subclasses in tasks.py. App will try
-    # to fuzzy-find because the names are long.
+  CLIENT1:
     - task_type: infer_dataset
-      # params have to match the required params exactly. check tasks.py.
       params:
         dataset_module: imagenet
-        dataset_instance: imagenet2_tr
-      # the finish signal task requires no parameters
+        dataset_instance: imagenet10_tr
     - task_type: finish_signal
+  EDGE1:
+    - task_type: wait_for_tasks

@@ -1,5 +1,0 @@
-# pre-commit helps with error checking and force-formatting
-pre-commit==3.7.0
-pipreqs==0.4.13
-# python.exe -m pip install --upgrade pip
-pyupgrade==3.15.2

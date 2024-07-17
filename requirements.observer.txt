@@ -1,0 +1,8 @@
+numpy
+pandas
+paramiko
+Pillow
+plumbum
+PyYAML
+rich
+rpyc

@@ -10,8 +10,8 @@ We also define a subclass of BaseDelegator to run the observer node.
 import logging
 import uuid
 
-from src.experiment_design.services.base import ParticipantService
-import src.experiment_design.tasks.tasks as tasks
+from src.tracr.experiment_design.services.base import ParticipantService
+import src.tracr.experiment_design.tasks.tasks as tasks
 
 
 logger = logging.getLogger("tracr_logger")

@@ -3,10 +3,9 @@
 from pathlib import Path
 import os
 import logging
-
 import torch
 
-from src.experiment_design.models.model_hooked import WrappedModel
+from src.tracr.experiment_design.models.model_hooked import WrappedModel
 
 logging.basicConfig(level=logging.DEBUG)
 logging.getLogger("tracr_logger")

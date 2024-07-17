@@ -1,0 +1,33 @@
+# Exclude the virtual environment directory
+venv
+
+# Exclude build artifacts
+build
+dist
+*.egg-info
+
+# Exclude Python cache files and directories
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Exclude IDE/editor-specific files
+.idea
+.vscode
+*.swp
+
+# Exclude git-related files
+.git
+.gitignore
+.gitmodules
+
+# Exclude OS-specific files
+.DS_Store
+Thumbs.db
+
+# Exclude other unnecessary files and directories
+tests
+
+# Exclude the following files from the root directory
+NOTES.md

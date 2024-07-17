@@ -8,7 +8,8 @@ import rpyc.core.protocol
 from pandas import DataFrame
 from rpyc.utils.classic import obtain
 from rpyc.lib.compat import pickle
-import torch.nn as nn
+
+# import torch.nn as nn
 from queue import PriorityQueue
 from importlib import import_module
 from rpyc.core.protocol import Connection, PingError
@@ -16,10 +17,10 @@ from time import sleep
 from typing import Callable
 from rpyc.utils.factory import DiscoveryError
 
-import src.experiment_design.tasks.tasks as tasks
-from src.experiment_design.models.model_hooked import WrappedModel
-from src.experiment_design.datasets.dataset import BaseDataset
-from src.experiment_design.records.master_dict import MasterDict
+import src.tracr.experiment_design.tasks.tasks as tasks
+from src.tracr.experiment_design.models.model_hooked import WrappedModel
+from src.tracr.experiment_design.datasets.dataset import BaseDataset
+from src.tracr.experiment_design.records.master_dict import MasterDict
 
 
 logger = logging.getLogger("tracr_logger")
@@ -236,7 +237,7 @@ class ObserverService(NodeService):
                 logger.info("All participants are ready!")
                 break
             n_attempts -= 1
-            sleep(1)
+            sleep(16)
 
         if not success:
             straglers = [
@@ -265,7 +266,7 @@ class ObserverService(NodeService):
         """
         Allows remote nodes to access datasets stored on the observer as if they were local objects.
         """
-        module = import_module(f"src.experiment_design.datasets.{dataset_module}")
+        module = import_module(f"src.tracr.experiment_design.datasets.{dataset_module}")
         dataset = getattr(module, dataset_instance)
         return dataset
 
@@ -320,10 +321,10 @@ class ParticipantService(NodeService):
 
     def __init__(
         self,
-        ModelCls: type[nn.Module] | None,
+        # ModelCls: type[nn.Module] | None,
     ):
         super().__init__()
-        self.ModelCls = ModelCls
+        # self.ModelCls = ModelCls
         self.task_map = {
             tasks.SimpleInferenceTask: self.simple_inference,
             tasks.SingleInputInferenceTask: self.inference_sequence_per_input,
@@ -337,14 +338,14 @@ class ParticipantService(NodeService):
         observer_svc = self.get_connection("OBSERVER").root
         assert observer_svc is not None
         master_dict = observer_svc.get_master_dict()
-        if not isinstance(self.ModelCls, nn.Module):
-            self.model = WrappedModel(master_dict=master_dict, node_name=self.node_name)
-        else:
-            self.model = WrappedModel(
-                pretrained=self.ModelCls(),
-                master_dict=master_dict,
-                node_name=self.node_name,
-            )
+        # if not isinstance(self.ModelCls, nn.Module):
+        self.model = WrappedModel(master_dict=master_dict, node_name=self.node_name)
+        # else:
+        #     self.model = WrappedModel(
+        #         pretrained=self.ModelCls(),
+        #         master_dict=master_dict,
+        #         node_name=self.node_name
+        #     )
 
     def _run(self):
         assert self.status == "ready"

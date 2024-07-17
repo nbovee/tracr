@@ -1,0 +1,9 @@
+version: '3.8'
+services:
+  racr:
+    build: .
+    container_name: tracr-app
+    ports:
+      - "9000:9000"
+    volumes:
+      - .:/src

@@ -2,7 +2,7 @@ import pathlib
 import logging
 from PIL import Image
 
-from src.experiment_design.datasets.dataset import BaseDataset
+from src.tracr.experiment_design.datasets.dataset import BaseDataset
 import torchvision.transforms as transforms
 
 

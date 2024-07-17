@@ -8,7 +8,7 @@ import pickle
 import threading
 from rich.console import Console
 
-from src.app_api import utils
+from src.tracr.app_api import utils
 
 
 MAIN_LOG_FP = utils.get_repo_root() / "AppData" / "app.log"
@@ -18,7 +18,7 @@ logger = logging.getLogger("tracr_logger")
 
 
 def setup_logging(verbosity: int = 3):
-    levels = [logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG]
+    # levels = [logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG]
     file_format = "%(asctime)s - %(module)s - %(levelname)s: %(message)s"
 
     # add a custom attribute to LogRecord objects to keep track of origin device

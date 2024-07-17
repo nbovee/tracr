@@ -12,7 +12,7 @@ from PIL import Image
 from torchinfo import summary
 from torchvision.transforms import ToTensor
 
-from src.experiment_design.records.master_dict import MasterDict
+from src.tracr.experiment_design.records.master_dict import MasterDict
 from .model_config import read_model_config
 from .model_selector import model_selector
 
@@ -262,6 +262,7 @@ class WrappedModel(torch.nn.Module):
                 self.banked_input[fixed_layer_i] = layer_input
                 raise HookExitException(self.banked_input)
             logger.debug(f"end posthook {fixed_layer_i}")
+            return hook_output
 
         return hook
 
