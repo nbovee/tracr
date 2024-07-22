@@ -247,22 +247,22 @@ class WrappedModel(torch.nn.Module):
                 if self.model_start_i == 0:
                     logger.debug(f"storing layer {fixed_layer_i} into input bank")
                     # initiating pass case: store inputs into dict
-                    self.banked_input[fixed_layer_i] = layer_input
+                    self.banked_input[fixed_layer_i] = output
                 elif self.hook_style == "post" and self.model_start_i >= fixed_layer_i:
                     logger.debug(
                         f"overwriting layer {fixed_layer_i} with input from bank"
                     )
                     # completing pass: overwrite dummy pass with stored input
-                    hook_output = self.banked_input[fixed_layer_i]
+                    output = self.banked_input[fixed_layer_i]
             if (
                 self.model_stop_i <= fixed_layer_i < self.layer_count
                 and self.hook_style == "post"
             ):
                 logger.info(f"exit signal: during posthook {fixed_layer_i}")
-                self.banked_input[fixed_layer_i] = layer_input
+                self.banked_input[fixed_layer_i] = output
                 raise HookExitException(self.banked_input)
             logger.debug(f"end posthook {fixed_layer_i}")
-            return hook_output
+            return output
 
         return hook
 
