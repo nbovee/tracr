@@ -152,4 +152,5 @@ TEST
 *.pt
 
 # set up locally
-AppData/known_devices.yaml
+# ignore the known_devices.yaml file
+known_devices.yaml

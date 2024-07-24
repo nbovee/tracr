@@ -7,21 +7,26 @@ import struct
 import pickle
 import threading
 from rich.console import Console
-
 from src.tracr.app_api import utils
 
-
-MAIN_LOG_FP = utils.get_repo_root() / "AppData" / "app.log"
-
-
+MAIN_LOG_FP = (
+    utils.get_repo_root() / "tracr" / "app_api" / "app_data" / "app.log"
+)
 logger = logging.getLogger("tracr_logger")
 
 
-def setup_logging(verbosity: int = 3):
-    # levels = [logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG]
+def setup_logging(verbosity: int = 3) -> logging.Logger:
+    """
+    Sets up the logging configuration for the application.
+
+    Args:
+        verbosity (int, optional): Verbosity level of logging. Defaults to 3.
+
+    Returns:
+        logging.Logger: Configured logger instance.
+    """
     file_format = "%(asctime)s - %(module)s - %(levelname)s: %(message)s"
 
-    # add a custom attribute to LogRecord objects to keep track of origin device
     old_factory = logging.getLogRecordFactory()
 
     def record_factory(*args, **kwargs):
@@ -34,20 +39,15 @@ def setup_logging(verbosity: int = 3):
     logger = logging.getLogger("tracr_logger")
     logger.setLevel(logging.DEBUG)
 
-    # all messages will be logged to this file
     file_handler = logging.FileHandler(MAIN_LOG_FP.expanduser())
     file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter(file_format)
+    file_handler.setFormatter(file_formatter)
 
-    # only messages of the given level or higher will be logged to console
     console_handler = ConsoleHandler()
     console_handler.setFormatter(ColorByDeviceFormatter())
     console_handler.setLevel(logging.DEBUG)
 
-    # different formats for file and console logs
-    file_formatter = logging.Formatter(file_format)
-    file_handler.setFormatter(file_formatter)
-
-    # Adding the handlers to the logger
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
 
@@ -56,10 +56,7 @@ def setup_logging(verbosity: int = 3):
 
 class ColorByDeviceFormatter(logging.Formatter):
     """
-    The formatter used by the central logger's socket handler (which handles all the logs from)
-    remote nodes as they initialize and run). Each device is assigned a random color from the list
-    COLORS the first time a log is received from that device. All of their logs will be rendered
-    with that color to help with readability.
+    Formatter that assigns a random color to each device for log messages to improve readability.
     """
 
     COLORS: list[tuple[str, str]] = [
@@ -74,9 +71,18 @@ class ColorByDeviceFormatter(logging.Formatter):
         "OBSERVER": ("bright_white", "grey70")
     }
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
+        """
+        Formats the log record with colors based on the device.
+
+        Args:
+            record (logging.LogRecord): Log record to format.
+
+        Returns:
+            str: Formatted log message.
+        """
         msg_body = super().format(record)
-        tag = str(record.origin)  # type: ignore
+        tag = str(record.origin)
         device_name = tag.split("@")[0].upper()
 
         ctag, cbody = self.get_color(device_name)
@@ -85,18 +91,33 @@ class ColorByDeviceFormatter(logging.Formatter):
         return message
 
     def get_color(self, device_name: str) -> tuple[str, str]:
-        if device_name not in self.device_color_map.keys():
+        """
+        Gets the color for the device name.
+
+        Args:
+            device_name (str): Name of the device.
+
+        Returns:
+            tuple[str, str]: Tuple containing color tags.
+        """
+        if device_name not in self.device_color_map:
             color_duo = random.choice(
                 [t for t in self.COLORS if t not in self.device_color_map.values()]
             )
-            assert all([(color is not None) for color in color_duo])
             self.device_color_map[device_name] = color_duo
 
         return self.device_color_map[device_name]
 
 
 class LogRecordStreamHandler(socketserver.StreamRequestHandler):
-    def handle(self):
+    """
+    Handles streaming log records from remote nodes.
+    """
+
+    def handle(self) -> None:
+        """
+        Handles incoming log records from the socket.
+        """
         logger = logging.getLogger("tracr_logger")
         while True:
             chunk = self.connection.recv(4)
@@ -112,23 +133,46 @@ class LogRecordStreamHandler(socketserver.StreamRequestHandler):
 
 
 class ConsoleHandler(logging.StreamHandler):
+    """
+    Custom logging handler to print log messages to the console using Rich.
+    """
 
     console: Console = Console()
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
+        """
+        Emits a log record.
+
+        Args:
+            record (logging.LogRecord): Log record to emit.
+        """
         log_message = self.format(record)
         self.console.print(log_message)
 
 
 class DaemonThreadMixin(socketserver.ThreadingMixIn):
+    """
+    Mixin class to set daemon threads.
+    """
+
     daemon_threads = True
 
 
 class DaemonThreadingTCPServer(DaemonThreadMixin, socketserver.TCPServer):
+    """
+    TCP server that handles requests in daemon threads.
+    """
+
     pass
 
 
-def get_server_running_in_thread():
+def get_server_running_in_thread() -> DaemonThreadingTCPServer:
+    """
+    Starts the log server in a separate daemon thread.
+
+    Returns:
+        DaemonThreadingTCPServer: Running server instance.
+    """
     server = DaemonThreadingTCPServer(("", 9000), LogRecordStreamHandler)
 
     def shutdown_backup():
@@ -144,7 +188,13 @@ def get_server_running_in_thread():
     return server
 
 
-def shutdown_gracefully(running_server: DaemonThreadingTCPServer):
+def shutdown_gracefully(running_server: DaemonThreadingTCPServer) -> None:
+    """
+    Shuts down the server gracefully.
+
+    Args:
+        running_server (DaemonThreadingTCPServer): Running server instance.
+    """
     logger.info("Shutting down gracefully.")
     running_server.shutdown()
 
@@ -152,9 +202,12 @@ def shutdown_gracefully(running_server: DaemonThreadingTCPServer):
 if __name__ == "__main__":
     tracr_logger = setup_logging()
 
-    def test_client_connection():
-        # This function borrowed from the remote zdeploy script
-        def setup_tracr_logger(node_name, observer_ip):
+    def test_client_connection() -> None:
+        """
+        Tests client connection to the log server.
+        """
+
+        def setup_tracr_logger(node_name: str, observer_ip: str) -> logging.Logger:
             logger = logging.getLogger(f"{node_name}_logger")
             logger.setLevel(logging.DEBUG)
 
@@ -167,7 +220,6 @@ if __name__ == "__main__":
         client_logger = setup_tracr_logger("TEST", "127.0.0.1")
         client_logger.info("If you see this message, it's working.")
         client_logger.error("Here's another one.")
-        return
 
     running_server = get_server_running_in_thread()
     test_client_connection()

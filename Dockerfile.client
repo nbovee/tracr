@@ -1,0 +1,9 @@
+# Dockerfile.client
+# Extend the base Dockerfile
+FROM tracr_base_image
+
+# Copy the requirements file
+COPY requirements.client.txt .
+
+# Install client-specific Python dependencies
+RUN pip install -r requirements.client.txt

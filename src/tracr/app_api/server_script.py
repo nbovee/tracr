@@ -9,22 +9,21 @@ import rpyc.core.protocol
 from importlib import import_module
 from threading import Event
 
-
+# Configure RPyC to allow pickling and public attributes
 rpyc.core.protocol.DEFAULT_CONFIG["allow_pickle"] = True
 rpyc.core.protocol.DEFAULT_CONFIG["allow_public_attrs"] = True
 
-
-server_module     = "$SVR-MODULE$"
-server_class      = "$SVR-CLASS$"
-model_class       = "$MOD-CLASS$"
-model_module      = "$MOD-MODULE$"
-ps_module         = "$PS-MODULE$"
-ps_class          = "$PS-CLASS$"
-node_name         = "$NODE-NAME$".upper()
-participant_host  = "$PRT-HOST$"
-observer_ip       = "$OBS-IP$"
-max_uptime        = $MAX-UPTIME$
-
+# Variables that will be replaced during deployment
+server_module = "$SVR-MODULE$"
+server_class = "$SVR-CLASS$"
+model_class = "$MOD-CLASS$"
+model_module = "$MOD-MODULE$"
+ps_module = "$PS-MODULE$"
+ps_class = "$PS-CLASS$"
+node_name = "$NODE-NAME$".upper()
+participant_host = "$PRT-HOST$"
+observer_ip = "$OBS-IP$"
+max_uptime = $MAX-UPTIME$
 
 class LoggerWriter:
     def __init__(self, logfct):
@@ -43,7 +42,6 @@ class LoggerWriter:
 
     def flush(self):
         pass
-
 
 def setup_remote_logger(node_name, host, observer_ip):
     old_factory = logging.getLogRecordFactory()
@@ -75,7 +73,7 @@ here = os.path.dirname(__file__)
 os.chdir(here)
 
 def rmdir():
-    shutil.rmtree(here, ignore_errors = True)
+    shutil.rmtree(here, ignore_errors=True)
 atexit.register(rmdir)
 
 try:
@@ -88,7 +86,7 @@ except Exception:
 
 sys.path.insert(0, here)
 
-logger.info(f"Importing {server_class} from {server_module} as ServerCls'")
+logger.info(f"Importing {server_class} from {server_module} as ServerCls")
 m = import_module(server_module)
 ServerCls = getattr(m, server_class)
 
@@ -105,22 +103,23 @@ m = import_module(f"experiment_design.services.{ps_module}")
 CustomParticipantService = getattr(m, ps_class)
 
 # One way to programmatically set the service's formal name
-class $NODE-NAME$Service(CustomParticipantService):
-    ALIASES = [node_name, "PARTICIPANT"]
+ServiceClass = type(f"{node_name}Service", (CustomParticipantService,), {"ALIASES": [node_name, "PARTICIPANT"]})
 
 logger.info("Constructing participant_service instance.")
-participant_service = $NODE-NAME$Service(Model)
+participant_service = ServiceClass(Model)
 
 done_event = Event()
 participant_service.link_done_event(done_event)
 
 logger.info("Starting RPC server in thread.")
-server = ServerCls(participant_service,
-                   port=18861,
-                   reuse_addr=True,
-                   logger=logger,
-                   auto_register=True,
-                   protocol_config=rpyc.core.protocol.DEFAULT_CONFIG)
+server = ServerCls(
+    participant_service,
+    port=18861,
+    reuse_addr=True,
+    logger=logger,
+    auto_register=True,
+    protocol_config=rpyc.core.protocol.DEFAULT_CONFIG
+)
 
 def close_server_atexit():
     logger.info("Closing server due to atexit invocation.")

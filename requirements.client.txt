@@ -6,7 +6,3 @@ plumbum
 PyYAML
 rich
 rpyc
-torch
-torchinfo
-torchvision
-ultralytics
