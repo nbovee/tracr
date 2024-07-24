@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from tracr.app_api import device_mgmt as dm
+from src.tracr.app_api import device_mgmt as dm
 from unittest.mock import MagicMock, mock_open
 import yaml
 
@@ -13,7 +13,7 @@ def sample_device_mgr(mocker):
         connection_params:
             - host: "172.31.70.115"
               user: "racr"
-              pkey_fp: "tracr/app_api/app_data/pkeys/id_rsa"
+              pkey_fp: "src/tracr/app_api/app_data/pkeys/id_rsa"
               default: True
     """
 
@@ -33,7 +33,7 @@ def sample_device_mgr(mocker):
     mocker.patch("paramiko.RSAKey", new=mock_rsa_key)
 
     # Create a DeviceMgr instance with a mock file path
-    return dm.DeviceMgr(Path("tracr/app_api/app_data/known_devices.yaml"))
+    return dm.DeviceMgr(Path("src/tracr/app_api/app_data/known_devices.yaml"))
 
 
 def test_ssh_connection_params(sample_device_mgr):
@@ -58,7 +58,9 @@ def test_device_reachability(mocker, sample_device_mgr):
 
 def test_device_as_pb_sshmachine(mocker, sample_device_mgr):
     mock_ssh_machine = MagicMock()
-    mocker.patch("tracr.app_api.device_mgmt.SshMachine", return_value=mock_ssh_machine)
+    mocker.patch(
+        "src.tracr.app_api.device_mgmt.SshMachine", return_value=mock_ssh_machine
+    )
     laptop = sample_device_mgr.devices[0]
     laptop.working_cparams = dm.SSHConnectionParams(
         host="172.31.70.115", username="racr", rsa_pkey_path="id_rsa", default=True

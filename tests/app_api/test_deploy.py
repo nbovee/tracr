@@ -2,7 +2,7 @@ import builtins
 import pytest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
-from tracr.app_api import deploy
+from src.tracr.app_api import deploy
 from plumbum.machines.remote import RemoteCommand
 
 
@@ -29,12 +29,12 @@ def mock_tempdir_ctx(mocker):
 
 @pytest.fixture
 def mock_copy(mocker):
-    return mocker.patch("tracr.app_api.deploy.copy")
+    return mocker.patch("src.tracr.app_api.deploy.copy")
 
 
 @pytest.fixture
 def mock_local(mocker):
-    return mocker.patch("tracr.app_api.deploy.local")
+    return mocker.patch("src.tracr.app_api.deploy.local")
 
 
 @pytest.fixture
@@ -47,12 +47,15 @@ def mock_remote_command(mocker):
 def test_zero_deployed_server_init(
     mocker, mock_device, mock_tempdir_ctx, mock_copy, mock_local, mock_remote_command
 ):
-    mocker.patch("tracr.app_api.deploy.utils.get_local_ip", return_value="127.0.0.1")
+    mocker.patch(
+        "src.tracr.app_api.deploy.utils.get_local_ip", return_value="127.0.0.1"
+    )
     mocker.patch.object(
         mock_device.as_pb_sshmachine(), "tempdir", return_value=mock_tempdir_ctx
     )
     mocker.patch(
-        "tracr.app_api.deploy.utils.get_repo_root", return_value=Path("/mock/repo/root")
+        "src.tracr.app_api.deploy.utils.get_repo_root",
+        return_value=Path("/mock/repo/root"),
     )
 
     remote_machine_mock = mock_device.as_pb_sshmachine()
@@ -67,7 +70,7 @@ def test_zero_deployed_server_init(
     mock_remote_command.popen.return_value = mock_proc
 
     # Patch RemoteCommand with our mock type
-    mocker.patch("tracr.app_api.deploy.RemoteCommand", MockRemoteCommand)
+    mocker.patch("src.tracr.app_api.deploy.RemoteCommand", MockRemoteCommand)
 
     # Create a custom isinstance function
     original_isinstance = builtins.isinstance
@@ -102,9 +105,12 @@ def test_zero_deployed_server_init(
 def test_zero_deployed_server_connect_sock(
     mocker, mock_device, mock_tempdir_ctx, mock_remote_command
 ):
-    mocker.patch("tracr.app_api.deploy.utils.get_local_ip", return_value="127.0.0.1")
     mocker.patch(
-        "tracr.app_api.deploy.utils.get_repo_root", return_value=Path("/mock/repo/root")
+        "src.tracr.app_api.deploy.utils.get_local_ip", return_value="127.0.0.1"
+    )
+    mocker.patch(
+        "src.tracr.app_api.deploy.utils.get_repo_root",
+        return_value=Path("/mock/repo/root"),
     )
 
     remote_machine_mock = mock_device.as_pb_sshmachine()
@@ -120,7 +126,7 @@ def test_zero_deployed_server_connect_sock(
     mock_remote_command.popen.return_value = mock_proc
 
     # Patch RemoteCommand with our mock type
-    mocker.patch("tracr.app_api.deploy.RemoteCommand", MockRemoteCommand)
+    mocker.patch("src.tracr.app_api.deploy.RemoteCommand", MockRemoteCommand)
 
     # Create a custom isinstance function
     original_isinstance = builtins.isinstance
@@ -158,13 +164,16 @@ def test_zero_deployed_server_connect_sock(
 def test_zero_deployed_server_connect_sock(
     mocker, mock_device, mock_tempdir_ctx, mock_remote_command
 ):
-    mocker.patch("tracr.app_api.deploy.utils.get_local_ip", return_value="127.0.0.1")
     mocker.patch(
-        "tracr.app_api.deploy.utils.get_repo_root", return_value=Path("/mock/repo/root")
+        "src.tracr.app_api.deploy.utils.get_local_ip", return_value="127.0.0.1"
     )
-    mocker.patch("tracr.app_api.deploy.copy")  # Mock the copy function
     mocker.patch(
-        "tracr.app_api.deploy.local.path", return_value=mocker.Mock()
+        "src.tracr.app_api.deploy.utils.get_repo_root",
+        return_value=Path("/mock/repo/root"),
+    )
+    mocker.patch("src.tracr.app_api.deploy.copy")  # Mock the copy function
+    mocker.patch(
+        "src.tracr.app_api.deploy.local.path", return_value=mocker.Mock()
     )  # Mock local.path
 
     remote_machine_mock = mock_device.as_pb_sshmachine()
@@ -183,7 +192,7 @@ def test_zero_deployed_server_connect_sock(
     mock_remote_command.popen.return_value = mock_proc
 
     # Patch RemoteCommand with our mock type
-    mocker.patch("tracr.app_api.deploy.RemoteCommand", MockRemoteCommand)
+    mocker.patch("src.tracr.app_api.deploy.RemoteCommand", MockRemoteCommand)
 
     # Create a custom isinstance function
     original_isinstance = builtins.isinstance

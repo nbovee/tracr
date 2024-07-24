@@ -166,14 +166,18 @@ class DaemonThreadingTCPServer(DaemonThreadMixin, socketserver.TCPServer):
     pass
 
 
-def get_server_running_in_thread() -> DaemonThreadingTCPServer:
+def get_server_running_in_thread(port: int = 9000) -> DaemonThreadingTCPServer:
     """
     Starts the log server in a separate daemon thread.
+
+    Args:
+        port (int, optional): Port number for the server. Defaults to 9000.
 
     Returns:
         DaemonThreadingTCPServer: Running server instance.
     """
-    server = DaemonThreadingTCPServer(("", 9000), LogRecordStreamHandler)
+    logger.info(f"Starting server on port {port}")
+    server = DaemonThreadingTCPServer(("", port), LogRecordStreamHandler)
 
     def shutdown_backup():
         logger.info("Shutting down remote log server after atexit invocation.")
@@ -184,6 +188,7 @@ def get_server_running_in_thread() -> DaemonThreadingTCPServer:
 
     start_thd = threading.Thread(target=server.serve_forever, daemon=True)
     start_thd.start()
+    logger.info(f"Server thread started on port {port}")
 
     return server
 
@@ -197,6 +202,8 @@ def shutdown_gracefully(running_server: DaemonThreadingTCPServer) -> None:
     """
     logger.info("Shutting down gracefully.")
     running_server.shutdown()
+    running_server.server_close()
+    logger.info("Server shut down completed.")
 
 
 if __name__ == "__main__":

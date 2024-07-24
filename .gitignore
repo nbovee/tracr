@@ -154,3 +154,9 @@ TEST
 # set up locally
 # ignore the known_devices.yaml file
 known_devices.yaml
+
+# ignore rsa keys
+pkeys/
+*.pem
+id_rsa
+id_rsa.pub

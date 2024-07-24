@@ -1,26 +1,40 @@
 # import pytest
 # from unittest.mock import MagicMock, mock_open, patch
 # from pathlib import Path
+# import pandas as pd
 # import yaml
 
-# # Mock heavy dependencies
-# with patch.dict(
-#     "sys.modules",
-#     {
-#         "tracr.experiment_design.services.base": MagicMock(),
-#         "tracr.experiment_design.models.model_hooked": MagicMock(),
-#         "PIL": MagicMock(),
-#         "torch": MagicMock(),
-#         "torch.nn": MagicMock(),
-#         "torch.utils": MagicMock(),
-#         "torchvision": MagicMock(),
-#         "torchvision.transforms": MagicMock(),
-#         "torchinfo": MagicMock(),
-#         "ultralytics": MagicMock(),
-#     },
-# ):
-#     from tracr.app_api import experiment_mgmt
+# # Create mock classes for tasks
+# class MockInferOverDatasetTask(MagicMock):
+#     pass
 
+# class MockFinishSignalTask(MagicMock):
+#     pass
+
+# class MockWaitForTasks(MagicMock):
+#     pass
+
+# # Mock heavy dependencies
+# mock_modules = {
+#     "src.tracr.experiment_design.services.base": MagicMock(),
+#     "src.tracr.experiment_design.models.model_hooked": MagicMock(),
+#     "PIL": MagicMock(),
+#     "torch": MagicMock(),
+#     "torch.nn": MagicMock(),
+#     "torch.utils": MagicMock(),
+#     "torchvision": MagicMock(),
+#     "torchvision.transforms": MagicMock(),
+#     "torchinfo": MagicMock(),
+#     "ultralytics": MagicMock(),
+#     "src.tracr.experiment_design.tasks": MagicMock(
+#         InferOverDatasetTask=MockInferOverDatasetTask,
+#         FinishSignalTask=MockFinishSignalTask,
+#         WaitForTasks=MockWaitForTasks
+#     ),
+# }
+
+# with patch.dict("sys.modules", mock_modules):
+#     from src.tracr.app_api import experiment_mgmt
 
 # @pytest.fixture
 # def sample_experiment_manifest(mocker):
@@ -71,20 +85,25 @@
 #     # Create an ExperimentManifest instance with a mock file path
 #     return experiment_mgmt.ExperimentManifest(Path("dummy_manifest.yaml"))
 
-
 # def test_experiment_manifest_init(sample_experiment_manifest):
 #     assert isinstance(sample_experiment_manifest, experiment_mgmt.ExperimentManifest)
 #     assert len(sample_experiment_manifest.participant_types) > 0
 #     assert len(sample_experiment_manifest.participant_instances) > 0
 #     assert len(sample_experiment_manifest.playbook) > 0
-
+#     assert all(isinstance(item, list) for item in sample_experiment_manifest.playbook.values())
 
 # def test_experiment_init(mocker, sample_experiment_manifest):
 #     available_devices = [mocker.Mock()]
 #     exp = experiment_mgmt.Experiment(sample_experiment_manifest, available_devices)
 #     assert exp.available_devices == available_devices
 #     assert exp.manifest == sample_experiment_manifest
-
+#     assert exp.registry_server is not None
+#     assert exp.observer_node is None
+#     assert exp.observer_conn is None
+#     assert isinstance(exp.participant_nodes, list)
+#     assert isinstance(exp.threads, dict)
+#     assert isinstance(exp.events, dict)
+#     assert isinstance(exp.report_dataframe, (type(None), pd.DataFrame))
 
 # @pytest.mark.asyncio
 # async def test_experiment_run(mocker, sample_experiment_manifest):
