@@ -1,3 +1,4 @@
+from typing import List
 import socket
 from contextlib import closing
 from pathlib import Path
@@ -7,14 +8,39 @@ from rpyc.utils.registry import REGISTRY_PORT, MAX_DGRAM_SIZE
 REMOTE_LOG_SVR_PORT = 9000
 
 
-def get_repo_root() -> Path:
+# def get_repo_root() -> Path:
+#     """
+#     Returns the root directory of this repository as a pathlib.Path object.
+
+#     Returns:
+#         Path: Root directory of the repository.
+#     """
+#     return Path(__file__).parent.parent.parent.parent.absolute()
+
+
+def get_repo_root(
+    markers: List[str] = [".git", "requirements.txt", "app.py", "pyproject.toml"]
+) -> Path:
     """
     Returns the root directory of this repository as a pathlib.Path object.
+    It searches for any of the given markers to determine the root directory.
+    This is a more robust method rather than relying on the directory structure and chaining Path.parent.
+
+    Args:
+        markers (List[str]): A list of directories or files that indicate the root of the repository.
+                             Defaults to [".git", "requirements.txt", "app.py", "pyproject.toml"].
 
     Returns:
         Path: Root directory of the repository.
     """
-    return Path(__file__).parent.parent.parent.absolute()
+    current_path = Path(__file__).absolute().parent
+    while not any((current_path / marker).exists() for marker in markers):
+        if current_path.parent == current_path:
+            raise RuntimeError(
+                f"None of the markers {markers} were found in any parent directory."
+            )
+        current_path = current_path.parent
+    return current_path
 
 
 def get_local_ip() -> str:

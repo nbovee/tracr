@@ -123,7 +123,7 @@ class ZeroDeployedServer(DeployedServer):
         )
         return self.remote_machine.python
 
-    def _connect_sock(self):
+    def _connect_sock(self, port=18861):
         """
         Connects to the remote socket stream.
 
@@ -131,7 +131,7 @@ class ZeroDeployedServer(DeployedServer):
             SocketStream: The connected socket stream.
         """
         assert isinstance(self.remote_machine, SshMachine)
-        return SocketStream._connect(self.remote_machine.host, 18861)
+        return SocketStream._connect(self.remote_machine.host, port)
 
     def __del__(self):
         """

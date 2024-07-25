@@ -98,11 +98,13 @@ class ExperimentManifest:
         new_playbook = {instance_name: [] for instance_name in playbook.keys()}
         for instance_name, tasklist in playbook.items():
             for task_as_dict in tasklist:
+                assert isinstance(task_as_dict["task_type"], str)
                 task_type = task_as_dict["task_type"].lower()
                 task_object = None
 
                 if "inf" in task_type and "dataset" in task_type:
                     params = task_as_dict["params"]
+                    assert isinstance(params, dict)
                     task_object = tasks.InferOverDatasetTask(
                         params["dataset_module"], params["dataset_instance"]
                     )
@@ -402,7 +404,15 @@ class Experiment:
 
         file_ext = "csv" if format == "csv" else "pkl"
         fn = f"{self.manifest.name}__{datetime.now().strftime('%Y-%m-%dT%H%M%S')}.{file_ext}"
-        fp = utils.get_repo_root() / "src" / "app_api" / "user_data" / "test_results" / fn
+        fp = (
+            utils.get_repo_root()
+            / "src"
+            / "tracr"
+            / "app_api"
+            / "user_data"
+            / "test_results"
+            / fn
+        )
 
         logger.info(f"Saving results to {str(fp)}")
 

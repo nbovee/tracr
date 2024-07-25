@@ -1,42 +1,47 @@
 # alexnet_split.yaml
-# define the types of participants that will be used in the experiment
+# This configuration file defines a split inference setup for AlexNet model
+
+# Define the types of participants in the experiment
 participant_types:
+  # Client configuration
   client:
     service:
-      module: basic_split_inference
-      class: ClientService
+      module: basic_split_inference  # Module for client-side operations
+      class: ClientService           # Class implementing client service
     model:
-      model_name: alexnet
-      device: cpu
-      mode: eval
-      depth: np.inf
-      input_size: [3, 224, 224]
-      class: default
+      model_name: alexnet            # Using AlexNet model
+      device: cpu                    # Run on CPU
+      mode: eval                     # Model in evaluation mode
+      depth: np.inf                  # Infinite depth for model splitting
+      input_size: [3, 224, 224]      # Input dimensions (channels, height, width)
+      class: default                 # Default model class
+
+  # Edge server configuration
   edge:
     service:
-      module: basic_split_inference
-      class: EdgeService
+      module: basic_split_inference  # Module for edge-side operations
+      class: EdgeService             # Class implementing edge service
     model:
-      module: default
-      class: default
+      module: default                # Default module for edge model
+      class: default                 # Default class for edge model
 
-# there may be multiple instances of each type; this is where we map types to devices
-# and provide unique names for each instance
+# Map participant types to specific devices and assign unique names
 participant_instances:
-  - device: localhost
+  - device: localhost                # Client runs on local machine
     node_type: client
-    instance_name: CLIENT1
-  - device: racr
+    instance_name: CLIENT1           # Unique name for this client instance
+  - device: racr                     # Edge server runs on a device named 'racr'
     node_type: edge
-    instance_name: EDGE1
+    instance_name: EDGE1             # Unique name for this edge instance
 
-# define the initial tasks that will be sent out to each participant to begin the experiment
+# Define initial tasks for each participant to start the experiment
 playbook:
-  CLIENT1:
-    - task_type: infer_dataset
+  CLIENT1:                           # Tasks for CLIENT1
+    - task_type: infer_dataset       # Perform inference on a dataset
       params:
-        dataset_module: imagenet
-        dataset_instance: imagenet10_tr
-    - task_type: finish_signal
-  EDGE1:
-    - task_type: wait_for_tasks
+        dataset_module: imagenet     # Using ImageNet dataset module
+        dataset_instance: imagenet10_tr  # Specific ImageNet subset (likely 10 classes)
+    - task_type: finish_signal       # Signal completion of tasks
+
+  EDGE1:                             # Tasks for EDGE1
+    - task_type: wait_for_tasks      # Wait for tasks from clients

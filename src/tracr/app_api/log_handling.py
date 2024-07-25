@@ -10,7 +10,7 @@ from rich.console import Console
 from src.tracr.app_api import utils
 
 MAIN_LOG_FP = (
-    utils.get_repo_root() / "tracr" / "app_api" / "app_data" / "app.log"
+    utils.get_repo_root() / "src" / "tracr" / "app_api" / "app_data" / "app.log"
 )
 logger = logging.getLogger("tracr_logger")
 

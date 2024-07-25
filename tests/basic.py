@@ -16,7 +16,7 @@ def test_version():
     try:
         version = tracr.__version__
         print(f"tracr version: {version}")
-        assert version == "0.1"
+        assert version == "0.1.0"
     except AttributeError as e:
         print(f"Version attribute missing: {e}")
 

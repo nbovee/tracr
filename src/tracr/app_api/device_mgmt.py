@@ -339,7 +339,12 @@ class DeviceMgr:
     """
 
     DATAFILE_PATH: pathlib.Path = (
-        utils.get_repo_root() / "src" / "tracr" / "app_api"  / "app_data" / "known_devices.yaml"
+        utils.get_repo_root()
+        / "src"
+        / "tracr"
+        / "app_api"
+        / "app_data"
+        / "known_devices.yaml"
     )
 
     devices: list[Device]
