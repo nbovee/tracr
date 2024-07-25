@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from typing import Union
 
-from src.tracr.app_api import utils
+from . import utils
 
 
 class SSHAuthenticationException(Exception):

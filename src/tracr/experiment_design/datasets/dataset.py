@@ -1,6 +1,5 @@
 from pathlib import Path
 from torch.utils.data import Dataset
-
 from src.tracr.app_api.utils import get_repo_root
 
 
@@ -9,7 +8,9 @@ class BaseDataset(Dataset):
     Implements basic functionality required for any dataset.
     """
 
-    DATA_SOURCE_DIRECTORY: Path = get_repo_root() / "UserData" / "Dataset_Data"
+    DATA_SOURCE_DIRECTORY: Path = (
+        get_repo_root() / "src" / "tracr" / "app_api" / "user_data" / "dataset_data"
+    )
 
     length: int
 

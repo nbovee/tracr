@@ -20,79 +20,93 @@ entry for this type of task in their `task_map` attribute, they will be able to 
 """
 
 import uuid
+from typing import Any, Optional, Union
 import numpy as np
-from typing import Any, Union
 
 
 class Task:
     """
-    The base class for all task types. Implements two important components required for task
-    objects to work properly:
-        1.) Required attributes
-            * `from_node`: the node that sent the task
-            * `task_type`: a string representation of the class name
-            * `priority`: used to prioritize tasks in the inbox (lower values are first in line)
-        2.) Dunder methods for prioritization in the inbox
+    Base class for all task types in the distributed inference system.
 
-    This class is not meant to be used itself, but subclassed.
+    This class defines common attributes and methods required for task prioritization
+    and identification. It should not be used directly but subclassed for specific
+    task types.
+
+    Attributes:
+        from_node (str): The identifier of the node that sent the task.
+        task_type (str): A string representation of the task's class name.
+        priority (int): The priority level of the task (1-10, lower is higher priority).
+
+    Methods:
+        Comparison methods for priority-based sorting in the inbox.
     """
 
-    from_node: str
-    task_type: str
-    priority: int = 5  # from 1 to 10 (or 11 for FinishSignalTask)
-
     def __init__(self, from_node: str, priority: int = 5):
-        self.priority = priority
-        self.from_node = from_node
-        self.task_type = self.__class__.__name__
+        """
+        Initialize a new Task.
 
-    def __lt__(self, obj):
-        return self.priority < obj.priority
+        Args:
+            from_node (str): The identifier of the node sending the task.
+            priority (int, optional): The priority level of the task. Defaults to 5.
+        """
+        self.from_node: str = from_node
+        self.task_type: str = self.__class__.__name__
+        self.priority: int = priority
 
-    def __le__(self, obj):
-        return self.priority <= obj.priority
+    def __lt__(self, other: "Task") -> bool:
+        return self.priority < other.priority
 
-    def __gt__(self, obj):
-        return self.priority > obj.priority
+    def __le__(self, other: "Task") -> bool:
+        return self.priority <= other.priority
 
-    def __ge__(self, obj):
-        return self.priority >= obj.priority
+    def __gt__(self, other: "Task") -> bool:
+        return self.priority > other.priority
+
+    def __ge__(self, other: "Task") -> bool:
+        return self.priority >= other.priority
 
 
 class SimpleInferenceTask(Task):
     """
-    Sending this task to a node's inbox is like saying:
+    A task for performing a specific inference operation.
 
-    'Here is an input - complete one inference exactly as specified in this task.'
+    This task provides explicit instructions for how an inference should be performed,
+    including the input, start and end layers, and where to send the results.
 
-    The node has no say in how the inference is partitioned, the `inference_id`, or where to send
-    the intermediary data (if applicable); this type of task tells the node exactly what to do.
+    Attributes:
+        input (Any): The input data for the inference.
+        inference_id (Optional[str]): A unique identifier for the inference.
+        start_layer (int): The starting layer for the inference.
+        end_layer (Union[int, float]): The ending layer for the inference.
+        downstream_node (Optional[str]): The node to send results to, if any.
     """
-
-    priority: int = 5
-    input: Any
-    inference_id: Union[str, None] = None
-    start_layer: int = 0
-    end_layer: Union[int, float] = np.inf
-    downstream_node: Union[str, None] = None
 
     def __init__(
         self,
         from_node: str,
         input: Any,
-        inference_id: Union[str, None] = None,
+        inference_id: Optional[str] = None,
         start_layer: int = 0,
         end_layer: Union[int, float] = np.inf,
-        downstream_node: Union[str, None] = None,
+        downstream_node: Optional[str] = None,
     ):
+        """
+        Initialize a new SimpleInferenceTask.
+
+        Args:
+            from_node (str): The identifier of the node sending the task.
+            input (Any): The input data for the inference.
+            inference_id (Optional[str], optional): A unique identifier for the inference. Defaults to None.
+            start_layer (int, optional): The starting layer for the inference. Defaults to 0.
+            end_layer (Union[int, float], optional): The ending layer for the inference. Defaults to np.inf.
+            downstream_node (Optional[str], optional): The node to send results to, if any. Defaults to None.
+        """
         super().__init__(from_node)
-        self.input = input
-        self.start_layer = start_layer
-        self.end_layer = end_layer
-        self.downstream_node = downstream_node
-        self.inference_id = inference_id
-        if self.start_layer == 0 and self.inference_id is None:
-            self.inference_id = str(uuid.uuid4())
+        self.input: Any = input
+        self.start_layer: int = start_layer
+        self.end_layer: Union[int, float] = end_layer
+        self.downstream_node: Optional[str] = downstream_node
+        self.inference_id: str = inference_id or str(uuid.uuid4())
 
 
 class SingleInputInferenceTask(Task):
@@ -112,19 +126,23 @@ class SingleInputInferenceTask(Task):
     the receiving node will be finishing an incomplete inference.
     """
 
-    priority: int = 5
-    input: Any
-    inference_id: Union[str, None] = None
-
     def __init__(
         self,
         input: Any,
-        inference_id: Union[str, None] = None,
+        inference_id: Optional[str] = None,
         from_node: str = "OBSERVER",
     ):
+        """
+        Initialize a new SingleInputInferenceTask.
+
+        Args:
+            input (Any): The input data to be processed.
+            inference_id (Optional[str], optional): A unique identifier for the inference. Defaults to None.
+            from_node (str, optional): The identifier of the node sending the task. Defaults to "OBSERVER".
+        """
         super().__init__(from_node)
-        self.input = input
-        self.inference_id = inference_id
+        self.input: Any = input
+        self.inference_id: Optional[str] = inference_id
 
 
 class InferOverDatasetTask(Task):
@@ -140,28 +158,35 @@ class InferOverDatasetTask(Task):
     overwrite the `infer_dataset` method inherited from ParticipantService.
     """
 
-    priority: int = 5
-    dataset_module: str
-    dataset_instance: str
-
     def __init__(
         self, dataset_module: str, dataset_instance: str, from_node: str = "OBSERVER"
     ):
+        """
+        Initialize a new InferOverDatasetTask.
+
+        Args:
+            dataset_module (str): The name of the module containing the dataset.
+            dataset_instance (str): The name of the specific dataset instance to use.
+            from_node (str, optional): The identifier of the node sending the task. Defaults to "OBSERVER".
+        """
         super().__init__(from_node)
-        self.dataset_module = dataset_module
-        self.dataset_instance = dataset_instance
+        self.dataset_module: str = dataset_module
+        self.dataset_instance: str = dataset_instance
 
 
 class FinishSignalTask(Task):
     """
-    Sort of like a sentry value that lets a Runnner know when it's done. Priority is set to an
-    abnormally high value to ensure it's always processed last, but this does not mean the node
-    will wait for new tasks to arrive if this is the last one left in the inbox. This should only
-    be sent once you are sure the receiving node has already collected its required tasks in its
-    inbox.
+    A task to signal the completion of all tasks for a node.
+
+    This task has the highest priority to ensure it's processed last. It should
+    only be sent when all other tasks for the receiving node have been completed.
     """
 
-    priority: int = 11
-
     def __init__(self, from_node: str = "OBSERVER"):
-        super().__init__(from_node)
+        """
+        Initialize a new FinishSignalTask.
+
+        Args:
+            from_node (str, optional): The identifier of the node sending the task. Defaults to "OBSERVER".
+        """
+        super().__init__(from_node, priority=11)

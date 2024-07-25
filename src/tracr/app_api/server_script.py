@@ -98,8 +98,8 @@ else:
     logger.info("Using default model (AlexNet)")
     Model = None
 
-logger.info(f"Importing {ps_class} from experiment_design.services.{ps_module}.")
-m = import_module(f"experiment_design.services.{ps_module}")
+logger.info(f"Importing {ps_class} from app_api.services.{ps_module}.")
+m = import_module(f"app_api.services.{ps_module}")
 CustomParticipantService = getattr(m, ps_class)
 
 # One way to programmatically set the service's formal name

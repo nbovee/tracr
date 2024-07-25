@@ -5,13 +5,17 @@ from pathlib import Path
 from src.tracr.app_api import deploy
 from plumbum.machines.remote import RemoteCommand
 
+
 class MockPath:
     def __init__(self, path):
         self.path = path
+
     def __truediv__(self, other):
         return MockPath(f"{self.path}/{other}")
+
     def up(self):
         return MockPath(str(Path(self.path).parent))
+
 
 @pytest.fixture
 def mock_device(mocker):
@@ -23,6 +27,7 @@ def mock_device(mocker):
     device.as_pb_sshmachine.return_value = mocker.Mock(spec=deploy.SshMachine)
     return device
 
+
 @pytest.fixture
 def mock_tempdir_ctx(mocker):
     mock_tempdir = mocker.MagicMock()
@@ -32,9 +37,11 @@ def mock_tempdir_ctx(mocker):
     mock_tempdir.write = mocker.Mock()
     return mock_tempdir
 
+
 @pytest.fixture
 def mock_copy(mocker):
     return mocker.patch("src.tracr.app_api.deploy.copy")
+
 
 @pytest.fixture
 def mock_local(mocker):
@@ -42,11 +49,13 @@ def mock_local(mocker):
     mock_local.path.side_effect = lambda p: MockPath(str(p))
     return mock_local
 
+
 @pytest.fixture
 def mock_remote_command(mocker):
     mock_command = mocker.Mock(spec=RemoteCommand)
     mock_command.popen.return_value = mocker.Mock()
     return mock_command
+
 
 def test_zero_deployed_server_init(
     mocker, mock_device, mock_tempdir_ctx, mock_copy, mock_local, mock_remote_command
@@ -73,10 +82,12 @@ def test_zero_deployed_server_init(
     mocker.patch("src.tracr.app_api.deploy.RemoteCommand", MockRemoteCommand)
 
     original_isinstance = builtins.isinstance
+
     def mock_isinstance(obj, class_or_tuple):
         if class_or_tuple is MockRemoteCommand:
             return True
         return original_isinstance(obj, class_or_tuple)
+
     mocker.patch("builtins.isinstance", mock_isinstance)
 
     mocker.patch.object(
@@ -95,6 +106,7 @@ def test_zero_deployed_server_init(
     assert zds.name == mock_device._name
     assert zds.remote_machine == mock_device.as_pb_sshmachine()
     assert isinstance(zds.proc, MagicMock)
+
 
 def test_zero_deployed_server_connect_sock(
     mocker, mock_device, mock_tempdir_ctx, mock_remote_command, mock_local
@@ -121,10 +133,12 @@ def test_zero_deployed_server_connect_sock(
     mocker.patch("src.tracr.app_api.deploy.RemoteCommand", MockRemoteCommand)
 
     original_isinstance = builtins.isinstance
+
     def mock_isinstance(obj, class_or_tuple):
         if class_or_tuple is MockRemoteCommand:
             return True
         return original_isinstance(obj, class_or_tuple)
+
     mocker.patch("builtins.isinstance", mock_isinstance)
 
     mocker.patch.object(

@@ -1,158 +1,186 @@
-from .partitioner import Partitioner
-from typing import Any
-import torch
 import os
 import csv
 import pickle
+from typing import Any, Dict, List, Tuple
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from .partitioner import Partitioner
 
-# import matplotlib.pyplot as plt
+
+class LinearRegression(nn.Module):
+    """A simple linear regression model."""
+
+    def __init__(self):
+        super().__init__()
+        self.model = nn.Linear(1, 1)
+        self.criterion = nn.MSELoss()
+        self.optimizer = optim.SGD(self.model.parameters(), lr=1e-2)
+        self.training_iterations = 20
+        self.loss_history: List[float] = []
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Perform forward pass."""
+        assert isinstance(x, torch.Tensor)
+        return self.model(x.unsqueeze(0))
+
+    def train_step(self, y: torch.Tensor, pred: torch.Tensor) -> None:
+        """Perform a single training step."""
+        assert isinstance(y, torch.Tensor) and isinstance(pred, torch.Tensor)
+        loss = self.criterion(pred, y.unsqueeze(0))
+        self.loss_history.append(loss.item())
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+    def set_weights(self, weight: float, bias: float) -> None:
+        """Manually set the weights of the model."""
+        with torch.no_grad():
+            self.model.weight.fill_(weight)
+            self.model.bias.fill_(bias)
+
+    def scale_bias(self, scale_factor: float) -> None:
+        """Scale the bias of the model."""
+        with torch.no_grad():
+            self.model.bias.mul_(scale_factor)
 
 
 class RegressionPartitioner(Partitioner):
+    """A partitioner that uses linear regression to estimate split points."""
+
     _TYPE = "regression"
 
-    class linreg:
-
-        def __init__(self, *args) -> None:
-            self.model = torch.nn.Linear(1, 1)
-            self.criterion = torch.nn.MSELoss()
-            self.optim = torch.optim.SGD(self.model.parameters(), lr=1e-2)
-            self.training_iter = 20
-            self.loss_list = []
-
-        def forward(self, x):
-            return self.model(torch.unsqueeze(x, 0))
-
-        def train_pass(self, y, pred):
-            loss = self.criterion(pred, torch.as_tensor([y]))
-            # storing the calculated loss in a list
-            self.loss_list.append(loss.data)
-            # backward pass for computing the gradients of the loss w.r.t to learnable parameters
-            self.optim.zero_grad()
-            loss.backward()
-            self.optim.step()
-
-        def manually_set_weights(self, w, b):
-            self.model.weight.requires_grad = False
-            self.model.bias.requires_grad = False
-            self.model.weight.fill_(w)
-            self.model.bias.fill_(b)
-
-        def manually_scale_bias(self, scale_factor):
-            self.model.weight.requires_grad = False
-            self.model.bias.requires_grad = False
-            temp = scale_factor * self.model.bias
-            self.model.bias.data = temp
-
-    def __init__(self, num_breakpoints, clip_min_max=True) -> None:
+    def __init__(self, num_breakpoints: int, clip_min_max: bool = True) -> None:
         super().__init__()
-        self.start = 0  # needed if we start dropping modules from the Model class
         self.breakpoints = num_breakpoints
         self.clip = clip_min_max
-        self.regression = {}
-        self.module_sequence = []
-        self.num_modules = None
-        self._dir = "TestCases/AlexnetSplit/partitioner_datapoints/local/"
+        self.regression: Dict[str, LinearRegression] = {}
+        self.module_sequence: List[Tuple[str, int, int]] = []
+        self.num_modules: int = 0
+        self._dir = (
+            "src/tracr/app_api/test_cases/alexnetsplit/partitioner_datapoints/local/"
+        )
         self.server_regression = None
 
-    def pass_regression_copy(self):
+    def pass_regression_copy(self) -> bytes:
+        """Return a pickled copy of the regression models."""
         return pickle.dumps(self.regression)
 
-    def add_server_module(self, server_modules):
+    def add_server_module(self, server_modules: Any) -> None:
+        """Add server modules to the partitioner."""
         self.server_regression = server_modules
 
-    def estimate_split_point(self, starting_layer):
-        """returns the index of the active model to split before. To mandate layer 0 is run on edge, provide starting_layer = 1"""
+    def estimate_split_point(self, starting_layer: int) -> int:
+        """
+        Estimate the optimal split point based on the regression models.
+
+        Args:
+            starting_layer (int): The layer to start estimation from.
+
+        Returns:
+            int: The estimated split point.
+        """
         for module, param_bytes, output_bytes in self.module_sequence:
             local_time_est_s = (
-                int(
-                    self.regression[module].forward(torch.as_tensor(float(param_bytes)))
-                )
+                self.regression[module].forward(torch.tensor(float(param_bytes))).item()
                 * 1e-9
             )
-            if self.server_regression is None:
-                server_time_est_s = 0
-            else:
-                server_time_est_s = (
-                    int(
-                        self.server_regression[module].forward(
-                            torch.as_tensor(float(param_bytes))
-                        )
-                    )
-                    * 1e-9
-                )  # get server_regression from grpc
+            server_time_est_s = (
+                0
+                if self.server_regression is None
+                else self.server_regression[module]
+                .forward(torch.tensor(float(param_bytes)))
+                .item()
+                * 1e-9
+            )
             output_transfer_time = output_bytes / self._get_network_speed_bytes()
+
             if local_time_est_s < output_transfer_time + server_time_est_s:
                 starting_layer += 1
             else:
                 return starting_layer
+        return starting_layer
 
-    def create_data(self, model, iterations=10):
+    def create_data(self, model: Any, iterations: int = 10) -> None:
+        """
+        Create data for regression analysis.
+
+        Args:
+            model: The model to analyze.
+            iterations (int): Number of iterations for data collection.
+        """
         for f in os.listdir(self._dir):
             os.remove(os.path.join(self._dir, f))
-        temp_data = []
-        for i in range(iterations):
+
+        for _ in range(iterations):
             model(torch.randn(1, *model.base_input_size), inference_id="profile")
             from_model = model.master_dict.pop("profile")["layer_information"].values()
-            temp_data.extend(from_model)
-            # build a simple sequence from the first row of data
-        for i in range(self.breakpoints):
-            self.module_sequence.append(
-                (
-                    temp_data[i]["class"],
-                    temp_data[i]["parameter_bytes"],
-                    temp_data[i]["output_bytes"],
+            self._process_model_data(from_model)
+
+    def _process_model_data(self, data: Any) -> None:
+        """Process and save model data for regression analysis."""
+        output_bytes = None
+        for datapoint in data:
+            if len(self.module_sequence) < self.breakpoints:
+                self.module_sequence.append(
+                    (
+                        datapoint["class"],
+                        datapoint["parameter_bytes"],
+                        datapoint["output_bytes"],
+                    )
                 )
+
+            selected_value = (
+                datapoint["parameter_bytes"]
+                if datapoint["parameter_bytes"] != 0
+                else output_bytes
             )
-        output_bytes = None  # store output size bytes for usage in following layers that may not have true parameters
-        for datapoint in temp_data:
-            with open(os.path.join(self._dir, f'{datapoint["class"]}.csv'), "a") as f:
-                selected_value = (
-                    datapoint["parameter_bytes"]
-                    if datapoint["parameter_bytes"] != 0
-                    else output_bytes
-                )
-                f.write(f"{selected_value}, {datapoint['inference_time']}\n")
+            self._save_datapoint(
+                datapoint["class"], selected_value, datapoint["inference_time"]
+            )
             output_bytes = datapoint["output_bytes"]
 
-    def update_regression(self):
+    def _save_datapoint(self, class_name: str, x: float, y: float) -> None:
+        """Save a single datapoint to a CSV file."""
+        with open(os.path.join(self._dir, f"{class_name}.csv"), "a") as f:
+            f.write(f"{x}, {y}\n")
+
+    def update_regression(self) -> None:
+        """Update regression models based on collected data."""
         for layer_type in os.listdir(self._dir):
-            x, y = [], []
-            self.regression[layer_type.split(".")[0]] = RegressionPartitioner.linreg()
-            current_linreg = self.regression[layer_type.split(".")[0]]
-            with open(os.path.join(self._dir, layer_type)) as f:
-                reader = csv.reader(f)
-                for line in reader:
-                    x.append(float(line[0]))
-                    y.append(float(line[1]))
-                # normalize to avoid explosion
-                x = torch.as_tensor(x)
-                y = torch.as_tensor(y)
-                if max(x) == min(x):
-                    print(
-                        f"Insufficient data for linreg, setting w=0 b=middle quantile {layer_type.split('.')[0]}"
-                    )
-                    current_linreg.manually_set_weights(
-                        torch.as_tensor(0), torch.quantile(y, q=0.5)
-                    )
-                else:
-                    # normalize to avoid explosion
-                    mmax = max(max(x), max(y))  # pyright: ignore
-                    x = x / mmax
-                    y = y / mmax
-                    for i in range(current_linreg.training_iter):
-                        # variable dataset so batchsize of 1
-                        for v, z in zip(x, y):
-                            pred = current_linreg.forward(v)
-                            current_linreg.train_pass(z, pred)
-                    # then scale b by mmax, our data is not normalized to the same range
-                    current_linreg.manually_scale_bias(mmax)
+            x, y = self._load_data(os.path.join(self._dir, layer_type))
+            self.regression[layer_type.split(".")[0]] = self._train_regression(x, y)
 
-    def _get_network_speed_bytes(self, artificial_value=4 * 1024**2):
-        # needs work, ideal methodology to have a thread checking this continuously.
-        return (
-            artificial_value if artificial_value else None
-        )  # change none to the thread value
+    def _load_data(self, filepath: str) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Load data from a CSV file."""
+        x, y = [], []
+        with open(filepath) as f:
+            reader = csv.reader(f)
+            for line in reader:
+                x.append(float(line[0]))
+                y.append(float(line[1]))
+        return torch.tensor(x), torch.tensor(y)
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+    def _train_regression(self, x: torch.Tensor, y: torch.Tensor) -> LinearRegression:
+        """Train a linear regression model on the given data."""
+        model = LinearRegression()
+        if x.max() == x.min():
+            print(f"Insufficient data for regression, setting w=0 b=median")
+            model.set_weights(0, torch.median(y))
+        else:
+            mmax = max(x.max(), y.max())
+            x_norm, y_norm = x / mmax, y / mmax
+            for _ in range(model.training_iterations):
+                for v, z in zip(x_norm, y_norm):
+                    pred = model.forward(v)
+                    model.train_step(z, pred)
+            model.scale_bias(mmax)
+        return model
+
+    def _get_network_speed_bytes(self, artificial_value: int = 4 * 1024**2) -> int:
+        """Get the network speed in bytes per second."""
+        return artificial_value  # TODO: Implement actual network speed measurement
+
+    def __call__(self, *args: Any, **kwargs: Any) -> int:
+        """Estimate the split point when the partitioner is called."""
         return self.estimate_split_point(starting_layer=0)

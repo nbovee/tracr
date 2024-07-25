@@ -1,57 +1,112 @@
 import pathlib
 import logging
-from PIL import Image
-
-from src.tracr.experiment_design.datasets.dataset import BaseDataset
+from typing import Optional, Callable
 import torchvision.transforms as transforms
-
+from PIL import Image
+from .dataset import BaseDataset
 
 logger = logging.getLogger("tracr_logger")
 
 
 class ImagenetDataset(BaseDataset):
     """
-    Here's an example of a 'user-defined' dataset class extending the included BaseDataset
-    class. Below the class definitions are some instances of this class that can later be
-    referenced by participating nodes for experiments.
+    A dataset class for loading and processing ImageNet data.
+
+    This class extends the BaseDataset class and provides functionality to load
+    ImageNet images and labels, apply transformations, and retrieve items.
+
+    Attributes:
+        CLASS_TEXTFILE (pathlib.Path): Path to the file containing ImageNet class labels.
+        IMG_DIRECTORY (pathlib.Path): Path to the directory containing ImageNet images.
+        img_labels (list): List of image labels.
+        img_dir (pathlib.Path): Directory containing the images.
+        transform (Optional[Callable]): Optional transform to be applied on images.
+        target_transform (Optional[Callable]): Optional transform to be applied on labels.
+        img_map (dict): Mapping of image labels to file paths.
     """
 
     CLASS_TEXTFILE: pathlib.Path
     IMG_DIRECTORY: pathlib.Path
 
-    def __init__(self, max_iter: int = -1, transform=None, target_transform=None):
+    def __init__(
+        self,
+        max_iter: int = -1,
+        transform: Optional[Callable] = None,
+        target_transform: Optional[Callable] = None,
+    ):
+        """
+        Initialize the ImagenetDataset.
+
+        Args:
+            max_iter (int): Maximum number of images to load. -1 for all images.
+            transform (Optional[Callable]): Optional transform to be applied on images.
+            target_transform (Optional[Callable]): Optional transform to be applied on labels.
+        """
         self.CLASS_TEXTFILE = (
             self.DATA_SOURCE_DIRECTORY / "imagenet" / "imagenet_classes.txt"
         )
         self.IMG_DIRECTORY = self.DATA_SOURCE_DIRECTORY / "imagenet" / "sample_images"
 
-        with open(self.CLASS_TEXTFILE) as file:
-            img_labels = file.read().split("\n")
-        if len(img_labels) > max_iter:
-            img_labels = img_labels[:max_iter]
-        img_labels = [label.replace(" ", "_") for label in img_labels]
-
-        self.img_labels = img_labels
+        self.img_labels = self._load_labels(max_iter)
         self.img_dir = self.IMG_DIRECTORY
         self.transform = transform
         self.target_transform = target_transform
-        self.img_map = {}
+        self.img_map = self._create_image_map()
 
-        for i in range(len(self.img_labels), 0, -1):
-            i -= 1
+    def _load_labels(self, max_iter: int) -> list:
+        """
+        Load and process image labels from the class text file.
+
+        Args:
+            max_iter (int): Maximum number of labels to load.
+
+        Returns:
+            list: Processed list of image labels.
+        """
+        with open(self.CLASS_TEXTFILE) as file:
+            img_labels = file.read().split("\n")
+        if max_iter > 0:
+            img_labels = img_labels[:max_iter]
+        return [label.replace(" ", "_") for label in img_labels]
+
+    def _create_image_map(self) -> dict:
+        """
+        Create a mapping of image labels to their file paths.
+
+        Returns:
+            dict: Mapping of image labels to file paths.
+        """
+        img_map = {}
+        for i in range(len(self.img_labels) - 1, -1, -1):
             img_name = self.img_labels[i]
             try:
-                self.img_map[img_name] = next(self.img_dir.glob(f"*{img_name}*"))
+                img_map[img_name] = next(self.img_dir.glob(f"*{img_name}*"))
             except StopIteration:
                 logger.warning(
                     f"Couldn't find image with name {img_name} in directory. Skipping."
                 )
                 self.img_labels.pop(i)
+        return img_map
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """
+        Get the number of items in the dataset.
+
+        Returns:
+            int: Number of items in the dataset.
+        """
         return len(self.img_labels)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> tuple:
+        """
+        Get an item (image and label) from the dataset.
+
+        Args:
+            idx (int): Index of the item to retrieve.
+
+        Returns:
+            tuple: A tuple containing the image and its label.
+        """
         label = self.img_labels[idx]
         img_fp = self.img_map[label]
         image = Image.open(img_fp).convert("RGB")
@@ -66,25 +121,18 @@ class ImagenetDataset(BaseDataset):
         return image, label
 
 
-# Here are the dataset instances the observer can offer to the participants
-
-# All 999 images as PIL objects converted to RGB
+# Dataset instances for different configurations
 imagenet999_rgb = ImagenetDataset()
-# Same, but just the first 10
 imagenet10_rgb = ImagenetDataset(max_iter=10)
-
-# This gives all 999 images as torch Tensors
 imagenet999_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTensor()]))
-# And this gives the same, but only the first 10
 imagenet10_tr = ImagenetDataset(
     transform=transforms.Compose([transforms.ToTensor()]), max_iter=10
 )
-
-# And here's the sad little dataset I've been using for tests
 imagenet2_tr = ImagenetDataset(
     transform=transforms.Compose([transforms.ToTensor()]), max_iter=2
 )
 
-
 if __name__ == "__main__":
-    print(f"Output size: {imagenet2_tr[0][0].element_size() * imagenet2_tr[0][0].nelement()}")  # type: ignore
+    print(
+        f"Output size: {imagenet2_tr[0][0].element_size() * imagenet2_tr[0][0].nelement()}"
+    )

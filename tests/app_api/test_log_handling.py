@@ -57,7 +57,10 @@ def test_console_handler():
 #     assert isinstance(server, log_handling.DaemonThreadingTCPServer)
 #     threading.Thread.assert_called_once()
 #     print("Shutting down server")
-#     log_handling.shutdown_gracefully(server)
+#     try:
+#         server.shutdown()
+#     except Exception as e:
+#         print(f"Error occurred while shutting down server: {e}")
 #     print("test_get_server_running_in_thread completed")
 
 

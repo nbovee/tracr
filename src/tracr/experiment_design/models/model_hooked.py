@@ -12,7 +12,7 @@ from PIL import Image
 from torchinfo import summary
 from torchvision.transforms import ToTensor
 
-from src.tracr.experiment_design.records.master_dict import MasterDict
+from src.tracr.app_api.master_dict import MasterDict
 from .model_config import read_model_config
 from .model_selector import model_selector
 
