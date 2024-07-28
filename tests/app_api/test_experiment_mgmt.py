@@ -50,7 +50,7 @@
 # # Now import your modules
 # from src.tracr.app_api.experiment_mgmt import ExperimentManifest, Experiment
 # from src.tracr.app_api import device_mgmt as dm
-# from src.tracr.experiment_design.tasks import tasks
+# from tracr.app_api import tasks
 
 # @pytest.fixture
 # def sample_manifest_file(tmp_path):

@@ -18,7 +18,7 @@ from . import utils
 from . import device_mgmt as dm
 from .deploy import ZeroDeployedServer
 from .services.base import ObserverService
-from src.tracr.experiment_design.tasks import tasks
+from .tasks import InferOverDatasetTask, FinishSignalTask
 
 
 # Overwrite default rpyc configs to allow pickling and public attribute access
@@ -106,11 +106,11 @@ class ExperimentManifest:
                 if "inf" in task_type and "dataset" in task_type:
                     params = task_as_dict["params"]
                     assert isinstance(params, dict)
-                    task_object = tasks.InferOverDatasetTask(
+                    task_object = InferOverDatasetTask(
                         params["dataset_module"], params["dataset_instance"]
                     )
                 elif "finish" in task_type:
-                    task_object = tasks.FinishSignalTask()
+                    task_object = FinishSignalTask()
 
                 assert task_object is not None
                 new_playbook[instance_name].append(task_object)

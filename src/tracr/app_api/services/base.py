@@ -14,7 +14,7 @@ from time import sleep
 from rpyc.utils.factory import DiscoveryError
 
 from ..master_dict import MasterDict
-from src.tracr.experiment_design.tasks import tasks
+from ..tasks import Task, SimpleInferenceTask, SingleInputInferenceTask, InferOverDatasetTask, FinishSignalTask
 from src.tracr.experiment_design.models.model_hooked import WrappedModel
 from src.tracr.experiment_design.datasets.dataset import BaseDataset
 
@@ -50,7 +50,7 @@ class NodeService(rpyc.Service, ABC):
         self.node_name = self.ALIASES[0].upper().strip()
         self.active_connections: Dict[str, Optional[Connection]] = {}
         self.threadlock = threading.RLock()
-        self.inbox: PriorityQueue[tasks.Task] = PriorityQueue()
+        self.inbox: PriorityQueue[Task] = PriorityQueue()
         self.partners: List[str] = []
 
     def on_connect(self, conn: Connection) -> None:
@@ -121,7 +121,7 @@ class NodeService(rpyc.Service, ABC):
             ]
             logger.info(f"Could not handshake with {str(stragglers)}")
 
-    def send_task(self, node_name: str, task: tasks.Task) -> None:
+    def send_task(self, node_name: str, task: Task) -> None:
         """Send a task to another node."""
         logger.info(f"sending {task.task_type} to {node_name}")
         pickled_task = bytes(pickle.dumps(task))
@@ -144,7 +144,7 @@ class NodeService(rpyc.Service, ABC):
         logger.debug(f"successfully unpacked {task.task_type}")
         threading.Thread(target=self._accept_task, args=[task], daemon=True).start()
 
-    def _accept_task(self, task: tasks.Task) -> None:
+    def _accept_task(self, task: Task) -> None:
         """Internal method to save the task to the inbox."""
         logger.info(f"saving {task.task_type} to inbox in thread")
         self.inbox.put(task)
@@ -191,7 +191,7 @@ class ObserverService(NodeService):
 
     ALIASES: List[str] = ["OBSERVER"]
 
-    def __init__(self, partners: List[str], playbook: Dict[str, List[tasks.Task]]):
+    def __init__(self, partners: List[str], playbook: Dict[str, List[Task]]):
         super().__init__()
         self.partners = partners
         self.master_dict = MasterDict()
@@ -298,11 +298,11 @@ class ParticipantService(NodeService):
 
     def __init__(self):
         super().__init__()
-        self.task_map: Dict[Type[tasks.Task], Any] = {
-            tasks.SimpleInferenceTask: self.simple_inference,
-            tasks.SingleInputInferenceTask: self.inference_sequence_per_input,
-            tasks.InferOverDatasetTask: self.infer_dataset,
-            tasks.FinishSignalTask: self.on_finish,
+        self.task_map: Dict[Type[Task], Any] = {
+            SimpleInferenceTask: self.simple_inference,
+            SingleInputInferenceTask: self.inference_sequence_per_input,
+            InferOverDatasetTask: self.infer_dataset,
+            FinishSignalTask: self.on_finish,
         }
         self.done_event: Optional[threading.Event] = None
         self.model: Optional[WrappedModel] = None
@@ -344,7 +344,7 @@ class ParticipantService(NodeService):
         """Link an event to signal when the participant is done."""
         self.done_event = done_event
 
-    def process(self, task: tasks.Task) -> None:
+    def process(self, task: Task) -> None:
         """Process a received task."""
         task_class = task.__class__
         corresponding_method = self.task_map[task_class]
@@ -357,7 +357,7 @@ class ParticipantService(NodeService):
         self.model.update_master_dict()
         self.status = "finished"
 
-    def simple_inference(self, task: tasks.SimpleInferenceTask) -> None:
+    def simple_inference(self, task: SimpleInferenceTask) -> None:
         """Perform a simple inference task."""
         assert self.model is not None
         inference_id = (
@@ -374,7 +374,7 @@ class ParticipantService(NodeService):
         )
 
         if task.downstream_node is not None and isinstance(task.end_layer, int):
-            downstream_task = tasks.SimpleInferenceTask(
+            downstream_task = SimpleInferenceTask(
                 self.node_name,
                 out,
                 inference_id=inference_id,
@@ -383,14 +383,14 @@ class ParticipantService(NodeService):
             self.send_task(task.downstream_node, downstream_task)
 
     def inference_sequence_per_input(
-        self, task: tasks.SingleInputInferenceTask
+        self, task: SingleInputInferenceTask
     ) -> None:
         """Perform a sequence of inferences for a single input."""
         raise NotImplementedError(
             f"inference_sequence_per_input not implemented for {self.node_name} Executor"
         )
 
-    def infer_dataset(self, task: tasks.InferOverDatasetTask) -> None:
+    def infer_dataset(self, task: InferOverDatasetTask) -> None:
         """Perform inference over an entire dataset."""
         dataset_module, dataset_instance = task.dataset_module, task.dataset_instance
         observer_svc = self.get_connection("OBSERVER").root
@@ -398,5 +398,5 @@ class ParticipantService(NodeService):
         dataset = observer_svc.get_dataset_reference(dataset_module, dataset_instance)
         for idx in range(len(dataset)):
             input_data, _ = obtain(dataset[idx])
-            subtask = tasks.SingleInputInferenceTask(input_data, from_node="SELF")
+            subtask = SingleInputInferenceTask(input_data, from_node="SELF")
             self.inference_sequence_per_input(subtask)

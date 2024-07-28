@@ -10,7 +10,7 @@ import uuid
 from typing import Any
 
 from .base import ParticipantService
-from src.tracr.experiment_design.tasks import tasks
+from ..tasks import FinishSignalTask, SimpleInferenceTask, SingleInputInferenceTask
 
 logger = logging.getLogger("tracr_logger")
 
@@ -40,7 +40,7 @@ class ClientService(ParticipantService):
     partners: list[str] = ["OBSERVER", "EDGE1"]
 
     def inference_sequence_per_input(
-        self, task: tasks.SingleInputInferenceTask
+        self, task: SingleInputInferenceTask
     ) -> None:
         """
         Perform a sequence of inferences for a single input, trying splits at each possible layer.
@@ -75,7 +75,7 @@ class ClientService(ParticipantService):
     def _delegate_full_inference(self, input_data: Any, inference_id: str) -> None:
         """Delegate the entire inference task to the edge node."""
         logger.info(f"Sending full job to {self.DOWNSTREAM_PARTNER}")
-        downstream_task = tasks.SimpleInferenceTask(
+        downstream_task = SimpleInferenceTask(
             self.node_name, input_data, inference_id=inference_id, start_layer=0
         )
         self.send_task(self.DOWNSTREAM_PARTNER, downstream_task)
@@ -86,7 +86,7 @@ class ClientService(ParticipantService):
         """Perform a split inference, delegating part of the work to the edge node."""
         logger.info(f"Running split inference from layers {start} to {end}")
         out = self.model(input_data, inference_id, start=start, end=end)
-        downstream_task = tasks.SimpleInferenceTask(
+        downstream_task = SimpleInferenceTask(
             self.node_name, out, inference_id=inference_id, start_layer=end
         )
         self.send_task(self.DOWNSTREAM_PARTNER, downstream_task)
@@ -101,7 +101,7 @@ class ClientService(ParticipantService):
         Args:
             _ (Any): Unused argument for compatibility with superclass method.
         """
-        downstream_finish_signal = tasks.FinishSignalTask(self.node_name)
+        downstream_finish_signal = FinishSignalTask(self.node_name)
         self.send_task(self.DOWNSTREAM_PARTNER, downstream_finish_signal)
         super().on_finish(_)
 
