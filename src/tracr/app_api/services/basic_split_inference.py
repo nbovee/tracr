@@ -39,9 +39,7 @@ class ClientService(ParticipantService):
     ALIASES: list[str] = ["CLIENT1", "PARTICIPANT"]
     partners: list[str] = ["OBSERVER", "EDGE1"]
 
-    def inference_sequence_per_input(
-        self, task: SingleInputInferenceTask
-    ) -> None:
+    def inference_sequence_per_input(self, task: SingleInputInferenceTask) -> None:
         """
         Perform a sequence of inferences for a single input, trying splits at each possible layer.
 

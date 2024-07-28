@@ -14,7 +14,13 @@ from time import sleep
 from rpyc.utils.factory import DiscoveryError
 
 from ..master_dict import MasterDict
-from ..tasks import Task, SimpleInferenceTask, SingleInputInferenceTask, InferOverDatasetTask, FinishSignalTask
+from ..tasks import (
+    Task,
+    SimpleInferenceTask,
+    SingleInputInferenceTask,
+    InferOverDatasetTask,
+    FinishSignalTask,
+)
 from src.tracr.experiment_design.models.model_hooked import WrappedModel
 from src.tracr.experiment_design.datasets.dataset import BaseDataset
 
@@ -382,9 +388,7 @@ class ParticipantService(NodeService):
             )
             self.send_task(task.downstream_node, downstream_task)
 
-    def inference_sequence_per_input(
-        self, task: SingleInputInferenceTask
-    ) -> None:
+    def inference_sequence_per_input(self, task: SingleInputInferenceTask) -> None:
         """Perform a sequence of inferences for a single input."""
         raise NotImplementedError(
             f"inference_sequence_per_input not implemented for {self.node_name} Executor"
