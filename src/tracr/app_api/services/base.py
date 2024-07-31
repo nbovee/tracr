@@ -360,8 +360,12 @@ class ParticipantService(NodeService):
     def simple_inference(self, task: SimpleInferenceTask) -> None:
         """Perform a simple inference task."""
         assert self.model is not None
-        inference_id = task.inference_id if task.inference_id is not None else str(uuid.uuid4())
-        logger.info(f"Running simple inference on layers {str(task.start_layer)} through {str(task.end_layer)}")
+        inference_id = (
+            task.inference_id if task.inference_id is not None else str(uuid.uuid4())
+        )
+        logger.info(
+            f"Running simple inference on layers {str(task.start_layer)} through {str(task.end_layer)}"
+        )
         out = self.model.forward(
             task.input,
             inference_id=inference_id,

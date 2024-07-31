@@ -3,6 +3,7 @@ import socket
 import ipaddress
 import pathlib
 import yaml
+import getpass
 from plumbum import SshMachine
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
@@ -201,8 +202,13 @@ class SSHConnectionParams:
         expanded_path = rsa_pkey_path.absolute().expanduser()
 
         if expanded_path.exists() and expanded_path.is_file():
-            self.pkey = paramiko.RSAKey(filename=str(expanded_path))
-            self.pkey_fp = expanded_path
+            try:
+                self.pkey = paramiko.RSAKey(filename=str(expanded_path))
+                self.pkey_fp = expanded_path
+            except paramiko.ssh_exception.PasswordRequiredException:
+                password = getpass.getpass(f"Enter passphrase for key '{expanded_path}': ")
+                self.pkey = paramiko.RSAKey(filename=str(expanded_path), password=password)
+                self.pkey_fp = expanded_path
         else:
             raise ValueError(f"Invalid path '{rsa_pkey_path}' specified for RSA key.")
 
@@ -383,7 +389,13 @@ class DeviceMgr:
         """
         with open(self.datafile_path) as file:
             data = yaml.load(file, Loader=yaml.SafeLoader)
-        self.devices = [Device(dname, drecord) for dname, drecord in data.items()]
+            self.devices = []
+            for dname, drecord in data.items():
+                try:
+                    device = Device(dname, drecord)
+                    self.devices.append(device)
+                except Exception as e:
+                    print(f"Failed to load device {dname}: {str(e)}")
 
     def _save(self) -> None:
         """

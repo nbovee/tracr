@@ -31,6 +31,7 @@ TEST_CASE_DIR: pathlib.Path = (
 )
 logger = logging.getLogger("tracr_logger")
 
+
 class ExperimentManifest:
     """
     A representation of the YAML file used to specify experiment parameters.
@@ -87,7 +88,9 @@ class ExperimentManifest:
         """
         self.participant_instances = pinstances
 
-    def create_and_set_playbook(self, playbook: dict[str, list[dict[str, Union[str, dict[str, str]]]]]) -> None:
+    def create_and_set_playbook(
+        self, playbook: dict[str, list[dict[str, Union[str, dict[str, str]]]]]
+    ) -> None:
         """
         Creates and sets the playbook.
 
@@ -99,7 +102,7 @@ class ExperimentManifest:
             for task_as_dict in tasklist:
                 assert isinstance(task_as_dict["task_type"], str)
                 task_type = task_as_dict["task_type"].lower()
-                
+
                 if "infer" in task_type and "dataset" in task_type:
                     params = task_as_dict["params"]
                     assert isinstance(params, dict)
@@ -117,7 +120,6 @@ class ExperimentManifest:
                 new_playbook[instance_name].append(task_object)
 
         self.playbook = new_playbook
-
 
     def get_participant_instance_names(self) -> list[str]:
         """
@@ -390,7 +392,9 @@ class Experiment:
         sleep(5)
         logger.info("Consolidating results from master_dict")
         async_md = rpyc.async_(self.observer_conn.get_master_dict)
-        master_dict_result = async_md(as_dataframe=False)  # Changed to False to get raw data
+        master_dict_result = async_md(
+            as_dataframe=False
+        )  # Changed to False to get raw data
         master_dict_result.wait()
         self.report_data = obtain(master_dict_result.value)
 
@@ -430,7 +434,7 @@ class Experiment:
             logger.info("Summarizing report")
             data_to_save = self._summarize_report(data_to_save)
 
-        with open(fp, "wb" if format == "pickled_df" else "w", newline='') as file:
+        with open(fp, "wb" if format == "pickled_df" else "w", newline="") as file:
             if format == "csv":
                 self._write_csv(file, data_to_save)
             else:
@@ -438,25 +442,39 @@ class Experiment:
 
     def _summarize_report(self, data):
         """Summarize the report data."""
-        summary = defaultdict(lambda: {
-            "split_layer": [],
-            "total_time_ns": [],
-            "inf_time_client": [],
-            "inf_time_edge": [],
-            "transmission_latency_ns": []
-        })
+        summary = defaultdict(
+            lambda: {
+                "split_layer": [],
+                "total_time_ns": [],
+                "inf_time_client": [],
+                "inf_time_edge": [],
+                "transmission_latency_ns": [],
+            }
+        )
 
         for inference_id, inference_data in data.items():
             layer_info = inference_data.get("layer_information", {})
-            split_layer = next((i for i, layer in layer_info.items() 
-                                if layer["completed_by_node"] != layer_info["0"]["completed_by_node"]), 
-                            len(layer_info))
-            
-            client_time = sum(layer["inference_time"] for layer in layer_info.values() 
-                            if layer["completed_by_node"] == "CLIENT1")
-            edge_time = sum(layer["inference_time"] for layer in layer_info.values() 
-                            if layer["completed_by_node"] == "EDGE1")
-            
+            split_layer = next(
+                (
+                    i
+                    for i, layer in layer_info.items()
+                    if layer["completed_by_node"]
+                    != layer_info["0"]["completed_by_node"]
+                ),
+                len(layer_info),
+            )
+
+            client_time = sum(
+                layer["inference_time"]
+                for layer in layer_info.values()
+                if layer["completed_by_node"] == "CLIENT1"
+            )
+            edge_time = sum(
+                layer["inference_time"]
+                for layer in layer_info.values()
+                if layer["completed_by_node"] == "EDGE1"
+            )
+
             # Assume transmission latency is the difference between total time and inference times
             total_time = inference_data.get("total_time", client_time + edge_time)
             transmission_latency = total_time - (client_time + edge_time)
@@ -465,7 +483,9 @@ class Experiment:
             summary[inference_id]["total_time_ns"].append(total_time)
             summary[inference_id]["inf_time_client"].append(client_time)
             summary[inference_id]["inf_time_edge"].append(edge_time)
-            summary[inference_id]["transmission_latency_ns"].append(transmission_latency)
+            summary[inference_id]["transmission_latency_ns"].append(
+                transmission_latency
+            )
 
         # Calculate averages
         for inference_id, data in summary.items():
@@ -477,10 +497,16 @@ class Experiment:
     def _write_csv(self, file, data):
         """Write data to a CSV file."""
         writer = csv.writer(file)
-        
+
         # Write header
-        header = ["inference_id", "split_layer", "total_time_ns", "inf_time_client", 
-                "inf_time_edge", "transmission_latency_ns"]
+        header = [
+            "inference_id",
+            "split_layer",
+            "total_time_ns",
+            "inf_time_client",
+            "inf_time_edge",
+            "transmission_latency_ns",
+        ]
         writer.writerow(header)
 
         # Write data
@@ -491,6 +517,6 @@ class Experiment:
                 inference_data.get("total_time_ns", ""),
                 inference_data.get("inf_time_client", ""),
                 inference_data.get("inf_time_edge", ""),
-                inference_data.get("transmission_latency_ns", "")
+                inference_data.get("transmission_latency_ns", ""),
             ]
             writer.writerow(row)
