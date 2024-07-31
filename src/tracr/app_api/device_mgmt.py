@@ -203,12 +203,14 @@ class SSHConnectionParams:
 
         if expanded_path.exists() and expanded_path.is_file():
             try:
-                self.pkey = paramiko.RSAKey(filename=str(expanded_path))
+                self.pkey = paramiko.RSAKey.from_private_key_file(str(expanded_path))
                 self.pkey_fp = expanded_path
             except paramiko.ssh_exception.PasswordRequiredException:
                 password = getpass.getpass(f"Enter passphrase for key '{expanded_path}': ")
-                self.pkey = paramiko.RSAKey(filename=str(expanded_path), password=password)
+                self.pkey = paramiko.RSAKey.from_private_key_file(str(expanded_path), password=password)
                 self.pkey_fp = expanded_path
+            except Exception as e:
+                raise ValueError(f"Failed to load key from {expanded_path}: {str(e)}")
         else:
             raise ValueError(f"Invalid path '{rsa_pkey_path}' specified for RSA key.")
 
