@@ -106,6 +106,7 @@ celerybeat.pid
 .venv
 env/
 venv/
+.venv/
 ENV/
 env.bak/
 venv.bak/
@@ -136,22 +137,30 @@ dmypy.json
 libcudnn8_8.4.0.27-1+cuda11.6_amd64.deb
 libcudnn8-dev_8.4.0.27-1+cuda11.6_amd64.deb
 
-# Code Specifics
-/tmp
-
-# Docker image tarballs are too large for the 1MB GitHub filesize limit
-api/Docker_images/*.tar
-
-TestCases/AlexnetSplit/partitioner_datapoints/local/*
-TestCases/AlexnetSplit/partitioner_datapoints/external/*
-
-pyrightconfig.json
-TEST
-
 # nn weights
 *.pt
 
-# set up locally
+# Project specific
+src/tracr/app_api/user_data/
+src/tracr/experiment_design/models/pretrained/
+
+# Experiment results
+*_results.csv
+*_results.pkl
+
+# Docker
+.dockerignore
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+/tmp
+*.tmp
+*.bak
+*.swp
+
 # ignore the known_devices.yaml file
 known_devices.yaml
 

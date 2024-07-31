@@ -5,8 +5,12 @@ import os
 from typing import Any, Dict
 import yaml
 import numpy as np
-from torchvision import models
 import importlib
+
+if os.environ.get("TRACR_ROLE") == "participant":
+    from torchvision import models
+else:
+    models = None
 
 logger = logging.getLogger("tracr_logger")
 

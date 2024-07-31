@@ -7,6 +7,6 @@ PyYAML
 rich
 rpyc
 torch
-torchinfo
 torchvision
+torchinfo
 ultralytics

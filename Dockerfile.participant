@@ -1,0 +1,29 @@
+# Dockerfile.participant
+FROM python:3.11.7-slim
+
+# Set the working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y libgl1-mesa-glx openssh-server && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy requirements file
+COPY requirements.participant.txt .
+
+# Install Python dependencies
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install -r requirements.participant.txt
+
+# Copy the entire project into the container
+COPY . /app/
+
+# Set up SSH server
+RUN mkdir /run/sshd
+RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
+
+# Expose SSH port
+EXPOSE 22
+
+CMD ["/usr/sbin/sshd", "-D"]

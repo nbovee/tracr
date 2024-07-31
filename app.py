@@ -10,8 +10,6 @@ the word "python".
 """
 
 import logging
-
-
 import argparse
 from rich.console import Console
 from rich.table import Table
@@ -20,6 +18,7 @@ from time import sleep
 from src.tracr.app_api import log_handling, utils
 from src.tracr.app_api.device_mgmt import DeviceMgr
 from src.tracr.app_api.experiment_mgmt import Experiment, ExperimentManifest
+from src.tracr.app_api.model_interface import ModelFactoryInterface
 
 logger = logging.getLogger("tracr_logger")
 
@@ -124,6 +123,14 @@ def device_add(args):
 ##############################################################################
 
 
+def create_model_factory() -> ModelFactoryInterface:
+    """
+    Creates a ModelFactory object to create models for the experiment.
+    """
+    from src.tracr.experiment_design.models.model_hooked import WrappedModelFactory
+    return WrappedModelFactory()
+
+
 def experiment_add(args):
     """
     Adds a new experiment to the controller's local system by setting up
@@ -143,9 +150,9 @@ def experiment_run(args):
     """
     Runs an experiment.
     """
-    exp_name = args.name
+    exp_name = args.name[0]
     logger.info(f"Attempting to set up experiment {exp_name}.")
-    testcase_dir = PROJECT_ROOT / "UserData" / "TestCases"
+    testcase_dir = PROJECT_ROOT / "src" / "tracr" / "app_api" / "test_cases"
     manifest_yaml_fp = next(testcase_dir.glob(f"**/*{exp_name}.yaml"))
     logger.debug(f"Found manifest at {str(manifest_yaml_fp)}.")
     rlog_server = log_handling.get_server_running_in_thread()
@@ -155,8 +162,11 @@ def experiment_run(args):
     device_manager = DeviceMgr()
     available_devices = device_manager.get_devices(available_only=True)
 
+    # Create a ModelFactory object to create models for the experiment
+    model_factory = create_model_factory()
+
     logger.debug("Initializing Experiment object.")
-    experiment = Experiment(manifest, available_devices)
+    experiment = Experiment(manifest, available_devices, model_factory)
     logger.debug(f"Running experiment {exp_name}.")
     experiment.run()
 

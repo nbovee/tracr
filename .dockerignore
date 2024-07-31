@@ -26,8 +26,8 @@ __pycache__
 .DS_Store
 Thumbs.db
 
-# Exclude other unnecessary files and directories
-tests
+# Exclude test files
+tests/
 
 # Exclude the following files from the root directory
 NOTES.md
