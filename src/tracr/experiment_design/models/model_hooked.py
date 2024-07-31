@@ -1,25 +1,18 @@
 """Module for wrapping and hooking models for edge computing experiments."""
 
-import atexit
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 import copy
 import logging
 import time
-from typing import Union, Dict, Any, Optional
-
 import numpy as np
-import torch
-from PIL import Image
-from torchinfo import summary
-from torchvision.transforms import ToTensor
 
-from src.tracr.app_api.master_dict import MasterDict
-from .model_utils import HookExitException, NotDict, read_model_config, model_selector
+from src.tracr.app_api.model_interface import ModelInterface, ModelFactoryInterface
+from .model_utils import HookExitException, NotDict, read_model_config
 
-atexit.register(torch.cuda.empty_cache)
 logger = logging.getLogger("tracr_logger")
 
 
-class WrappedModel(torch.nn.Module):
+class WrappedModel(ModelInterface):
     """
     Wraps a pretrained model with features necessary for edge computing tests.
 
@@ -28,13 +21,12 @@ class WrappedModel(torch.nn.Module):
     """
 
     layer_template_dict = {
-        "layer_id": None,  # this may be redundant (unneeded)
+        "layer_id": None,
         "completed_by_node": None,
         "class": None,
         "inference_time": 0,
         "parameters": None,
         "parameter_bytes": None,
-        # "precision": None,    # Precision is technically per layer, disabled for now
         "cpu_cycles_used": None,
         "watts_used": None,
     }
@@ -43,7 +35,7 @@ class WrappedModel(torch.nn.Module):
         self,
         *args,
         config_path: Optional[str] = None,
-        master_dict: Optional[MasterDict] = None,
+        master_dict: Any = None,
         flush_buffer_size: int = 100,
         **kwargs,
     ):
@@ -51,21 +43,14 @@ class WrappedModel(torch.nn.Module):
         self.timer = time.perf_counter_ns
         self.master_dict = master_dict
         self.io_buf_dict: Dict[str, Any] = {}
-
-        # Collation dict for the current partition of a given inference
         self.inference_dict: Dict[str, Any] = {}
-
-        # Dict for the current forward pass
         self.forward_dict: Dict[int, Dict[str, Any]] = {}
 
         self.__dict__.update(read_model_config(config_path))
         self.training = self.mode in ["train", "training"]
-        self.model = model_selector(self.model_name)
+        self.model = self._model_selector(self.model_name)
         self.drop_save_dict = self._find_save_layers()
         self.flush_buffer_size = flush_buffer_size
-
-        # Could be useful for skips
-        # self.selected_out = OrderedDict()
 
         self.f_hooks = []
         self.f_pre_hooks = []
@@ -78,11 +63,19 @@ class WrappedModel(torch.nn.Module):
         self.log = False
 
         self._finalize_setup()
+        self._setup_cuda()
+
+    def _model_selector(self, model_name: str) -> Any:
+        """Select and return a model based on the given name."""
+        from .model_utils import model_selector
+
+        return model_selector(model_name)
 
     def _setup_model(self):
         """Set up the model, including torchinfo summary and module walking."""
+        from torchinfo import summary
+
         self.torchinfo = summary(self.model, (1, *self.input_size), verbose=0)
-        # Depth starts at 1 to match torchinfo's depth
         self.layer_count = self._walk_modules(self.model.children(), 1, 0)
         del self.torchinfo
         self.forward_dict_empty = copy.deepcopy(self.forward_dict)
@@ -92,30 +85,41 @@ class WrappedModel(torch.nn.Module):
         if self.mode == "eval":
             self.model.eval()
         if self.device == "cuda":
-            if torch.cuda.is_available():
+            if self._cuda_is_available():
                 logger.info("Loading Model to CUDA.")
             else:
                 logger.info("Loading Model to CPU. CUDA not available.")
                 self.device = "cpu"
-        self.model.to(self.device)
+        self._move_model_to_device()
         self.warmup(iterations=2)
+
+    def _setup_cuda(self):
+        """Set up CUDA if available."""
+        if self._cuda_is_available():
+            import torch
+            import atexit
+
+            atexit.register(torch.cuda.empty_cache)
+            torch.cuda.empty_cache()
+
+    def _cuda_is_available(self) -> bool:
+        """Check if CUDA is available."""
+        import torch
+
+        return torch.cuda.is_available()
+
+    def _move_model_to_device(self):
+        """Move the model to the specified device."""
+        self.model.to(self.device)
 
     def _find_save_layers(self) -> Dict[Any, Any]:
         """Find layers with skip connections."""
         return self.model.save if hasattr(self.model, "save") else {}
 
     def _walk_modules(self, module_generator, depth: int, walk_i: int) -> int:
-        """
-        Recursively walk and mark Modules for hooks in a DFS manner.
+        """Recursively walk and mark Modules for hooks in a DFS manner."""
+        import torch
 
-        Args:
-            module_generator: Generator of child modules.
-            depth (int): Current depth in the module hierarchy.
-            walk_i (int): Current walk index.
-
-        Returns:
-            int: Updated walk index.
-        """
         for child in module_generator:
             childname = str(child).split("(", maxsplit=1)[0]
             if len(list(child.children())) > 0 and depth < self.depth:
@@ -125,14 +129,11 @@ class WrappedModel(torch.nn.Module):
                 walk_i = self._walk_modules(child.children(), depth + 1, walk_i)
                 logger.debug(f"{'-'*depth}End of Module {childname}'s children.")
             elif isinstance(child, torch.nn.Module):
-                # If not iterable / too deep, hook the layer
                 self._setup_layer_hooks(child, depth, walk_i, childname)
                 walk_i += 1
         return walk_i
 
-    def _setup_layer_hooks(
-        self, child: torch.nn.Module, depth: int, walk_i: int, childname: str
-    ):
+    def _setup_layer_hooks(self, child: Any, depth: int, walk_i: int, childname: str):
         """Set up hooks for a specific layer."""
         for layer in self.torchinfo.summary_list:
             if layer.layer_id == id(child):
@@ -173,7 +174,6 @@ class WrappedModel(torch.nn.Module):
         """Structure a forward prehook for a given layer index."""
 
         def pre_hook(module, layer_input):
-            """Prehook a fixed layer for benchmarking and logging."""
             logger.debug(f"{'Prehook': >8} {fixed_layer_i:>3} started.")
             new_input = None
             if fixed_layer_i == 0:
@@ -187,6 +187,8 @@ class WrappedModel(torch.nn.Module):
 
     def _handle_first_layer(self, layer_input):
         """Handle logic for the first layer in prehook."""
+        import torch
+
         if self.model_start_i == 0:
             logger.debug("\tresetting input bank")
             self.banked_input = {}
@@ -207,7 +209,6 @@ class WrappedModel(torch.nn.Module):
         """Structure a forward posthook for a given layer index."""
 
         def hook(module, layer_input, output):
-            """Posthook a fixed layer for output capture and benchmarking."""
             logger.debug(f"Posthook {fixed_layer_i:>3} started.")
             if self.log and fixed_layer_i >= self.model_start_i:
                 self.forward_dict[fixed_layer_i]["inference_time"] += self.timer()
@@ -241,25 +242,13 @@ class WrappedModel(torch.nn.Module):
 
     def forward(
         self,
-        x: torch.Tensor,
+        x: Any,
         inference_id: Optional[str] = None,
         start: int = 0,
         end: Union[int, float] = np.inf,
         log: bool = True,
-    ) -> Union[torch.Tensor, NotDict]:
-        """
-        Wrap the model forward pass to utilize slicing.
-
-        Args:
-            x (torch.Tensor): Input tensor.
-            inference_id (Optional[str]): Unique identifier for the inference.
-            start (int): Starting layer for inference.
-            end (Union[int, float]): Ending layer for inference.
-            log (bool): Whether to log the inference.
-
-        Returns:
-            Union[torch.Tensor, NotDict]: Output of the forward pass.
-        """
+    ) -> Any:
+        """Wrap the model forward pass to utilize slicing."""
         end = self.layer_count if end == np.inf else end
         self.log, self.model_stop_i, self.model_start_i = log, end, start
 
@@ -293,8 +282,10 @@ class WrappedModel(torch.nn.Module):
         logger.info(f"{_inference_id} id beginning.")
         return _inference_id
 
-    def _run_forward_pass(self, x: torch.Tensor) -> torch.Tensor:
+    def _run_forward_pass(self, x: Any) -> Any:
         """Run the actual forward pass."""
+        import torch
+
         if self.mode != "train":
             with torch.no_grad():
                 return self.model(x)
@@ -326,19 +317,11 @@ class WrappedModel(torch.nn.Module):
             "MasterDict not updated; either buffer is empty or MasterDict is None"
         )
 
-    def parse_input(self, _input: Union[Image.Image, torch.Tensor]) -> torch.Tensor:
-        """
-        Check if the input is appropriate at the given stage of the network.
+    def parse_input(self, _input: Any) -> Any:
+        """Check if the input is appropriate at the given stage of the network."""
+        import torch
+        from PIL import Image
 
-        Args:
-            _input (Union[Image.Image, torch.Tensor]): Input to be parsed.
-
-        Returns:
-            torch.Tensor: Parsed input tensor.
-
-        Raises:
-            ValueError: If input type is not supported.
-        """
         if isinstance(_input, Image.Image):
             return self._process_image_input(_input)
         elif isinstance(_input, torch.Tensor):
@@ -346,19 +329,23 @@ class WrappedModel(torch.nn.Module):
         else:
             raise ValueError(f"Bad input given to WrappedModel: type {type(_input)}")
 
-    def _process_image_input(self, image: Image.Image) -> torch.Tensor:
+    def _process_image_input(self, image: Any) -> Any:
         """Process PIL Image input."""
+        from torchvision.transforms import ToTensor
+
         if image.size != self.base_input_size:
             image = image.resize(self.base_input_size)
         input_tensor = ToTensor()(image).unsqueeze(0)
         return self._move_to_device(input_tensor)
 
-    def _process_tensor_input(self, tensor: torch.Tensor) -> torch.Tensor:
+    def _process_tensor_input(self, tensor: Any) -> Any:
         """Process torch.Tensor input."""
         return self._move_to_device(tensor)
 
-    def _move_to_device(self, tensor: torch.Tensor) -> torch.Tensor:
+    def _move_to_device(self, tensor: Any) -> Any:
         """Move tensor to the correct device."""
+        import torch
+
         if (
             torch.cuda.is_available()
             and self.device == "cuda"
@@ -368,13 +355,13 @@ class WrappedModel(torch.nn.Module):
         return tensor
 
     def warmup(self, iterations: int = 50, force: bool = False):
-        """
-        Run specified passes on the NN to warm up GPU if enabled.
+        """Run specified passes on the NN to warm up GPU if enabled."""
+        self._perform_warmup(iterations, force)
 
-        Args:
-            iterations (int): Number of warmup iterations.
-            force (bool): Force warmup even if not on CUDA.
-        """
+    def _perform_warmup(self, iterations: int, force: bool):
+        """Perform the actual warmup process."""
+        import torch
+
         if self.device != "cuda" and not force:
             logger.info("Warmup not required.")
         else:
@@ -385,49 +372,39 @@ class WrappedModel(torch.nn.Module):
             logger.info("Warmup complete.")
 
     def prune_layers(self, newlow: int, newhigh: int):
-        """
-        NYE: Trim network layers. Inputs specify the lower and upper layers to REMAIN.
-        Used to attempt usage on low compute power devices, such as early Raspberry Pi models.
-
-        Args:
-            newlow (int): New lower bound for layers to keep.
-            newhigh (int): New upper bound for layers to keep.
-
-        Raises:
-            NotImplementedError: This method is not yet implemented.
-        """
+        """NYE: Trim network layers."""
         raise NotImplementedError()
 
     @property
     def base_input_size(self):
-        """
-        Get the base input size for the model.
-
-        Returns:
-            tuple: The base input size (height, width).
-        """
-        return self.input_size[1:]  # Assuming input_size is (channels, height, width)
+        """Get the base input size for the model."""
+        return self.input_size[1:]
 
     def __str__(self):
-        """
-        String representation of the WrappedModel.
-
-        Returns:
-            str: A string describing the WrappedModel.
-        """
+        """String representation of the WrappedModel."""
         return (
             f"WrappedModel({self.model_name}, device={self.device}, mode={self.mode})"
         )
 
     def __repr__(self):
-        """
-        Detailed string representation of the WrappedModel.
-
-        Returns:
-            str: A detailed string representation of the WrappedModel.
-        """
+        """Detailed string representation of the WrappedModel."""
         return (
             f"WrappedModel(model_name={self.model_name}, "
             f"device={self.device}, mode={self.mode}, "
             f"depth={self.depth}, layer_count={self.layer_count})"
+        )
+
+
+class WrappedModelFactory(ModelFactoryInterface):
+    def create_model(
+        self,
+        config_path: Optional[str] = None,
+        master_dict: Any = None,
+        flush_buffer_size: int = 100,
+    ) -> ModelInterface:
+        """Create and return a WrappedModel instance."""
+        return WrappedModel(
+            config_path=config_path,
+            master_dict=master_dict,
+            flush_buffer_size=flush_buffer_size,
         )

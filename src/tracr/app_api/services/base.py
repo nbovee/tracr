@@ -21,8 +21,7 @@ from ..tasks import (
     InferOverDatasetTask,
     FinishSignalTask,
 )
-from src.tracr.experiment_design.models.model_hooked import WrappedModel
-from src.tracr.experiment_design.datasets.dataset import BaseDataset
+from ..model_interface import ModelInterface
 
 logger = logging.getLogger("tracr_logger")
 
@@ -252,9 +251,7 @@ class ObserverService(NodeService):
         return self.master_dict if not as_dataframe else self.master_dict.to_dataframe()
 
     @rpyc.exposed
-    def get_dataset_reference(
-        self, dataset_module: str, dataset_instance: str
-    ) -> BaseDataset:
+    def get_dataset_reference(self, dataset_module: str, dataset_instance: str) -> Any:
         """Get a reference to a dataset stored on the observer."""
         from importlib import import_module
 
@@ -311,16 +308,13 @@ class ParticipantService(NodeService):
             FinishSignalTask: self.on_finish,
         }
         self.done_event: Optional[threading.Event] = None
-        self.model: Optional[WrappedModel] = None
+        self.model: Optional[ModelInterface] = None
 
     @rpyc.exposed
-    def prepare_model(self) -> None:
+    def prepare_model(self, model: ModelInterface) -> None:
         """Prepare the model for the participant."""
         logger.info("Preparing model.")
-        observer_svc = self.get_connection("OBSERVER").root
-        assert observer_svc is not None
-        master_dict = observer_svc.get_master_dict()
-        self.model = WrappedModel(master_dict=master_dict, node_name=self.node_name)
+        self.model = model
 
     def _run(self) -> None:
         """Run the main participant logic."""
@@ -366,13 +360,9 @@ class ParticipantService(NodeService):
     def simple_inference(self, task: SimpleInferenceTask) -> None:
         """Perform a simple inference task."""
         assert self.model is not None
-        inference_id = (
-            task.inference_id if task.inference_id is not None else str(uuid.uuid4())
-        )
-        logger.info(
-            f"Running simple inference on layers {str(task.start_layer)} through {str(task.end_layer)}"
-        )
-        out = self.model(
+        inference_id = task.inference_id if task.inference_id is not None else str(uuid.uuid4())
+        logger.info(f"Running simple inference on layers {str(task.start_layer)} through {str(task.end_layer)}")
+        out = self.model.forward(
             task.input,
             inference_id=inference_id,
             start=task.start_layer,

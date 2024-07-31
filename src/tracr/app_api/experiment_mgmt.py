@@ -1,4 +1,6 @@
 import atexit
+import csv
+from collections import defaultdict
 import logging
 import pathlib
 import pickle
@@ -6,20 +8,19 @@ import threading
 import yaml
 import rpyc
 import rpyc.core.protocol
-import pandas as pd
 from rpyc.utils.server import ThreadedServer
 from rpyc.utils.registry import UDPRegistryServer
 from rpyc.utils.classic import obtain
 from time import sleep
-from typing import Union
+from typing import Union, Any
 from datetime import datetime
 
 from . import utils
 from . import device_mgmt as dm
+from .model_interface import ModelFactoryInterface
 from .deploy import ZeroDeployedServer
 from .services.base import ObserverService
 from .tasks import InferOverDatasetTask, FinishSignalTask
-
 
 # Overwrite default rpyc configs to allow pickling and public attribute access
 rpyc.core.protocol.DEFAULT_CONFIG["allow_pickle"] = True
@@ -29,7 +30,6 @@ TEST_CASE_DIR: pathlib.Path = (
     utils.get_repo_root() / "src" / "tracr" / "app_api" / "test_cases"
 )
 logger = logging.getLogger("tracr_logger")
-
 
 class ExperimentManifest:
     """
@@ -178,17 +178,22 @@ class Experiment:
     """
 
     def __init__(
-        self, manifest: ExperimentManifest, available_devices: list[dm.Device]
+        self,
+        manifest: ExperimentManifest,
+        available_devices: list[dm.Device],
+        model_factory: ModelFactoryInterface,
     ):
         """
-        Initializes the Experiment with the given manifest and available devices.
+        Initializes the Experiment with the given manifest, available devices, and model factory.
 
         Args:
             manifest (ExperimentManifest): Experiment manifest.
             available_devices (list[dm.Device]): List of available devices.
+            model_factory (ModelFactoryInterface): Factory for creating models.
         """
         self.available_devices = available_devices
         self.manifest = manifest
+        self.model_factory = model_factory
         self.registry_server = UDPRegistryServer(allow_listing=True)
         self.observer_node = None
         self.observer_conn = None
@@ -203,7 +208,7 @@ class Experiment:
             "registry_ready": threading.Event(),
             "observer_up": threading.Event(),
         }
-        self.report_dataframe = None
+        self.report_data = None
 
     def run(self) -> None:
         """
@@ -308,7 +313,11 @@ class Experiment:
             self.available_devices
         )
         for params in zdeploy_node_param_list:
-            self.participant_nodes.append(ZeroDeployedServer(*params))
+            device, node_name, model_config, service_config = params
+            model = self.model_factory.create_model(config_path=model_config)
+            self.participant_nodes.append(
+                ZeroDeployedServer(device, node_name, model, service_config)
+            )
 
     def verify_all_nodes_up(self):
         """
@@ -379,9 +388,9 @@ class Experiment:
         sleep(5)
         logger.info("Consolidating results from master_dict")
         async_md = rpyc.async_(self.observer_conn.get_master_dict)
-        master_dict_result = async_md(as_dataframe=True)
+        master_dict_result = async_md(as_dataframe=False)  # Changed to False to get raw data
         master_dict_result.wait()
-        self.report_dataframe = obtain(master_dict_result.value)
+        self.report_data = obtain(master_dict_result.value)
 
         self.observer_node.close()
         self.registry_server.close()
@@ -397,12 +406,7 @@ class Experiment:
         Args:
             format (str, optional): Format to save the report ('csv' or 'pickled_df'). Defaults to "csv".
             summary (bool, optional): Whether to save a summarized report. Defaults to False.
-
-        Raises:
-            AssertionError: If the report dataframe is not a pandas DataFrame.
         """
-        assert isinstance(self.report_dataframe, pd.DataFrame)
-
         file_ext = "csv" if format == "csv" else "pkl"
         fn = f"{self.manifest.name}__{datetime.now().strftime('%Y-%m-%dT%H%M%S')}.{file_ext}"
         fp = (
@@ -417,24 +421,74 @@ class Experiment:
 
         logger.info(f"Saving results to {str(fp)}")
 
+        # Assume self.report_data is a dictionary with inference_id as keys
+        data_to_save = self.report_data
+
         if summary:
             logger.info("Summarizing report")
-            summary_cols = [
-                "inference_id",
-                "split_layer",
-                "total_time_ns",
-                "inf_time_client",
-                "inf_time_edge",
-                "transmission_latency_ns",
-            ]
-            self.report_dataframe = (
-                self.report_dataframe[summary_cols]
-                .drop_duplicates()
-                .reset_index(drop=True)
-            )
+            data_to_save = self._summarize_report(data_to_save)
 
-        if format == "csv":
-            self.report_dataframe.to_csv(fp)
-        else:
-            with open(fp, "wb") as file:
-                pickle.dump(self.report_dataframe, file)
+        with open(fp, "wb" if format == "pickled_df" else "w", newline='') as file:
+            if format == "csv":
+                self._write_csv(file, data_to_save)
+            else:
+                pickle.dump(data_to_save, file)
+
+    def _summarize_report(self, data):
+        """Summarize the report data."""
+        summary = defaultdict(lambda: {
+            "split_layer": [],
+            "total_time_ns": [],
+            "inf_time_client": [],
+            "inf_time_edge": [],
+            "transmission_latency_ns": []
+        })
+
+        for inference_id, inference_data in data.items():
+            layer_info = inference_data.get("layer_information", {})
+            split_layer = next((i for i, layer in layer_info.items() 
+                                if layer["completed_by_node"] != layer_info["0"]["completed_by_node"]), 
+                            len(layer_info))
+            
+            client_time = sum(layer["inference_time"] for layer in layer_info.values() 
+                            if layer["completed_by_node"] == "CLIENT1")
+            edge_time = sum(layer["inference_time"] for layer in layer_info.values() 
+                            if layer["completed_by_node"] == "EDGE1")
+            
+            # Assume transmission latency is the difference between total time and inference times
+            total_time = inference_data.get("total_time", client_time + edge_time)
+            transmission_latency = total_time - (client_time + edge_time)
+
+            summary[inference_id]["split_layer"].append(split_layer)
+            summary[inference_id]["total_time_ns"].append(total_time)
+            summary[inference_id]["inf_time_client"].append(client_time)
+            summary[inference_id]["inf_time_edge"].append(edge_time)
+            summary[inference_id]["transmission_latency_ns"].append(transmission_latency)
+
+        # Calculate averages
+        for inference_id, data in summary.items():
+            for key, value in data.items():
+                summary[inference_id][key] = sum(value) / len(value) if value else 0
+
+        return dict(summary)
+
+    def _write_csv(self, file, data):
+        """Write data to a CSV file."""
+        writer = csv.writer(file)
+        
+        # Write header
+        header = ["inference_id", "split_layer", "total_time_ns", "inf_time_client", 
+                "inf_time_edge", "transmission_latency_ns"]
+        writer.writerow(header)
+
+        # Write data
+        for inference_id, inference_data in data.items():
+            row = [
+                inference_id,
+                inference_data.get("split_layer", ""),
+                inference_data.get("total_time_ns", ""),
+                inference_data.get("inf_time_client", ""),
+                inference_data.get("inf_time_edge", ""),
+                inference_data.get("transmission_latency_ns", "")
+            ]
+            writer.writerow(row)
