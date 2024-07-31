@@ -190,3 +190,22 @@ class FinishSignalTask(Task):
             from_node (str, optional): The identifier of the node sending the task. Defaults to "OBSERVER".
         """
         super().__init__(from_node, priority=11)
+
+
+class WaitForTasksTask(Task):
+    """
+    A task to signal that the node should wait for a specific task to arrive.
+
+    This task is used to synchronize the order of tasks between nodes. The node will
+    wait until the specified task is received before continuing with its processing.
+    """
+
+    def __init__(self, from_node: str = "OBSERVER"):
+        """
+        Initialize a new WaitForTask.
+
+        Args:
+            task_type (str): The type of task to wait for.
+            from_node (str, optional): The identifier of the node sending the task. Defaults to "OBSERVER".
+        """
+        super().__init__(from_node)

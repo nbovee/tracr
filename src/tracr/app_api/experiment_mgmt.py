@@ -20,7 +20,7 @@ from . import device_mgmt as dm
 from .model_interface import ModelFactoryInterface
 from .deploy import ZeroDeployedServer
 from .services.base import ObserverService
-from .tasks import InferOverDatasetTask, FinishSignalTask
+from .tasks import InferOverDatasetTask, FinishSignalTask, WaitForTasksTask
 
 # Overwrite default rpyc configs to allow pickling and public attribute access
 rpyc.core.protocol.DEFAULT_CONFIG["allow_pickle"] = True
@@ -87,9 +87,7 @@ class ExperimentManifest:
         """
         self.participant_instances = pinstances
 
-    def create_and_set_playbook(
-        self, playbook: dict[str, list[dict[str, Union[str, dict[str, str]]]]]
-    ) -> None:
+    def create_and_set_playbook(self, playbook: dict[str, list[dict[str, Union[str, dict[str, str]]]]]) -> None:
         """
         Creates and sets the playbook.
 
@@ -101,9 +99,8 @@ class ExperimentManifest:
             for task_as_dict in tasklist:
                 assert isinstance(task_as_dict["task_type"], str)
                 task_type = task_as_dict["task_type"].lower()
-                task_object = None
-
-                if "inf" in task_type and "dataset" in task_type:
+                
+                if "infer" in task_type and "dataset" in task_type:
                     params = task_as_dict["params"]
                     assert isinstance(params, dict)
                     task_object = InferOverDatasetTask(
@@ -111,11 +108,16 @@ class ExperimentManifest:
                     )
                 elif "finish" in task_type:
                     task_object = FinishSignalTask()
+                elif "wait" in task_type:
+                    task_object = WaitForTasksTask()
+                else:
+                    logger.warning(f"Unknown task type: {task_type}")
+                    continue  # Skip unknown task types instead of asserting
 
-                assert task_object is not None
                 new_playbook[instance_name].append(task_object)
 
         self.playbook = new_playbook
+
 
     def get_participant_instance_names(self) -> list[str]:
         """
