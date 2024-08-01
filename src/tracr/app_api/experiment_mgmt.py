@@ -7,6 +7,7 @@ import pickle
 import threading
 import yaml
 import rpyc
+import time
 import rpyc.core.protocol
 from rpyc.utils.server import ThreadedServer
 from rpyc.utils.registry import UDPRegistryServer
@@ -308,11 +309,24 @@ class Experiment:
         Raises:
             TimeoutError: If the observer node takes too long to become available.
         """
-        for _ in range(5):
-            services = rpyc.list_services()
-            if "OBSERVER" in services:
-                self.events["observer_up"].set()
-                return
+        max_attempts = 10
+        delay = 2  # seconds
+
+        for attempt in range(max_attempts):
+            try:
+                services = rpyc.list_services()
+                logger.debug(f"Attempt {attempt + 1}/{max_attempts}: Available services: {services}")
+
+                if "OBSERVER" in services:
+                    self.events["observer_up"].set()
+                    logger.info("Observer service is up and running.")
+                    return
+
+            except Exception as e:
+                logger.error(f"Error listing services: {e}")
+
+            time.sleep(delay)
+
         raise TimeoutError("Observer took too long to become available")
 
     def start_participant_nodes(self) -> None:

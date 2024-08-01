@@ -33,7 +33,7 @@ participant_instances:
     # how the instance will be referred to throughout the experiment
     instance_name: client1
     # specify one of the known devices in known_devices.yaml
-  - device: SteveOldLaptop
+  - device: localhost
     node_type: edge
     instance_name: edge1
 
