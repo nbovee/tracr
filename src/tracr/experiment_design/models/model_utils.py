@@ -7,11 +7,6 @@ import yaml
 import numpy as np
 import importlib
 
-if os.environ.get("TRACR_ROLE") == "participant":
-    from torchvision import models
-else:
-    models = None
-
 logger = logging.getLogger("tracr_logger")
 
 
@@ -118,6 +113,7 @@ def model_selector(model_name: str):
         NotImplementedError: If the model is not implemented.
     """
     if "alexnet" in model_name:
+        import torchvision.models as models
         return models.alexnet(weights="DEFAULT")
     elif "yolo" in model_name:
         try:
