@@ -21,9 +21,12 @@ COPY . /app/
 
 # Set up SSH server
 RUN mkdir /run/sshd
+
+# Modify the SSH configuration file to allow root login
 RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
 
 # Expose SSH port
 EXPOSE 22
 
+# Start the SSH server
 CMD ["/usr/sbin/sshd", "-D"]

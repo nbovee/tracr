@@ -7,6 +7,12 @@ import yaml
 import numpy as np
 import importlib
 
+# Conditionally import models based on the TRACR_ROLE environment variable
+if os.environ.get("TRACR_ROLE") == "participant":
+    from torchvision import models
+else:
+    models = None
+
 logger = logging.getLogger("tracr_logger")
 
 
@@ -112,9 +118,15 @@ def model_selector(model_name: str):
     Raises:
         NotImplementedError: If the model is not implemented.
     """
-    if "alexnet" in model_name:
-        import torchvision.models as models
+    logger.info(f"Selecting model: {model_name}")
 
+    # If using observer role, return None as models are not available
+    if models is None:
+        logger.error("Models are not available in observer role.")
+        return None
+
+    if "alexnet" in model_name:
+        assert models is not None
         return models.alexnet(weights="DEFAULT")
     elif "yolo" in model_name:
         try:
