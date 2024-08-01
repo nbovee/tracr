@@ -20,9 +20,9 @@ RUN pip install --upgrade pip setuptools wheel && \
 COPY . /app/
 
 # Set up SSH keys
-RUN mkdir -p /root/.ssh
-COPY src/tracr/app_api/app_data/pkeys/* /root/.ssh/
-RUN chmod 600 /root/.ssh/*
+RUN mkdir -p /app/.ssh
+COPY src/tracr/app_api/app_data/pkeys/* /app/.ssh/
+RUN chmod 600 /app/.ssh/*
 
 # Copy known_devices.yaml
 COPY src/tracr/app_api/app_data/known_devices.yaml /app/src/tracr/app_api/app_data/known_devices.yaml
