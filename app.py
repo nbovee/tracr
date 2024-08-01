@@ -10,10 +10,14 @@ the word "python".
 """
 
 import logging
+import warnings
 import argparse
 from rich.console import Console
 from rich.table import Table
 from time import sleep
+from cryptography.utils import CryptographyDeprecationWarning
+
+warnings.filterwarnings("ignore", category=CryptographyDeprecationWarning)
 
 from src.tracr.app_api import log_handling, utils
 from src.tracr.app_api.device_mgmt import DeviceMgr

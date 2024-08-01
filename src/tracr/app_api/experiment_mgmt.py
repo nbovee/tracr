@@ -65,6 +65,7 @@ class ExperimentManifest:
         """
         with open(manifest_fp) as file:
             manifest_dict = yaml.load(file, yaml.Loader)
+            logger.debug(f"Manifest content: {manifest_dict}")
         participant_types = manifest_dict["participant_types"]
         participant_instances = manifest_dict["participant_instances"]
         playbook = manifest_dict["playbook"]
@@ -152,17 +153,18 @@ class ExperimentManifest:
         for instance in sorted(
             self.participant_instances, key=lambda x: 1 if x["device"] == "any" else 0
         ):
+            logger.debug(f"Instance: {instance}")
             device = instance["device"]
+            logger.debug(f"Processing instance: {instance['instance_name']}, device: {device}")
             for d in available_devices:
+                logger.debug(f"Available device: {d._name}")
                 if d._name == device or device.lower() == "any":
                     node_name = instance["instance_name"]
                     model_specs = self.participant_types[instance["node_type"]]["model"]
-                    model = (model_specs["module"], model_specs["class"])
-                    if "default" in model:
-                        model = ("", "")
-                    service_specs = self.participant_types[instance["node_type"]][
-                        "service"
-                    ]
+                    model_module = model_specs.get("module", "")
+                    model_class = model_specs["class"]
+                    model = (model_module, model_class)
+                    service_specs = self.participant_types[instance["node_type"]]["service"]
                     service = (service_specs["module"], service_specs["class"])
                     param_tuple = (d, node_name, model, service)
                     result.append(param_tuple)
@@ -313,15 +315,18 @@ class Experiment:
         """
         Starts all participant nodes based on the manifest.
         """
-        zdeploy_node_param_list = self.manifest.get_zdeploy_params(
-            self.available_devices
-        )
+        logger.debug(f"Starting participant nodes. Available devices: {[d._name for d in self.available_devices]}")
+        zdeploy_node_param_list = self.manifest.get_zdeploy_params(self.available_devices)
+        logger.debug(f"Got {len(zdeploy_node_param_list)} zdeploy params")
         for params in zdeploy_node_param_list:
             device, node_name, model_config, service_config = params
+            logger.debug(f"Creating model for {node_name} with config: {model_config}")
             model = self.model_factory.create_model(config_path=model_config)
+            logger.debug(f"Creating ZeroDeployedServer for {node_name}")
             self.participant_nodes.append(
                 ZeroDeployedServer(device, node_name, model, service_config)
             )
+            logger.debug(f"Created {len(self.participant_nodes)} participant nodes")
 
     def verify_all_nodes_up(self):
         """

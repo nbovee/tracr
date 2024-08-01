@@ -73,7 +73,10 @@ run_experiment() {
         exit 1
     fi
     EXPERIMENT_NAME="$1"
-    docker run --rm -e TRACR_ROLE=observer tracr-observer python /app/app.py experiment run "$EXPERIMENT_NAME"
+    # docker run --rm -e TRACR_ROLE=observer tracr-observer python /app/app.py experiment run "$EXPERIMENT_NAME"
+ 
+    # Run the experiment with debug logging
+    docker run --rm -e TRACR_ROLE=observer -e PYTHONUNBUFFERED=1 tracr-observer python -u /app/app.py experiment run "$EXPERIMENT_NAME"
 }
 
 case "$COMMAND" in
