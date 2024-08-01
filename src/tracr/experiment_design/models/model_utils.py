@@ -114,6 +114,7 @@ def model_selector(model_name: str):
     """
     if "alexnet" in model_name:
         import torchvision.models as models
+
         return models.alexnet(weights="DEFAULT")
     elif "yolo" in model_name:
         try:

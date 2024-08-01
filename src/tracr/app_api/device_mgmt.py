@@ -181,13 +181,29 @@ class SSHConnectionParams:
         else:
             raise ValueError(f"Bad username '{username}' given.")
 
-    def _set_pkey(self, rsa_pkey_path):
+    def _set_pkey(self, rsa_pkey_path: Union[pathlib.Path, str]) -> None:
+        """
+        Validates the given path to the RSA key, converts it to a paramiko.RSAKey instance, and
+        stores it, or raises an error if invalid.
+
+        Args:
+            rsa_pkey_path (Union[pathlib.Path, str]): Path to RSA private key.
+
+        Raises:
+            ValueError: If the RSA key path is invalid.
+        """
+        # if not isinstance(rsa_pkey_path, pathlib.Path):
+        #     rsa_pkey_path = pathlib.Path(rsa_pkey_path)
+        # expanded_path = rsa_pkey_path.expanduser().absolute()
+
         expanded_path = pathlib.Path(rsa_pkey_path)
         logger.debug(f"Attempting to load RSA key from: {expanded_path}")
         try:
-            with open(expanded_path, 'r') as f:
+            with open(expanded_path, "r") as f:
                 key_content = f.read()
-                logger.debug(f"Key file content (first 20 chars): {key_content[:20]}...")
+                logger.debug(
+                    f"Key file content (first 20 chars): {key_content[:20]}..."
+                )
             self.pkey = paramiko.RSAKey.from_private_key_file(str(expanded_path))
             logger.debug("RSA key loaded successfully")
         except FileNotFoundError:
@@ -196,40 +212,12 @@ class SSHConnectionParams:
         except paramiko.ssh_exception.PasswordRequiredException:
             logger.debug("RSA key is password protected")
             password = getpass.getpass(f"Enter passphrase for key '{expanded_path}': ")
-            self.pkey = paramiko.RSAKey.from_private_key_file(str(expanded_path), password=password)
+            self.pkey = paramiko.RSAKey.from_private_key_file(
+                str(expanded_path), password=password
+            )
         except Exception as e:
             logger.error(f"Failed to load key from {expanded_path}: {str(e)}")
             self.pkey = None
-
-    # def _set_pkey(self, rsa_pkey_path: Union[pathlib.Path, str]) -> None:
-    #     """
-    #     Validates the given path to the RSA key, converts it to a paramiko.RSAKey instance, and
-    #     stores it, or raises an error if invalid.
-
-    #     Args:
-    #         rsa_pkey_path (Union[pathlib.Path, str]): Path to RSA private key.
-
-    #     Raises:
-    #         ValueError: If the RSA key path is invalid.
-    #     """
-    #     if not isinstance(rsa_pkey_path, pathlib.Path):
-    #         rsa_pkey_path = pathlib.Path(rsa_pkey_path)
-
-    #     expanded_path = rsa_pkey_path.absolute().expanduser()
-
-    #     if expanded_path.exists() and expanded_path.is_file():
-    #         try:
-    #             self.pkey = paramiko.RSAKey.from_private_key_file(str(expanded_path))
-    #             self.pkey_fp = expanded_path
-    #         except paramiko.ssh_exception.PasswordRequiredException:
-    #             password = getpass.getpass(f"Enter passphrase for key '{expanded_path}': ")
-    #             self.pkey = paramiko.RSAKey.from_private_key_file(str(expanded_path), password=password)
-    #             self.pkey_fp = expanded_path
-    #         except Exception as e:
-    #             self.pkey = None
-    #             raise ValueError(f"Failed to load key from {expanded_path}: {str(e)}")
-    #     else:
-    #         raise ValueError(f"Invalid path '{rsa_pkey_path}' specified for RSA key.")
 
     def host_reachable(self) -> bool:
         """
@@ -279,7 +267,9 @@ class Device:
         self._cparams = [
             SSHConnectionParams.from_dict(d) for d in record["connection_params"]
         ]
-        logger.debug(f"Device {name} initialized with {len(self._cparams)} connection methods")
+        logger.debug(
+            f"Device {name} initialized with {len(self._cparams)} connection methods"
+        )
 
         # Check the default method first
         self._cparams.sort(key=lambda x: 1 if x.is_default() else 0, reverse=True)
@@ -382,8 +372,10 @@ class DeviceMgr:
             self.datafile_path = self.DATAFILE_PATH
         elif isinstance(dfile_path, pathlib.Path):
             self.datafile_path = dfile_path
-        
-        logger.debug(f"Initialized device manager with known_devices file path: {self.datafile_path}")
+
+        logger.debug(
+            f"Initialized device manager with known_devices file path: {self.datafile_path}"
+        )
         self._load()
 
     def get_devices(self, available_only: bool = False) -> list[Device]:
@@ -405,15 +397,17 @@ class DeviceMgr:
         Loads devices from the data file.
         """
         logger.debug(f"Loading devices from {self.datafile_path}")
-        logger.debug(f"Content of known_devices.yaml:\n{open(self.datafile_path, 'r').read()}")
+        logger.debug(
+            f"Content of known_devices.yaml:\n{open(self.datafile_path, 'r').read()}"
+        )
         try:
-            with open(self.datafile_path, 'r') as f:
+            with open(self.datafile_path, "r") as f:
                 data = yaml.safe_load(f)
             logger.debug(f"Loaded data: {data}")
         except Exception as e:
             logger.error(f"Failed to load known_devices.yaml: {str(e)}")
             data = {}
-        
+
         self.devices = []
         for dname, drecord in data.items():
             try:
@@ -422,7 +416,7 @@ class DeviceMgr:
                 logger.debug(f"Successfully loaded device: {dname}")
             except Exception as e:
                 logger.error(f"Failed to load device {dname}: {str(e)}")
-        
+
         logger.debug(f"Loaded {len(self.devices)} devices")
 
     def _save(self) -> None:

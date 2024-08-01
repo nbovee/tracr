@@ -155,7 +155,9 @@ class ExperimentManifest:
         ):
             logger.debug(f"Instance: {instance}")
             device = instance["device"]
-            logger.debug(f"Processing instance: {instance['instance_name']}, device: {device}")
+            logger.debug(
+                f"Processing instance: {instance['instance_name']}, device: {device}"
+            )
             for d in available_devices:
                 logger.debug(f"Available device: {d._name}")
                 if d._name == device or device.lower() == "any":
@@ -164,7 +166,9 @@ class ExperimentManifest:
                     model_module = model_specs.get("module", "")
                     model_class = model_specs["class"]
                     model = (model_module, model_class)
-                    service_specs = self.participant_types[instance["node_type"]]["service"]
+                    service_specs = self.participant_types[instance["node_type"]][
+                        "service"
+                    ]
                     service = (service_specs["module"], service_specs["class"])
                     param_tuple = (d, node_name, model, service)
                     result.append(param_tuple)
@@ -315,8 +319,12 @@ class Experiment:
         """
         Starts all participant nodes based on the manifest.
         """
-        logger.debug(f"Starting participant nodes. Available devices: {[d._name for d in self.available_devices]}")
-        zdeploy_node_param_list = self.manifest.get_zdeploy_params(self.available_devices)
+        logger.debug(
+            f"Starting participant nodes. Available devices: {[d._name for d in self.available_devices]}"
+        )
+        zdeploy_node_param_list = self.manifest.get_zdeploy_params(
+            self.available_devices
+        )
         logger.debug(f"Got {len(zdeploy_node_param_list)} zdeploy params")
         for params in zdeploy_node_param_list:
             device, node_name, model_config, service_config = params
