@@ -16,13 +16,12 @@ COPY requirements.observer.txt .
 RUN pip install --upgrade pip setuptools wheel && \
     pip install -r requirements.observer.txt
 
-# Copy the entire project into the container
+    # Copy the entire project into the container
 COPY . /app/
 
 # Set up SSH keys
-RUN mkdir -p /app/.ssh
-COPY src/tracr/app_api/app_data/pkeys/* /app/.ssh/
-RUN chmod 600 /app/.ssh/*
+COPY src/tracr/app_api/app_data/pkeys/* /app/src/tracr/app_api/app_data/pkeys/*
+RUN chmod 600 /app/src/tracr/app_api/app_data/pkeys/*
 
 # Copy known_devices.yaml
 COPY src/tracr/app_api/app_data/known_devices.yaml /app/src/tracr/app_api/app_data/known_devices.yaml

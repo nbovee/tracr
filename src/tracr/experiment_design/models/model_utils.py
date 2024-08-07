@@ -7,11 +7,11 @@ import yaml
 import numpy as np
 import importlib
 
-# Conditionally import models based on the TRACR_ROLE environment variable
-if os.environ.get("TRACR_ROLE") == "participant":
-    from torchvision import models
-else:
-    models = None
+# # Conditionally import models based on the TRACR_ROLE environment variable
+# if os.environ.get("TRACR_ROLE") == "participant":
+#     from torchvision import models
+# else:
+#     models = None
 
 logger = logging.getLogger("tracr_logger")
 
@@ -120,10 +120,12 @@ def model_selector(model_name: str):
     """
     logger.info(f"Selecting model: {model_name}")
 
-    # If using observer role, return None as models are not available
-    if models is None:
-        logger.error("Models are not available in observer role.")
-        return None
+    # # If using observer role, return None as models are not available
+    # if models is None:
+    #     logger.error("Models are not available in observer role.")
+    #     return None
+
+    from torchvision import models
 
     if "alexnet" in model_name:
         assert models is not None

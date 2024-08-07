@@ -48,7 +48,9 @@ class WrappedModel(ModelInterface):
 
         self.__dict__.update(read_model_config(config_path))
         self.training = self.mode in ["train", "training"]
+        print("model_name", self.model_name)
         self.model = self._model_selector(self.model_name)
+        print("model is", self.model)
         self.drop_save_dict = self._find_save_layers()
         self.flush_buffer_size = flush_buffer_size
 

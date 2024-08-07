@@ -9,4 +9,3 @@ rpyc
 torch
 torchvision
 torchinfo
-# ultralytics

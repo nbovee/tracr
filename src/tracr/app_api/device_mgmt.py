@@ -196,15 +196,11 @@ class SSHConnectionParams:
         #     rsa_pkey_path = pathlib.Path(rsa_pkey_path)
         # expanded_path = rsa_pkey_path.expanduser().absolute()
 
-        expanded_path = pathlib.Path(rsa_pkey_path)
+        expanded_path = pathlib.Path(rsa_pkey_path).expanduser().absolute()
+        self.pkey_fp = str(expanded_path)
         logger.debug(f"Attempting to load RSA key from: {expanded_path}")
         try:
-            with open(expanded_path, "r") as f:
-                key_content = f.read()
-                logger.debug(
-                    f"Key file content (first 20 chars): {key_content[:20]}..."
-                )
-            self.pkey = paramiko.RSAKey.from_private_key_file(str(expanded_path))
+            self.pkey = paramiko.RSAKey.from_private_key_file(self.pkey_fp)
             logger.debug("RSA key loaded successfully")
         except FileNotFoundError:
             logger.error(f"RSA key file not found at {expanded_path}")
@@ -335,7 +331,7 @@ class Device:
                 self.working_cparams.host,
                 user=self.working_cparams.user,
                 keyfile=str(self.working_cparams.pkey_fp),
-                ssh_opts=["-o StrictHostKeyChecking=no"],
+                ssh_opts=["-o StrictHostKeyChecking=no", "-o UserKnownHostsFile=/dev/null"]
             )
         else:
             raise DeviceUnavailableException(
