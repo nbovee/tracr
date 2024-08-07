@@ -376,8 +376,11 @@ class Experiment:
 
     def wait_for_node_registration(self, node_name, max_attempts=20, sleep_time=5):
         logger.debug(f"Waiting for {node_name} to register")
-        for _ in range(max_attempts):
-            if node_name in rpyc.list_services():
+        for attempt in range(max_attempts):
+            logger.debug(f"Attempt {attempt + 1}/{max_attempts} to find {node_name} in services")
+            services = rpyc.list_services()
+            logger.debug(f"Available services: {services}")
+            if node_name in services or (node_name == "EDGE1" and "PARTICIPANT" in services):
                 logger.debug(f"{node_name} successfully registered")
                 return
             sleep(sleep_time)
@@ -396,12 +399,24 @@ class Experiment:
         n_attempts = 20
         while n_attempts > 0:
             available_services = rpyc.list_services()
-            if all(service in available_services for service in service_names):
+            logger.debug(f"Available services: {available_services}")
+            
+            all_services_up = all(
+                service in available_services or 
+                (service == "EDGE1" and "PARTICIPANT" in available_services)
+                for service in service_names
+            )
+            
+            if all_services_up:
+                logger.info("All required nodes are up and running.")
                 return
+            
             n_attempts -= 1
             sleep(15)
+        
         stragglers = [
-            service for service in service_names if service not in available_services
+            service for service in service_names 
+            if service not in available_services and not (service == "EDGE1" and "PARTICIPANT" in available_services)
         ]
         raise TimeoutError(
             f"Waited too long for the following services to register: {stragglers}"
