@@ -91,22 +91,49 @@ m = import_module(server_module)
 ServerCls = getattr(m, server_class)
 
 if model_class and model_module:
-    logger.info(f"Importing {model_class} from experiment_design.models.{model_module}.")
-    m = import_module(f"experiment_design.models.{model_module}")
-    Model = getattr(m, model_class)
+    logger.info(f"Attempting to import {model_class} from {model_module}")
+    logger.info(f"sys.path: {sys.path}")
+    logger.info(f"Current working directory: {os.getcwd()}")
+    logger.info(f"Contents of current directory: {os.listdir('.')}")
+    try:
+        m = import_module(model_module)
+        Model = getattr(m, model_class)
+        logger.info(f"Successfully imported {model_class} from {model_module}")
+    except ImportError as e:
+        logger.error(f"Failed to import {model_class} from {model_module}: {str(e)}")
+        logger.info("Falling back to default model (AlexNet)")
+        Model = None
 else:
     logger.info("Using default model (AlexNet)")
     Model = None
 
-logger.info(f"Importing {ps_class} from app_api.services.{ps_module}.")
-m = import_module(f"app_api.services.{ps_module}")
+if Model is None:
+    from torchvision.models import alexnet
+    Model = alexnet
+
+logger.info(f"Importing {ps_class} from src.tracr.app_api.services.{ps_module}.")
+m = import_module(f"src.tracr.app_api.services.{ps_module}")
 CustomParticipantService = getattr(m, ps_class)
 
 # One way to programmatically set the service's formal name
 ServiceClass = type(f"{node_name}Service", (CustomParticipantService,), {"ALIASES": [node_name, "PARTICIPANT"]})
 
 logger.info("Constructing participant_service instance.")
-participant_service = ServiceClass(Model)
+try:
+    participant_service = ServiceClass(Model)
+except TypeError:
+    logger.warning("ServiceClass does not accept a Model argument. Initializing without Model.")
+    participant_service = ServiceClass()
+
+# After creating the participant_service, let's add the model to it if possible
+if hasattr(participant_service, 'prepare_model') and callable(getattr(participant_service, 'prepare_model')):
+    logger.info("Setting model on participant_service")
+    participant_service.prepare_model(Model)
+elif hasattr(participant_service, 'model') and Model is not None:
+    logger.info("Setting model attribute on participant_service")
+    participant_service.model = Model
+else:
+    logger.warning("Unable to set model on participant_service. Service may not function as expected.")
 
 done_event = Event()
 participant_service.link_done_event(done_event)
@@ -120,7 +147,7 @@ server = ServerCls(
     auto_register=True,
     protocol_config=rpyc.core.protocol.DEFAULT_CONFIG
 )
-
+logger.info("Server created, starting in thread")
 def close_server_atexit():
     logger.info("Closing server due to atexit invocation.")
     server.close()
@@ -132,7 +159,9 @@ def close_server_finally():
     server_thread.join(2)
 
 atexit.register(close_server_atexit)
+
 server_thread = server._start_in_thread()
+logger.info("Server thread started")
 
 try:
     done_event.wait(timeout=max_uptime)

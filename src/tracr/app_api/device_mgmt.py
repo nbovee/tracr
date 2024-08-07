@@ -6,6 +6,7 @@ import pathlib
 import yaml
 import getpass
 from plumbum import SshMachine
+from plumbum.machines.local import LocalMachine
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from typing import Union
@@ -316,22 +317,31 @@ class Device:
                 return self.working_cparams.user
         return None
 
-    def as_pb_sshmachine(self) -> SshMachine:
+    def as_pb_sshmachine(self) -> Union[SshMachine, LocalMachine]:
         """
-        Returns a plumbum.SshMachine instance to represent the device.
+        Returns a plumbum.SshMachine instance to represent the device, or a LocalMachine for localhost.
 
         Returns:
-            SshMachine: Plumbum SSH machine instance.
+            Union[SshMachine, LocalMachine]: Plumbum SSH machine instance or Local machine instance.
 
         Raises:
             DeviceUnavailableException: If the device is not available.
         """
         if self.working_cparams is not None:
+            logger.debug(f"Creating machine for device: {self._name}")
+            logger.debug(f"Host: {self.working_cparams.host}")
+            logger.debug(f"User: {self.working_cparams.user}")
+            
+            if self._name.lower() == 'localhost' or self.working_cparams.host in ['localhost', '127.0.0.1', '::1']:
+                logger.debug("Using LocalMachine for localhost")
+                return LocalMachine()
+            
+            logger.debug("Using SshMachine for remote connection")
             return SshMachine(
                 self.working_cparams.host,
                 user=self.working_cparams.user,
                 keyfile=str(self.working_cparams.pkey_fp),
-                ssh_opts=["-o StrictHostKeyChecking=no", "-o UserKnownHostsFile=/dev/null"]
+                ssh_opts=["-o StrictHostKeyChecking=no", "-o UserKnownHostsFile=/dev/null", "-v"]
             )
         else:
             raise DeviceUnavailableException(
@@ -393,9 +403,6 @@ class DeviceMgr:
         Loads devices from the data file.
         """
         logger.debug(f"Loading devices from {self.datafile_path}")
-        logger.debug(
-            f"Content of known_devices.yaml:\n{open(self.datafile_path, 'r').read()}"
-        )
         try:
             with open(self.datafile_path, "r") as f:
                 data = yaml.safe_load(f)

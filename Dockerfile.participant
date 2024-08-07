@@ -14,8 +14,7 @@ COPY requirements.participant.txt .
 
 # Install Python dependencies
 RUN pip install --upgrade pip setuptools wheel && \
-    pip install -r requirements.participant.txt && \
-    pip install --no-cache-dir torchvision
+    pip install -r requirements.participant.txt
 
     # Copy the entire project into the container
 COPY . /app/

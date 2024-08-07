@@ -164,9 +164,13 @@ class ExperimentManifest:
                 if d._name == device or device.lower() == "any":
                     node_name = instance["instance_name"]
                     model_specs = self.participant_types[instance["node_type"]]["model"]
+                    logger.debug(f"model_spec: {model_specs}")
                     model_module = model_specs.get("module", "")
                     model_class = model_specs["class"]
                     model = (model_module, model_class)
+                    logger.debug(f"model_module: {model_module}")
+                    logger.debug(f"model_class: {model_class}")
+                    logger.debug(f"model_tuple: {model}")
                     service_specs = self.participant_types[instance["node_type"]][
                         "service"
                     ]
@@ -342,13 +346,42 @@ class Experiment:
         logger.debug(f"Got {len(zdeploy_node_param_list)} zdeploy params")
         for params in zdeploy_node_param_list:
             device, node_name, model_config, service_config = params
+            logger.debug(f"Processing node: {node_name}")
+            logger.debug(f"Device: {device._name}")
+            logger.debug(f"Device host: {device.get_current('host')}")
+            logger.debug(f"Device user: {device.get_current('user')}")
             logger.debug(f"Creating model for {node_name} with config: {model_config}")
             model = self.model_factory.create_model(config_path=model_config)
+            
+            # Extract module and class names from the WrappedModel
+            model_module = model.__class__.__module__
+            model_class = model.__class__.__name__
+            model_tuple = (model_module, model_class)
+            
+            logger.debug(f"Model tuple: {model_tuple}")
             logger.debug(f"Creating ZeroDeployedServer for {node_name}")
-            self.participant_nodes.append(
-                ZeroDeployedServer(device, node_name, model, service_config)
-            )
+            try:
+                node = ZeroDeployedServer(device, node_name, model_tuple, service_config)
+                self.participant_nodes.append(node)
+                logger.debug(f"Successfully created ZeroDeployedServer for {node_name}")
+
+                # Wait for the node to register
+                self.wait_for_node_registration(node_name)
+
+            except Exception as e:
+                logger.error(f"Failed to create ZeroDeployedServer for {node_name}: {str(e)}")
+                raise
+
             logger.debug(f"Created {len(self.participant_nodes)} participant nodes")
+
+    def wait_for_node_registration(self, node_name, max_attempts=20, sleep_time=5):
+        logger.debug(f"Waiting for {node_name} to register")
+        for _ in range(max_attempts):
+            if node_name in rpyc.list_services():
+                logger.debug(f"{node_name} successfully registered")
+                return
+            sleep(sleep_time)
+        raise TimeoutError(f"Timeout waiting for {node_name} to register")
 
     def verify_all_nodes_up(self):
         """
@@ -360,13 +393,13 @@ class Experiment:
         logger.info("Verifying required nodes are up.")
         service_names = self.manifest.get_participant_instance_names()
         service_names.append("OBSERVER")
-        n_attempts = 10
+        n_attempts = 20
         while n_attempts > 0:
             available_services = rpyc.list_services()
             if all(service in available_services for service in service_names):
                 return
             n_attempts -= 1
-            sleep(10)
+            sleep(15)
         stragglers = [
             service for service in service_names if service not in available_services
         ]
