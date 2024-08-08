@@ -1,8 +1,8 @@
-SERVER_SCRIPT = r"""\
 import sys
 import os
 import atexit
 import shutil
+import socket
 import logging
 import logging.handlers
 import rpyc.core.protocol
@@ -12,6 +12,14 @@ from threading import Event
 # Configure RPyC to allow pickling and public attributes
 rpyc.core.protocol.DEFAULT_CONFIG["allow_pickle"] = True
 rpyc.core.protocol.DEFAULT_CONFIG["allow_public_attrs"] = True
+
+logger = logging.getLogger("tracr_logger")
+
+# Log the machine's hostname and IP address
+hostname = socket.gethostname()
+ip_address = socket.gethostbyname(hostname)
+logger.info(f"Machine hostname: {hostname}")
+logger.info(f"Machine IP address: {ip_address}")
 
 # Variables that will be replaced during deployment
 server_module = "$SVR-MODULE$"
@@ -23,7 +31,7 @@ ps_class = "$PS-CLASS$"
 node_name = "$NODE-NAME$".upper()
 participant_host = "$PRT-HOST$"
 observer_ip = "$OBS-IP$"
-max_uptime = $MAX-UPTIME$
+max_uptime = int("$MAX-UPTIME$")
 
 class LoggerWriter:
     def __init__(self, logfct):
@@ -128,15 +136,19 @@ except TypeError:
 # After creating the participant_service, let's add the model to it if possible
 if hasattr(participant_service, 'prepare_model') and callable(getattr(participant_service, 'prepare_model')):
     logger.info("Setting model on participant_service")
-    participant_service.prepare_model(Model)
+    participant_service.prepare_model(Model())  # Create an instance of the Model
 elif hasattr(participant_service, 'model') and Model is not None:
     logger.info("Setting model attribute on participant_service")
-    participant_service.model = Model
+    participant_service.model = Model()  # Create an instance of the Model
 else:
     logger.warning("Unable to set model on participant_service. Service may not function as expected.")
 
 done_event = Event()
 participant_service.link_done_event(done_event)
+
+logger.info(f"Starting RPyC server for {node_name} on port 18861")
+logger.info(f"Auto-register is set to: True")
+logger.info(f"Registry server address: {rpyc.utils.registry.REGISTRY_PORT}")
 
 logger.info("Starting RPC server in thread.")
 server = ServerCls(
@@ -147,7 +159,8 @@ server = ServerCls(
     auto_register=True,
     protocol_config=rpyc.core.protocol.DEFAULT_CONFIG
 )
-logger.info("Server created, starting in thread")
+logger.info(f"RPyC server for {node_name} created successfully")
+
 def close_server_atexit():
     logger.info("Closing server due to atexit invocation.")
     server.close()
@@ -161,10 +174,9 @@ def close_server_finally():
 atexit.register(close_server_atexit)
 
 server_thread = server._start_in_thread()
-logger.info("Server thread started")
+logger.info(f"RPyC server for {node_name} started successfully")
 
 try:
     done_event.wait(timeout=max_uptime)
 finally:
     close_server_finally()
-"""

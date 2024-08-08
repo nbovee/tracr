@@ -16,7 +16,6 @@ from plumbum.commands.base import BoundCommand
 
 from . import device_mgmt as dm
 from . import utils
-from .server_script import SERVER_SCRIPT
 
 logger = logging.getLogger("tracr_logger")
 
@@ -91,6 +90,11 @@ class ZeroDeployedServer(DeployedServer):
         ps_module, ps_class = participant_service
         observer_ip = utils.get_local_ip()
         participant_host = device.working_cparams.host
+
+        # Load the server script template
+        with open(utils.get_repo_root() / "src" / "tracr" / "app_api" / "server_script.py", "r") as f:
+            SERVER_SCRIPT = f.read()
+
         script_content = (
             SERVER_SCRIPT.replace("$SVR-MODULE$", modname)
             .replace("$SVR-CLASS$", clsname)
@@ -101,11 +105,10 @@ class ZeroDeployedServer(DeployedServer):
             .replace("$NODE-NAME$", node_name)
             .replace("$OBS-IP$", observer_ip)
             .replace("$PRT-HOST$", participant_host)
-            .replace("$MAX-UPTIME$", str(timeout_s))
+            .replace("$MAX-UPTIME$", f"{timeout_s}")
         )
         
         self.write_script(script, script_content)
-
         cmd = self._determine_python_executable(python_executable)
 
         if isinstance(self.remote_machine, LocalMachine):
