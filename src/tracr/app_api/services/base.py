@@ -10,7 +10,7 @@ import time
 from typing import Dict, List, Optional, Type, Any
 import rpyc
 from rpyc.core.protocol import Connection, PingError
-from rpyc.utils.classic import obtain
+from rpyc.utils.classic import obtain, deliver
 from rpyc.lib.compat import pickle
 from time import sleep
 from rpyc.utils.factory import DiscoveryError
@@ -29,6 +29,28 @@ logger = logging.getLogger("tracr_logger")
 
 rpyc.core.protocol.DEFAULT_CONFIG["allow_pickle"] = True
 rpyc.core.protocol.DEFAULT_CONFIG["allow_public_attrs"] = True
+
+
+class DatasetIterator:
+    def __init__(self, dataset):
+        self.dataset = dataset
+        self.index = 0
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.index >= len(self.dataset):
+            raise StopIteration
+        item = self.dataset[self.index]
+        self.index += 1
+        return item
+
+    def reset(self):
+        self.index = 0
 
 
 class HandshakeFailureException(Exception):
@@ -309,20 +331,35 @@ class ObserverService(NodeService):
         return self.master_dict if not as_dataframe else self.master_dict.to_dataframe()
 
     @rpyc.exposed
-    def get_dataset_reference(self, dataset_module: str, dataset_instance: str) -> Any:
+    def get_dataset_reference(self, dataset_module: str, dataset_instance: str) -> rpyc.core.netref.BaseNetref:
         """Get a reference to a dataset stored on the observer."""
         from importlib import import_module
 
         module = import_module(f"src.tracr.experiment_design.datasets.{dataset_module}")
-        return getattr(module, dataset_instance)
+        dataset = getattr(module, dataset_instance)
+        
+        # Return a netref to a DatasetIterator
+        return DatasetIterator(dataset)
 
     def _run(self, check_node_status_interval: int = 15, experiment_timeout: int = 300) -> None:
         logger.info("Observer _run method started")
         assert self.status == "ready", f"Observer _run called when status is not ready. Current status: {self.status}"
+        
         for p in self.partners:
             pnode = self.get_connection(p)
             assert pnode.root is not None
-            pnode.root.run()
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    obtain(pnode.root.run())
+                    break
+                except TimeoutError:
+                    if attempt == max_retries - 1:
+                        logger.error(f"Failed to start {p} after {max_retries} attempts")
+                        raise
+                    logger.warning(f"Timeout when starting {p}. Retrying ({attempt + 1}/{max_retries})...")
+                    time.sleep(5)  # Wait for 5 seconds before retrying
+
         self.status = "running"
         logger.info("Observer status changed to running")
 
@@ -527,8 +564,29 @@ class ParticipantService(NodeService):
         dataset_module, dataset_instance = task.dataset_module, task.dataset_instance
         observer_svc = self.get_connection("OBSERVER").root
         assert observer_svc is not None
-        dataset = observer_svc.get_dataset_reference(dataset_module, dataset_instance)
-        for idx in range(len(dataset)):
-            input_data, _ = obtain(dataset[idx])
-            subtask = SingleInputInferenceTask(input_data, from_node="SELF")
-            self.inference_sequence_per_input(subtask)
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                dataset_iterator = observer_svc.get_dataset_reference(dataset_module, dataset_instance)
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(f"Failed to get dataset reference after {max_retries} attempts: {str(e)}")
+                    raise
+                logger.warning(f"Error when getting dataset reference. Retrying ({attempt + 1}/{max_retries})...")
+                time.sleep(5)  # Wait for 5 seconds before retrying
+
+        total_items = len(dataset_iterator)
+        for idx in range(total_items):
+            try:
+                input_data, _ = obtain(next(dataset_iterator))
+                subtask = SingleInputInferenceTask(input_data, from_node="SELF")
+                self.inference_sequence_per_input(subtask)
+                if (idx + 1) % 100 == 0:  # Log progress every 100 items
+                    logger.info(f"{self.node_name} processed {idx + 1}/{total_items} items")
+            except Exception as e:
+                logger.error(f"Error processing item {idx}: {str(e)}")
+
+        logger.info(f"{self.node_name} completed inference over dataset")
+
