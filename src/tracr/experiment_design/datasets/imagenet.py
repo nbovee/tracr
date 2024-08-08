@@ -23,6 +23,9 @@ class ImagenetDataset(BaseDataset):
         transform (Optional[Callable]): Optional transform to be applied on images.
         target_transform (Optional[Callable]): Optional transform to be applied on labels.
         img_map (dict): Mapping of image labels to file paths.
+
+    Sample Data Source:
+        https://github.com/EliSchwartz/imagenet-sample-images
     """
 
     CLASS_TEXTFILE: pathlib.Path
