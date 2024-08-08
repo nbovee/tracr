@@ -3,13 +3,15 @@ import atexit
 import logging
 import threading
 import uuid
+import queue
+from queue import PriorityQueue
 from abc import ABC, abstractmethod
+import time
 from typing import Dict, List, Optional, Type, Any
 import rpyc
 from rpyc.core.protocol import Connection, PingError
 from rpyc.utils.classic import obtain
 from rpyc.lib.compat import pickle
-from queue import PriorityQueue
 from time import sleep
 from rpyc.utils.factory import DiscoveryError
 
@@ -90,16 +92,23 @@ class NodeService(rpyc.Service, ABC):
         """Get or establish a connection to another node."""
         with self.threadlock:
             node_name = node_name.upper().strip()
+            original_node_name = node_name
+            if node_name == "EDGE1":
+                # HACK: Temporarily mapping EDGE1 to PARTICIPANT due to registration issues
+                node_name = "PARTICIPANT"
+                logger.warning(f"HACK: Mapping EDGE1 to PARTICIPANT for connection. This is a temporary fix.")
+            
             result = self.active_connections.get(node_name, None)
             if result is not None:
-                logger.debug(f"using saved connection to {node_name}")
+                logger.debug(f"Using saved connection to {original_node_name} (actual: {node_name})")
                 return result
-            logger.debug(f"attempting to connect to {node_name} via registry.")
+            
+            logger.debug(f"Attempting to connect to {original_node_name} (actual: {node_name}) via registry.")
             conn = rpyc.connect_by_service(
                 node_name, service=self, config=rpyc.core.protocol.DEFAULT_CONFIG
             )
-            self.active_connections[node_name] = conn
-            logger.info(f"new connection to {node_name} established and saved.")
+            self.active_connections[original_node_name] = conn
+            logger.info(f"New connection to {original_node_name} (actual: {node_name}) established and saved.")
             return conn
 
     def handshake(self) -> None:
@@ -192,8 +201,6 @@ class NodeService(rpyc.Service, ABC):
 
 @rpyc.service
 class ObserverService(NodeService):
-    """The service exposed by the observer device during experiments."""
-
     ALIASES: List[str] = ["OBSERVER"]
 
     def __init__(self, partners: List[str], playbook: Dict[str, List[Task]]):
@@ -201,48 +208,99 @@ class ObserverService(NodeService):
         self.partners = partners
         self.master_dict = MasterDict()
         self.playbook = playbook
+        self.connections = {}
+        self.experiment_complete = False
         atexit.register(self.close_participants)
         logger.info("Finished initializing ObserverService object.")
 
     def delegate(self) -> None:
         """Delegate tasks to partner nodes."""
-        logger.info("Delegating tasks.")
+        logger.info("Delegating tasks to participants.")
         for partner, tasklist in self.playbook.items():
+            logger.info(f"Sending {len(tasklist)} tasks to {partner}")
             for task in tasklist:
+                logger.info(f"Sending task of type {type(task).__name__} to {partner}")
                 self.send_task(partner, task)
+        logger.info("All tasks delegated.")
+
+    def get_connection(self, node_name: str) -> Connection:
+        """Get or establish a connection to another node."""
+        with self.threadlock:
+            node_name = node_name.upper().strip()
+            if node_name == "EDGE1":
+                node_name = "PARTICIPANT"  # this is the hack
+            if node_name in self.connections and self.connections[node_name] is not None:
+                try:
+                    self.connections[node_name].ping()
+                    return self.connections[node_name]
+                except Exception:
+                    logger.warning(f"Connection to {node_name} is stale. Reconnecting...")
+
+            logger.debug(f"Attempting to connect to {node_name} via registry.")
+            conn = rpyc.connect_by_service(
+                node_name, service=self, config=rpyc.core.protocol.DEFAULT_CONFIG
+            )
+            self.connections[node_name] = conn
+            logger.info(f"New connection to {node_name} established and saved.")
+            return conn
 
     def _get_ready(self) -> None:
-        """Prepare the observer and ensure all participants are ready."""
-        logger.info("Making sure all participants are ready.")
+        logger.info("Observer _get_ready method called.")
         for partner in self.partners:
-            node = self.get_connection(partner).root
-            assert node is not None
-            node.get_ready()
+            for attempt in range(10):
+                try:
+                    logger.info(f"Attempting to connect to {partner} (Attempt {attempt + 1}/10)")
+                    node = self.get_connection(partner).root
+                    assert node is not None
+                    node_name = node.get_node_name()
+                    logger.info(f"Connected to node: {node_name}")
+                    node.ping()
+                    node.get_ready()
+                    logger.info(f"Successfully connected to {partner}")
+                    break
+                except Exception as e:
+                    logger.warning(f"Attempt {attempt + 1} to connect to {partner} failed: {str(e)}")
+                    if attempt == 9:  # Last attempt
+                        raise AwaitParticipantException(f"Failed to connect to {partner} after 10 attempts")
+                    sleep(10)
 
         success = self._wait_for_participants()
         if not success:
-            stragglers = [
-                p
-                for p in self.partners
-                if self.get_connection(p).root.get_status() != "ready"
-            ]
-            raise AwaitParticipantException(
-                f"Observer had to wait too long for nodes {stragglers}"
-            )
+            stragglers = [p for p in self.partners if self.get_connection(p).root.get_status() != "ready"]
+            raise AwaitParticipantException(f"Observer had to wait too long for nodes {stragglers}")
 
+        logger.info("All participants are ready. Delegating tasks...")
         self.delegate()
-        self.status = "ready"
+        logger.info("Tasks delegated. Observer is ready.")
 
+        self.status = "ready"
+        logger.info("Observer _get_ready method completed. Status: ready")
+
+    @rpyc.exposed
+    def get_status(self) -> str:
+        logger.info(f"get_status called. Current status: {self.status}")
+        return self.status
+    
     def _wait_for_participants(self) -> bool:
-        """Wait for all participants to become ready."""
-        for _ in range(10):
-            if all(
-                self.get_connection(p).root.get_status() == "ready"
-                for p in self.partners
-            ):
+        logger.info("Observer _wait_for_participants method called.")
+        for _ in range(20):
+            all_ready = True
+            for p in self.partners:
+                try:
+                    status = self.get_connection(p).root.get_status()
+                    logger.info(f"Status of {p}: {status}")
+                    if status != "ready":
+                        all_ready = False
+                        break
+                except Exception as e:
+                    logger.warning(f"Error checking status of {p}: {str(e)}")
+                    all_ready = False
+                    break
+            if all_ready:
                 logger.info("All participants are ready!")
                 return True
-            sleep(16)
+            sleep(10)
+        logger.info("Observer _wait_for_participants method completed.")
         return False
 
     @rpyc.exposed
@@ -258,27 +316,51 @@ class ObserverService(NodeService):
         module = import_module(f"src.tracr.experiment_design.datasets.{dataset_module}")
         return getattr(module, dataset_instance)
 
-    def _run(self, check_node_status_interval: int = 15) -> None:
-        """Run the main observer logic."""
-        assert self.status == "ready"
+    def _run(self, check_node_status_interval: int = 15, experiment_timeout: int = 300) -> None:
+        logger.info("Observer _run method started")
+        assert self.status == "ready", f"Observer _run called when status is not ready. Current status: {self.status}"
         for p in self.partners:
             pnode = self.get_connection(p)
             assert pnode.root is not None
             pnode.root.run()
-        self.status = "waiting"
+        self.status = "running"
+        logger.info("Observer status changed to running")
 
-        while not all(
-            self.get_connection(p).root.get_status() == "finished"
-            for p in self.partners
-        ):
+        start_time = time.time()
+        while not self.experiment_complete:
+            all_finished = True
+            for p in self.partners:
+                try:
+                    status = self.get_connection(p).root.get_status()
+                    tasks_completed = self.get_connection(p).root.get_tasks_completed()
+                    logger.info(f"Status of {p}: {status}, Tasks completed: {tasks_completed}")
+                    if status != "finished":
+                        all_finished = False
+                except Exception as e:
+                    logger.warning(f"Error checking status of {p}: {str(e)}")
+                    all_finished = False
+            
+            if all_finished:
+                logger.info("All nodes have finished!")
+                self.experiment_complete = True
+                break
+            
+            if time.time() - start_time > experiment_timeout:
+                logger.warning(f"Experiment timed out after {experiment_timeout} seconds")
+                self.experiment_complete = True
+                break
+            
             sleep(check_node_status_interval)
 
-        logger.info("All nodes have finished!")
         self.on_finish()
+        logger.info("Observer _run method completed")
 
     def on_finish(self) -> None:
         """Handle the completion of the experiment."""
+        logger.info("Experiment completed. Processing results...")
+        # Process the results from self.master_dict if needed
         self.status = "finished"
+        logger.info("Observer status changed to finished")
 
     def close_participants(self) -> None:
         """Send self-destruct signals to all participants."""
@@ -309,30 +391,82 @@ class ParticipantService(NodeService):
         }
         self.done_event: Optional[threading.Event] = None
         self.model: Optional[ModelInterface] = None
+        self.run_lock = threading.Lock()
+        self.tasks_completed = 0
 
     @rpyc.exposed
-    def prepare_model(self, model: ModelInterface) -> None:
-        """Prepare the model for the participant."""
-        logger.info("Preparing model.")
-        self.model = model
-
-    def _run(self) -> None:
-        """Run the main participant logic."""
-        assert self.status == "ready"
-        self.status = "running"
-        if self.inbox is None:
-            self.inbox = PriorityQueue()
-
-        while self.status == "running":
-            current_task = self.inbox.get()
-            self.process(current_task)
+    def get_ready(self) -> None:
+        logger.info(f"{self.node_name} get_ready method called")
+        with self.run_lock:
+            if self.status == "initializing":
+                threading.Thread(target=self._get_ready, daemon=True).start()
 
     def _get_ready(self) -> None:
-        """Prepare the participant for the experiment."""
-        logger.info("Getting ready.")
+        logger.info(f"{self.node_name} _get_ready method started")
         self.handshake()
-        self.prepare_model()
         self.status = "ready"
+        logger.info(f"{self.node_name} _get_ready method completed. Status: {self.status}")
+
+    @rpyc.exposed
+    def run(self) -> None:
+        logger.info(f"{self.node_name} run method called")
+        with self.run_lock:
+            if self.status == "ready":
+                self.status = "running"
+                threading.Thread(target=self._run, daemon=True).start()
+            else:
+                logger.warning(f"{self.node_name} run called when status is not ready. Current status: {self.status}")
+
+    def _run(self) -> None:
+        logger.info(f"{self.node_name} _run method started. Current status: {self.status}")
+        
+        while self.status == "running":
+            try:
+                current_task = self.inbox.get(timeout=1)
+                logger.info(f"{self.node_name} received task: {current_task.task_type}")
+                self.process(current_task)
+                self.tasks_completed += 1
+                logger.info(f"{self.node_name} completed task. Total tasks completed: {self.tasks_completed}")
+                if isinstance(current_task, FinishSignalTask):
+                    logger.info(f"{self.node_name} received FinishSignalTask. Finishing experiment.")
+                    break
+            except queue.Empty:
+                pass  # No tasks in the queue, continue waiting
+
+        self.finish_experiment()
+        logger.info(f"{self.node_name} _run method completed")
+
+    def finish_experiment(self) -> None:
+        logger.info(f"{self.node_name} finishing experiment. Tasks completed: {self.tasks_completed}")
+        self.status = "finished"
+        if self.model is not None:
+            self.model.update_master_dict()
+        logger.info(f"{self.node_name} experiment finished. Status: {self.status}")
+
+    @rpyc.exposed
+    def get_tasks_completed(self) -> int:
+        return self.tasks_completed
+    
+    @rpyc.exposed
+    def get_status(self) -> str:
+        logger.info(f"{self.node_name} get_status called. Current status: {self.status}")
+        return self.status
+
+    @rpyc.exposed
+    def ping(self) -> str:
+        """Simple method to check if the service is responsive"""
+        logger.info(f"{self.node_name} pinged")
+        return f"{self.node_name} is alive"
+
+    @rpyc.exposed
+    def prepare_model(self, model: Optional[ModelInterface] = None) -> None:
+        """Prepare the model for the participant."""
+        logger.info(f"{self.node_name} preparing model.")
+        if model is not None:
+            self.model = model
+            logger.info(f"{self.node_name} model set successfully.")
+        else:
+            logger.warning(f"{self.node_name} no model provided.")
 
     @rpyc.exposed
     def self_destruct(self) -> None:

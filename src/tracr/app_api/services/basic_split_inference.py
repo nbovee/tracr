@@ -6,8 +6,13 @@ data to a nearby edge server for completion.
 """
 
 import logging
+import rpyc
+import threading
 import uuid
 from typing import Any
+from rpyc.utils.server import ThreadedServer
+from rpyc.utils.registry import REGISTRY_PORT, DEFAULT_PRUNING_TIMEOUT
+from rpyc.utils.registry import UDPRegistryClient
 
 from .base import ParticipantService
 from ..tasks import FinishSignalTask, SimpleInferenceTask, SingleInputInferenceTask
@@ -39,6 +44,17 @@ class ClientService(ParticipantService):
     ALIASES: list[str] = ["CLIENT1", "PARTICIPANT"]
     partners: list[str] = ["OBSERVER", "EDGE1"]
 
+    def __init__(self):
+        super().__init__()
+        logger.info("ClientService initialized")
+
+    @rpyc.exposed
+    def get_ready(self) -> None:
+        """Prepare the client node for the experiment."""
+        logger.info("ClientService get_ready method called")
+        super().get_ready()
+        logger.info("ClientService is ready")
+
     def inference_sequence_per_input(self, task: SingleInputInferenceTask) -> None:
         """
         Perform a sequence of inferences for a single input, trying splits at each possible layer.
@@ -52,7 +68,12 @@ class ClientService(ParticipantService):
         """
         assert self.model is not None, "Model must be initialized before inference"
         input_data = task.input
-        splittable_layer_count = self.model.splittable_layer_count
+        
+        try:
+            splittable_layer_count = self.model.splittable_layer_count
+        except AttributeError:
+            logger.warning("Model does not have splittable_layer_count attribute. Assuming 1 layer.")
+            splittable_layer_count = 1
 
         for current_split_layer in range(splittable_layer_count):
             inference_id = str(uuid.uuid4())
@@ -105,17 +126,30 @@ class ClientService(ParticipantService):
 
 
 class EdgeService(ParticipantService):
-    """
-    A service representing the edge node in a split inference setup.
-
-    This service implements the behavior for an edge node that receives partial
-    computations from a client node and completes them. It primarily responds to
-    SimpleInferenceTask instances.
-    """
-
     ALIASES: list[str] = ["EDGE1", "PARTICIPANT"]
     partners: list[str] = ["OBSERVER", "CLIENT1"]
 
-    # The EdgeService uses the default implementation of ParticipantService
-    # methods, as it only needs to respond to SimpleInferenceTask instances,
-    # which are already handled in the base class.
+    def __init__(self):
+        super().__init__()
+        logger.info("EdgeService initialized")
+        self._start_service()
+
+    def _start_service(self):
+        try:
+            logger.info("Starting EdgeService")
+            self.server = ThreadedServer(self, port=18812, auto_register=False)
+            self.server_thread = threading.Thread(target=self.server.start, daemon=True)
+            self.server_thread.start()
+            
+            logger.info("Attempting to register EdgeService")
+            registrar = UDPRegistryClient(ip="255.255.255.255", port=REGISTRY_PORT)
+            for alias in self.ALIASES:
+                registrar.register(alias, 18812, DEFAULT_PRUNING_TIMEOUT)
+                logger.info(f"Registered alias: {alias}")
+            logger.info(f"EdgeService registered with aliases: {self.ALIASES}")
+        except Exception as e:
+            logger.error(f"Failed to start or register EdgeService: {str(e)}")
+
+    @rpyc.exposed
+    def get_node_name(self) -> str:
+        return "EDGE1"

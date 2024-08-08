@@ -9,6 +9,8 @@ you to run the CLI from anywhere, and without preceding the command with
 the word "python".
 """
 
+import sys
+import traceback
 import logging
 import warnings
 import argparse
@@ -151,32 +153,34 @@ def experiment_ls(args):
 
 
 def experiment_run(args):
-    """
-    Runs an experiment.
-    """
-    exp_name = args.name[0]
-    logger.info(f"Attempting to set up experiment {exp_name}.")
-    testcase_dir = PROJECT_ROOT / "src" / "tracr" / "app_api" / "test_cases"
-    manifest_yaml_fp = next(testcase_dir.glob(f"**/*{exp_name}.yaml"))
-    logger.debug(f"Found manifest at {str(manifest_yaml_fp)}.")
-    rlog_server = log_handling.get_server_running_in_thread()
-    manifest = ExperimentManifest(manifest_yaml_fp)
+    try:
+        exp_name = args.name[0]
+        logger.info(f"Attempting to set up experiment {exp_name}.")
+        testcase_dir = PROJECT_ROOT / "src" / "tracr" / "app_api" / "test_cases"
+        manifest_yaml_fp = next(testcase_dir.glob(f"**/*{exp_name}.yaml"))
+        logger.debug(f"Found manifest at {str(manifest_yaml_fp)}.")
+        rlog_server = log_handling.get_server_running_in_thread()
+        manifest = ExperimentManifest(manifest_yaml_fp)
 
-    logger.debug("Initializing DeviceMgr object.")
-    device_manager = DeviceMgr()
-    available_devices = device_manager.get_devices(available_only=True)
+        logger.debug("Initializing DeviceMgr object.")
+        device_manager = DeviceMgr()
+        available_devices = device_manager.get_devices(available_only=True)
 
-    # Create a ModelFactory object to create models for the experiment
-    model_factory = create_model_factory()
+        # Create a ModelFactory object to create models for the experiment
+        model_factory = create_model_factory()
 
-    logger.debug("Initializing Experiment object.")
-    experiment = Experiment(manifest, available_devices, model_factory)
-    logger.debug(f"Running experiment {exp_name}.")
-    experiment.run()
+        logger.debug("Initializing Experiment object.")
+        experiment = Experiment(manifest, available_devices, model_factory)
+        logger.debug(f"Running experiment {exp_name}.")
+        experiment.run()
 
-    log_handling.shutdown_gracefully(rlog_server)
-    sleep(2)  # give the remaining remote logs a second to be displayed
-    logger.info("Congratulations! The experiment has concluded successfully.")
+        log_handling.shutdown_gracefully(rlog_server)
+        sleep(2)  # give the remaining remote logs a second to be displayed
+        logger.info("Congratulations! The experiment has concluded successfully.")
+    except Exception as e:
+        logger.error(f"Error running experiment: {str(e)}")
+        logger.error(traceback.format_exc())
+        sys.exit(1)
 
 
 def network(args):

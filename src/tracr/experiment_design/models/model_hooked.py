@@ -36,12 +36,14 @@ class WrappedModel(ModelInterface):
         *args,
         config_path: Optional[str] = None,
         master_dict: Any = None,
+        splittable_layer_count: Any = None,
         flush_buffer_size: int = 100,
         **kwargs,
     ):
         super().__init__(*args)
         self.timer = time.perf_counter_ns
         self.master_dict = master_dict
+        self.splittable_layer_count = splittable_layer_count
         self.io_buf_dict: Dict[str, Any] = {}
         self.inference_dict: Dict[str, Any] = {}
         self.forward_dict: Dict[int, Dict[str, Any]] = {}

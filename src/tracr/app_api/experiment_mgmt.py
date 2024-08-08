@@ -8,6 +8,7 @@ import threading
 import yaml
 import rpyc
 import time
+import rpyc
 import rpyc.core.protocol
 from rpyc.utils.server import ThreadedServer
 from rpyc.utils.registry import UDPRegistryServer
@@ -21,6 +22,7 @@ from . import device_mgmt as dm
 from .model_interface import ModelFactoryInterface
 from .deploy import ZeroDeployedServer
 from .services.base import ObserverService
+from .services.basic_split_inference import ClientService
 from .tasks import InferOverDatasetTask, FinishSignalTask, WaitForTasksTask
 
 # Overwrite default rpyc configs to allow pickling and public attribute access
@@ -436,16 +438,29 @@ class Experiment:
         Raises:
             TimeoutError: If the observer node takes too long to become ready.
         """
-        n_attempts = 15
-        while n_attempts > 0:
-            if self.observer_conn.get_status() == "ready":
-                return
-            n_attempts -= 1
-            sleep(8)
-        raise TimeoutError(
-            "Experiment object waited too long for observer to be ready."
-        )
+        logger.info("Waiting for observer to be ready...")
+        for _ in range(30):
+            try:
+                status = self.observer_conn.get_status()
+                logger.info(f"Observer status: {status}")
+                if status == "ready":
+                    logger.info("Observer is ready.")
+                    return
+            except Exception as e:
+                logger.error(f"Error getting observer status: {str(e)}")
+            time.sleep(10)
 
+        raise TimeoutError("Observer failed to become ready within the timeout period.")
+
+    def get_client_service(self):
+        """
+        Returns the ClientService instance if it exists in the experiment.
+        """
+        for node in self.participant_nodes:
+            if isinstance(node, ClientService):
+                return node
+        return None
+    
     def send_start_signal_to_observer(self) -> None:
         """
         Sends the start signal to the observer node.
