@@ -12,18 +12,6 @@ class ImagenetDataset(BaseDataset):
     """
     A dataset class for loading and processing ImageNet data.
 
-    This class extends the BaseDataset class and provides functionality to load
-    ImageNet images and labels, apply transformations, and retrieve items.
-
-    Attributes:
-        CLASS_TEXTFILE (pathlib.Path): Path to the file containing ImageNet class labels.
-        IMG_DIRECTORY (pathlib.Path): Path to the directory containing ImageNet images.
-        img_labels (list): List of image labels.
-        img_dir (pathlib.Path): Directory containing the images.
-        transform (Optional[Callable]): Optional transform to be applied on images.
-        target_transform (Optional[Callable]): Optional transform to be applied on labels.
-        img_map (dict): Mapping of image labels to file paths.
-
     Sample Data Source:
         https://github.com/EliSchwartz/imagenet-sample-images
     """
@@ -45,16 +33,17 @@ class ImagenetDataset(BaseDataset):
             transform (Optional[Callable]): Optional transform to be applied on images.
             target_transform (Optional[Callable]): Optional transform to be applied on labels.
         """
+        super().__init__()
         self.CLASS_TEXTFILE = (
             self.DATA_SOURCE_DIRECTORY / "imagenet" / "imagenet_classes.txt"
         )
         self.IMG_DIRECTORY = self.DATA_SOURCE_DIRECTORY / "imagenet" / "sample_images"
-
         self.img_labels = self._load_labels(max_iter)
         self.img_dir = self.IMG_DIRECTORY
         self.transform = transform
         self.target_transform = target_transform
         self.img_map = self._create_image_map()
+        logger.info(f"Initialized ImagenetDataset with max_iter={max_iter}")
 
     def _load_labels(self, max_iter: int) -> list:
         """
@@ -70,6 +59,8 @@ class ImagenetDataset(BaseDataset):
             img_labels = file.read().split("\n")
         if max_iter > 0:
             img_labels = img_labels[:max_iter]
+
+        logger.debug(f"Loaded {len(img_labels)} labels")
         return [label.replace(" ", "_") for label in img_labels]
 
     def _create_image_map(self) -> dict:
@@ -89,6 +80,8 @@ class ImagenetDataset(BaseDataset):
                     f"Couldn't find image with name {img_name} in directory. Skipping."
                 )
                 self.img_labels.pop(i)
+
+        logger.info(f"Created image map with {len(img_map)} images.")
         return img_map
 
     def __len__(self) -> int:
@@ -117,25 +110,34 @@ class ImagenetDataset(BaseDataset):
 
         if self.transform:
             image = self.transform(image)
+        else:
+            # If no transform is provided, convert to tensor manually
+            image = transforms.ToTensor()(image)
+
+        # Ensure the image is a 3D tensor (C, H, W)
+        if image.dim() == 2:
             image = image.unsqueeze(0)
+
         if self.target_transform:
             label = self.target_transform(label)
 
+        logger.debug(f"Retrieved item at index {idx}: label={label}")
         return image, label
 
 
-# Dataset instances for different configurations
-imagenet999_rgb = ImagenetDataset()
-imagenet10_rgb = ImagenetDataset(max_iter=10)
-imagenet999_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTensor()]))
-imagenet10_tr = ImagenetDataset(
-    transform=transforms.Compose([transforms.ToTensor()]), max_iter=10
-)
-imagenet2_tr = ImagenetDataset(
-    transform=transforms.Compose([transforms.ToTensor()]), max_iter=2
-)
+def imagenetX(max_iter: int) -> ImagenetDataset:
+    return ImagenetDataset(max_iter=max_iter)
 
-if __name__ == "__main__":
-    print(
-        f"Output size: {imagenet2_tr[0][0].element_size() * imagenet2_tr[0][0].nelement()}"
+
+def imagenetX_tr(max_iter: int) -> ImagenetDataset:
+    return ImagenetDataset(
+        transform=transforms.Compose([transforms.ToTensor()]), max_iter=max_iter
     )
+
+
+# Dataset instances for different configurations
+imagenet999 = ImagenetDataset()
+imagenet10 = imagenetX(10)
+imagenet999_tr = imagenetX_tr(999)
+imagenet10_tr = imagenetX_tr(10)
+imagenet2_tr = imagenetX_tr(2)

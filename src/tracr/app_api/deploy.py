@@ -207,26 +207,45 @@ class ZeroDeployedServer(DeployedServer):
             pass
 
     def close(self, timeout=5):
+        if hasattr(self.remote_machine, '_session') and self.remote_machine._session:
+            self._terminate_process(self.remote_machine._session.proc, timeout)
+        else:
+            # Handle the case where _session doesn't exist
+            logger.warning(f"No active session found for {self.node_name}. Skipping process termination.")
+        
+        if self.remote_machine:
+            self.remote_machine.close()
+        self.remote_machine = None
+
+    def close(self, timeout=5):
         """
         Closes the deployed server and cleans up resources.
 
         Args:
             timeout (int, optional): The timeout for closing operations. Defaults to 5.
         """
-        self._terminate_process(self.proc, timeout)
-        self.proc = None
+        if hasattr(self, 'proc'):
+            self._terminate_process(self.proc, timeout)
+            self.proc = None
 
-        if self.remote_machine:
-            self._terminate_process(self.remote_machine._session.proc, timeout)
-            self.remote_machine.close()
+        if hasattr(self, 'remote_machine') and self.remote_machine:
+            if hasattr(self.remote_machine, '_session'):
+                self._terminate_process(self.remote_machine._session.proc, timeout)
+            if hasattr(self.remote_machine, 'close'):
+                try:
+                    self.remote_machine.close()
+                except Exception as e:
+                    logger.error(f"Error closing remote machine: {str(e)}")
             self.remote_machine = None
 
-        if self._tmpdir_ctx:
+        if hasattr(self, '_tmpdir_ctx') and self._tmpdir_ctx:
             try:
                 self._tmpdir_ctx.__exit__(None, None, None)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Error cleaning up temporary directory: {str(e)}")
             self._tmpdir_ctx = None
+
+        logger.info(f"Closed ZeroDeployedServer for {getattr(self, 'node_name', 'unknown node')}")
 
     def _terminate_process(self, proc, timeout):
         """

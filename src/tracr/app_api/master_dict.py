@@ -47,9 +47,7 @@ class MasterDict:
         with self._lock:
             return self._data.get(key)
 
-    def update(
-        self, new_info: Dict[str, Dict[str, Any]], by_value: bool = True
-    ) -> None:
+    def update(self, new_info: Dict[str, Dict[str, Any]], by_value: bool = True) -> None:
         """
         Update the dictionary with new information.
 
@@ -58,7 +56,11 @@ class MasterDict:
             by_value (bool): If True, obtain a local copy of the data.
         """
         if by_value:
-            new_info = obtain(new_info)
+            try:
+                new_info = obtain(new_info)
+            except Exception as e:
+                print(f"Error obtaining new_info: {e}")
+                new_info = pickle.loads(pickle.dumps(new_info))  # Fallback method
         with self._lock:
             for inference_id, layer_data in new_info.items():
                 self.set(inference_id, layer_data)
@@ -213,6 +215,16 @@ class MasterDict:
         with self._lock:
             return pickle.dumps(self._data)
 
+    def to_dict(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Convert the MasterDict to a regular dictionary.
+
+        Returns:
+            Dict[str, Dict[str, Any]]: A dictionary representation of the MasterDict.
+        """
+        with self._lock:
+            return dict(self._data)
+        
     def __getitem__(self, key: str) -> Dict[str, Any]:
         return self.get(key)
 

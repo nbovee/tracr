@@ -474,26 +474,42 @@ class Experiment:
         Args:
             check_status_interval (int, optional): Interval to check the status. Defaults to 10.
         """
-        while True:
-            if self.observer_conn.get_status() == "finished":
-                break
-            sleep(check_status_interval)
+        try:
+            while True:
+                if self.observer_conn.get_status() == "finished":
+                    break
+                sleep(check_status_interval)
 
-        sleep(5)
-        logger.info("Consolidating results from master_dict")
-        async_md = rpyc.async_(self.observer_conn.get_master_dict)
-        master_dict_result = async_md(
-            as_dataframe=False
-        )  # Changed to False to get raw data
-        master_dict_result.wait()
-        self.report_data = obtain(master_dict_result.value)
+            sleep(5)
+            logger.info("Consolidating results from master_dict")
+            async_md = rpyc.async_(self.observer_conn.get_master_dict)
+            master_dict_result = async_md(as_dataframe=False)  # Changed to False to get raw data
+            master_dict_result.wait()
+            self.report_data = obtain(master_dict_result.value)
 
-        self.observer_node.close()
-        self.registry_server.close()
-        for p in self.participant_nodes:
-            p.close()
+        except Exception as e:
+            logger.error(f"Error during result consolidation: {str(e)}")
 
-        self.save_report(summary=True)
+        finally:
+            try:
+                if hasattr(self, 'observer_node'):
+                    self.observer_node.close()
+            except Exception as e:
+                logger.error(f"Error closing observer node: {str(e)}")
+
+            try:
+                if hasattr(self, 'registry_server'):
+                    self.registry_server.close()
+            except Exception as e:
+                logger.error(f"Error closing registry server: {str(e)}")
+
+            for p in getattr(self, 'participant_nodes', []):
+                try:
+                    p.close()
+                except Exception as e:
+                    logger.error(f"Error closing participant node: {str(e)}")
+
+            self.save_report(summary=True)
 
     def save_report(self, format: str = "csv", summary: bool = False) -> None:
         """

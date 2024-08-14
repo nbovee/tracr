@@ -1,3 +1,4 @@
+import logging
 import os
 import csv
 import pickle
@@ -6,6 +7,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from .partitioner import Partitioner
+
+logger = logging.getLogger("tracr_logger")
 
 
 class LinearRegression(nn.Module):
@@ -46,8 +49,6 @@ class LinearRegression(nn.Module):
 
 
 class RegressionPartitioner(Partitioner):
-    """A partitioner that uses linear regression to estimate split points."""
-
     _TYPE = "regression"
 
     def __init__(self, num_breakpoints: int, clip_min_max: bool = True) -> None:
@@ -61,6 +62,9 @@ class RegressionPartitioner(Partitioner):
             "src/tracr/app_api/test_cases/alexnetsplit/partitioner_datapoints/local/"
         )
         self.server_regression = None
+        logger.info(
+            f"Initialized RegressionPartitioner with {num_breakpoints} breakpoints"
+        )
 
     def pass_regression_copy(self) -> bytes:
         """Return a pickled copy of the regression models."""
@@ -71,15 +75,7 @@ class RegressionPartitioner(Partitioner):
         self.server_regression = server_modules
 
     def estimate_split_point(self, starting_layer: int) -> int:
-        """
-        Estimate the optimal split point based on the regression models.
-
-        Args:
-            starting_layer (int): The layer to start estimation from.
-
-        Returns:
-            int: The estimated split point.
-        """
+        logger.debug(f"Estimating split point from layer {starting_layer}")
         for module, param_bytes, output_bytes in self.module_sequence:
             local_time_est_s = (
                 self.regression[module].forward(torch.tensor(float(param_bytes))).item()
@@ -98,21 +94,18 @@ class RegressionPartitioner(Partitioner):
             if local_time_est_s < output_transfer_time + server_time_est_s:
                 starting_layer += 1
             else:
+                logger.info(f"Estimated split point: {starting_layer}")
                 return starting_layer
+        logger.info(f"Reached end of modules. Split point: {starting_layer}")
         return starting_layer
 
     def create_data(self, model: Any, iterations: int = 10) -> None:
-        """
-        Create data for regression analysis.
-
-        Args:
-            model: The model to analyze.
-            iterations (int): Number of iterations for data collection.
-        """
+        logger.info(f"Creating data for regression analysis. Iterations: {iterations}")
         for f in os.listdir(self._dir):
             os.remove(os.path.join(self._dir, f))
 
-        for _ in range(iterations):
+        for i in range(iterations):
+            logger.debug(f"Data creation iteration {i+1}/{iterations}")
             model(torch.randn(1, *model.base_input_size), inference_id="profile")
             from_model = model.master_dict.pop("profile")["layer_information"].values()
             self._process_model_data(from_model)
@@ -162,25 +155,28 @@ class RegressionPartitioner(Partitioner):
         return torch.tensor(x), torch.tensor(y)
 
     def _train_regression(self, x: torch.Tensor, y: torch.Tensor) -> LinearRegression:
-        """Train a linear regression model on the given data."""
         model = LinearRegression()
         if x.max() == x.min():
-            print(f"Insufficient data for regression, setting w=0 b=median")
+            logger.warning(f"Insufficient data for regression, setting w=0 b=median")
             model.set_weights(0, torch.median(y))
         else:
             mmax = max(x.max(), y.max())
             x_norm, y_norm = x / mmax, y / mmax
-            for _ in range(model.training_iterations):
+            for i in range(model.training_iterations):
                 for v, z in zip(x_norm, y_norm):
                     pred = model.forward(v)
                     model.train_step(z, pred)
+                logger.debug(
+                    f"Training iteration {i+1}/{model.training_iterations}, Loss: {model.loss_history[-1]}"
+                )
             model.scale_bias(mmax)
         return model
 
     def _get_network_speed_bytes(self, artificial_value: int = 4 * 1024**2) -> int:
         """Get the network speed in bytes per second."""
+        logger.debug("Getting network speed (artificial value)")
         return artificial_value  # TODO: Implement actual network speed measurement
 
     def __call__(self, *args: Any, **kwargs: Any) -> int:
-        """Estimate the split point when the partitioner is called."""
+        logger.debug("Calling RegressionPartitioner to estimate split point")
         return self.estimate_split_point(starting_layer=0)

@@ -1,17 +1,10 @@
-"""Utilities and interface for the model hook wrapper."""
-
 import logging
 import os
 from typing import Any, Dict
 import yaml
 import numpy as np
 import importlib
-
-# # Conditionally import models based on the TRACR_ROLE environment variable
-# if os.environ.get("TRACR_ROLE") == "participant":
-#     from torchvision import models
-# else:
-#     models = None
+import torch
 
 logger = logging.getLogger("tracr_logger")
 
@@ -26,6 +19,12 @@ class NotDict:
 
     def __call__(self, *args: Any, **kwds: Any) -> Dict[str, Any]:
         return self.inner_dict
+
+    @property
+    def shape(self):
+        if isinstance(self.inner_dict, torch.Tensor):
+            return self.inner_dict.shape
+        return None
 
 
 class HookExitException(Exception):
@@ -51,10 +50,15 @@ def read_model_config(
     Returns:
         Dict[str, Any]: Combined model configuration.
     """
-    config_details = _read_yaml_data(path, participant_key)
-    model_fixed_details = _read_fixed_model_config(config_details["model_name"])
-    config_details.update(model_fixed_details)
-    return config_details
+    try:
+        config_details = _read_yaml_data(path, participant_key)
+        model_fixed_details = _read_fixed_model_config(config_details["model_name"])
+        config_details.update(model_fixed_details)
+        logger.info(f"Model configuration read successfully for {participant_key}")
+        return config_details
+    except Exception as e:
+        logger.error(f"Error reading model configuration: {str(e)}")
+        raise
 
 
 def _read_yaml_data(path: str, participant_key: str) -> Dict[str, Any]:
@@ -68,24 +72,22 @@ def _read_yaml_data(path: str, participant_key: str) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Model settings.
     """
-    settings = {}
     try:
         with open(path) as file:
             settings = yaml.safe_load(file)["participant_types"][participant_key][
                 "model"
             ]
-    except Exception:
-        logger.warning(
-            "No valid configuration provided. Using default settings, behavior could be unexpected."
-        )
-        settings = {
+        logger.debug(f"YAML data read successfully from {path}")
+        return settings
+    except Exception as e:
+        logger.warning(f"Error reading YAML data: {str(e)}. Using default settings.")
+        return {
             "device": "cpu",
             "mode": "eval",
             "depth": np.inf,
             "input_size": (3, 224, 224),
             "model_name": "alexnet",
         }
-    return settings
 
 
 def _read_fixed_model_config(model_name: str) -> Dict[str, Any]:
@@ -98,11 +100,17 @@ def _read_fixed_model_config(model_name: str) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Fixed model configuration.
     """
-    config_path = os.path.join(os.path.dirname(__file__), "model_configs.yaml")
-    with open(config_path, encoding="utf8") as file:
-        configs = yaml.safe_load(file)
-        model_type = "yolo" if "yolo" in model_name.lower() else model_name
-        return configs.get(model_type, {})
+    try:
+        config_path = os.path.join(os.path.dirname(__file__), "model_configs.yaml")
+        with open(config_path, encoding="utf8") as file:
+            configs = yaml.safe_load(file)
+            model_type = "yolo" if "yolo" in model_name.lower() else model_name
+            config = configs.get(model_type, {})
+            logger.debug(f"Fixed model configuration read for {model_name}")
+            return config
+    except Exception as e:
+        logger.error(f"Error reading fixed model configuration: {str(e)}")
+        raise
 
 
 def model_selector(model_name: str):
@@ -119,23 +127,19 @@ def model_selector(model_name: str):
         NotImplementedError: If the model is not implemented.
     """
     logger.info(f"Selecting model: {model_name}")
+    try:
+        if "alexnet" in model_name:
+            from torchvision import models
 
-    # # If using observer role, return None as models are not available
-    # if models is None:
-    #     logger.error("Models are not available in observer role.")
-    #     return None
-
-    from torchvision import models
-
-    if "alexnet" in model_name:
-        assert models is not None
-        return models.alexnet(weights="DEFAULT")
-    elif "yolo" in model_name:
-        try:
+            return models.alexnet(weights="DEFAULT")
+        elif "yolo" in model_name:
             ultralytics = importlib.import_module("ultralytics")
             return ultralytics.YOLO(f"{model_name}.pt").model
-        except ImportError:
-            logger.error("Ultralytics is not installed.")
-            raise
-    else:
-        raise NotImplementedError(f"Model {model_name} is not implemented.")
+        else:
+            raise NotImplementedError(f"Model {model_name} is not implemented.")
+    except ImportError as e:
+        logger.error(f"Error importing required module: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Error selecting model: {str(e)}")
+        raise
