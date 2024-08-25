@@ -5,7 +5,7 @@ participant_types:
     # each participant type is defined by their service and model
     service:
       module: basic_split_inference
-      class: ClientService
+      class: ServerService
     # "default" tells WrappedModel just to use AlexNet
     model:
       module: yolov5s
@@ -13,7 +13,7 @@ participant_types:
   edge:
     service:
       module: basic_split_inference
-      class: EdgeService
+      class: ParticipantService
     model:
       module: yolov5s
       class: default

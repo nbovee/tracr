@@ -1,47 +1,47 @@
-# alexnet_split.yaml
+# alexnetsplit.yaml
 # This configuration file defines a split inference setup for AlexNet model
 
 # Define the types of participants in the experiment
 participant_types:
-  # Client configuration
-  client:
+  # Server configuration
+  server:
     service:
-      module: basic_split_inference  # Module for client-side operations
-      class: ClientService           # Class implementing client service
+      module: basic_split_inference # Module for server-side operations
+      class: ServerService # Class implementing server service (renamed from ServerService)
     model:
-      model_name: alexnet            # Using AlexNet model
-      device: cpu                    # Run on CPU
-      mode: eval                     # Model in evaluation mode
-      depth: np.inf                  # Infinite depth for model splitting
-      input_size: [3, 224, 224]      # Input dimensions (channels, height, width)
-      class: default                 # Default model class
+      model_name: alexnet # Using AlexNet model
+      device: cpu # Run on CPU
+      mode: eval # Model in evaluation mode
+      depth: np.inf # Infinite depth for model splitting
+      input_size: [3, 224, 224] # Input dimensions (channels, height, width)
+      class: default # Default model class
 
-  # Edge server configuration
-  edge:
+  # Participant configuration
+  participant:
     service:
-      module: basic_split_inference  # Module for edge-side operations
-      class: EdgeService             # Class implementing edge service
+      module: basic_split_inference # Module for participant-side operations
+      class: ParticipantService # Class implementing participant service (renamed from ParticipantService)
     model:
-      module: default                # Default module for edge model
-      class: default                 # Default class for edge model
+      module: default # Default module for participant model
+      class: default # Default class for participant model
 
 # Map participant types to specific devices and assign unique names
 participant_instances:
-  - device: localhost                # Client runs on local machine
-    node_type: client
-    instance_name: CLIENT1           # Unique name for this client instance
-  - device: racr                     # Edge server runs on a device named 'racr'
-    node_type: edge
-    instance_name: EDGE1             # Unique name for this edge instance
+  - device: localhost # Server runs on local machine
+    node_type: server
+    instance_name: SERVER1 # Unique name for this server instance
+  - device: racr # Participant runs on a device named 'racr'
+    node_type: participant
+    instance_name: PARTICIPANT1 # Unique name for this participant instance
 
 # Define initial tasks for each participant to start the experiment
 playbook:
-  CLIENT1:                           # Tasks for CLIENT1
-    - task_type: infer_dataset       # Perform inference on a dataset
+  SERVER1: # Tasks for SERVER1
+    - task_type: infer_dataset # Perform inference on a dataset
       params:
-        dataset_module: imagenet     # Using ImageNet dataset module
-        dataset_instance: imagenet10_tr  # Specific ImageNet subset (likely 10 classes)
-    - task_type: finish_signal       # Signal completion of tasks
+        dataset_module: imagenet # Using ImageNet dataset module
+        dataset_instance: imagenet10_tr # Specific ImageNet subset (likely 10 classes)
+    - task_type: finish_signal # Signal completion of tasks
 
-  EDGE1:                             # Tasks for EDGE1
-    - task_type: wait_for_tasks      # Wait for tasks from clients
+  PARTICIPANT1: # Tasks for PARTICIPANT1
+    - task_type: wait_for_tasks # Wait for tasks from server
