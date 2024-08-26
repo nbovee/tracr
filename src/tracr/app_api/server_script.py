@@ -56,7 +56,7 @@ try:
 
         def write(self, msg):
             if msg.endswith("\n"):
-                self.buf.append(msg.removesuffix("\n"))
+                self.buf.append(msg.rstrip())
                 output = "".join(self.buf)
                 if output:
                     self.logfct(output)
