@@ -1,16 +1,16 @@
 import pathlib
 import logging
-from typing import Optional, Callable
+from typing import Optional, Callable, Tuple, Dict
 import torchvision.transforms as transforms
 from PIL import Image
+import torch
 from .dataset import BaseDataset
 
 logger = logging.getLogger("tracr_logger")
 
 
 class ImagenetDataset(BaseDataset):
-    """
-    A dataset class for loading and processing ImageNet data.
+    """A dataset class for loading and processing ImageNet data.
 
     Sample Data Source:
         https://github.com/EliSchwartz/imagenet-sample-images
@@ -25,51 +25,33 @@ class ImagenetDataset(BaseDataset):
         transform: Optional[Callable] = None,
         target_transform: Optional[Callable] = None,
     ):
-        """
-        Initialize the ImagenetDataset.
-
-        Args:
-            max_iter (int): Maximum number of images to load. -1 for all images.
-            transform (Optional[Callable]): Optional transform to be applied on images.
-            target_transform (Optional[Callable]): Optional transform to be applied on labels.
-        """
         super().__init__()
         self.CLASS_TEXTFILE = (
-            self.DATA_SOURCE_DIRECTORY / "imagenet" / "imagenet_classes.txt"
-        )
+            self.DATA_SOURCE_DIRECTORY / "imagenet" / "imagenet_classes.txt")
         self.IMG_DIRECTORY = self.DATA_SOURCE_DIRECTORY / "imagenet" / "sample_images"
         self.img_labels = self._load_labels(max_iter)
         self.img_dir = self.IMG_DIRECTORY
-        self.transform = transform
+        self.transform = transform or transforms.ToTensor()
         self.target_transform = target_transform
         self.img_map = self._create_image_map()
-        logger.info(f"Initialized ImagenetDataset with max_iter={max_iter}")
+        logger.info(
+            f"Initialized ImagenetDataset with {len(self.img_labels)} images")
 
     def _load_labels(self, max_iter: int) -> list:
-        """
-        Load and process image labels from the class text file.
+        """Load and process image labels from the class text file."""
+        try:
+            with open(self.CLASS_TEXTFILE) as file:
+                img_labels = file.read().splitlines()
+            if max_iter > 0:
+                img_labels = img_labels[:max_iter]
+            logger.debug(f"Loaded {len(img_labels)} labels")
+            return [label.replace(" ", "_") for label in img_labels]
+        except FileNotFoundError:
+            logger.error(f"Class text file not found: {self.CLASS_TEXTFILE}")
+            raise
 
-        Args:
-            max_iter (int): Maximum number of labels to load.
-
-        Returns:
-            list: Processed list of image labels.
-        """
-        with open(self.CLASS_TEXTFILE) as file:
-            img_labels = file.read().split("\n")
-        if max_iter > 0:
-            img_labels = img_labels[:max_iter]
-
-        logger.debug(f"Loaded {len(img_labels)} labels")
-        return [label.replace(" ", "_") for label in img_labels]
-
-    def _create_image_map(self) -> dict:
-        """
-        Create a mapping of image labels to their file paths.
-
-        Returns:
-            dict: Mapping of image labels to file paths.
-        """
+    def _create_image_map(self) -> Dict[str, pathlib.Path]:
+        """Create a mapping of image labels to their file paths."""
         img_map = {}
         for i in range(len(self.img_labels) - 1, -1, -1):
             img_name = self.img_labels[i]
@@ -85,44 +67,31 @@ class ImagenetDataset(BaseDataset):
         return img_map
 
     def __len__(self) -> int:
-        """
-        Get the number of items in the dataset.
-
-        Returns:
-            int: Number of items in the dataset.
-        """
+        """Get the number of items in the dataset."""
         return len(self.img_labels)
 
-    def __getitem__(self, idx: int) -> tuple:
-        """
-        Get an item (image and label) from the dataset.
-
-        Args:
-            idx (int): Index of the item to retrieve.
-
-        Returns:
-            tuple: A tuple containing the image and its label.
-        """
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, str]:
+        """Get an item (image and label) from the dataset."""
         label = self.img_labels[idx]
         img_fp = self.img_map[label]
-        image = Image.open(img_fp).convert("RGB")
-        image = image.resize((224, 224))
+        try:
+            image = Image.open(img_fp).convert("RGB")
+            image = image.resize((224, 224))
 
-        if self.transform:
             image = self.transform(image)
-        else:
-            # If no transform is provided, convert to tensor manually
-            image = transforms.ToTensor()(image)
 
-        # Ensure the image is a 3D tensor (C, H, W)
-        if image.dim() == 2:
-            image = image.unsqueeze(0)
+            # Ensure the image is a 3D tensor (C, H, W)
+            if image.dim() == 2:
+                image = image.unsqueeze(0)
 
-        if self.target_transform:
-            label = self.target_transform(label)
+            if self.target_transform:
+                label = self.target_transform(label)
 
-        logger.debug(f"Retrieved item at index {idx}: label={label}")
-        return image, label
+            logger.debug(f"Retrieved item at index {idx}: label={label}")
+            return image, label
+        except Exception as e:
+            logger.error(f"Error processing image at index {idx}: {str(e)}")
+            raise
 
 
 def imagenetX(max_iter: int) -> ImagenetDataset:
