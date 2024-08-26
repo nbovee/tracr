@@ -12,7 +12,6 @@ class Partitioner(abc.ABC):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         if cls._TYPE in cls.subclasses:
-            logger.error(f"_TYPE alias '{cls._TYPE}' is already reserved.")
             raise ValueError(f"_TYPE alias '{cls._TYPE}' is already reserved.")
         cls.subclasses[cls._TYPE] = cls
         logger.info(
@@ -22,7 +21,6 @@ class Partitioner(abc.ABC):
     @classmethod
     def create(cls, class_type: str, *args, **kwargs) -> "Partitioner":
         if class_type not in cls.subclasses:
-            logger.error(f"Unknown partitioner type: {class_type}")
             raise ValueError(f"Unknown partitioner type: {class_type}")
         logger.info(f"Creating partitioner of type: {class_type}")
         return cls.subclasses[class_type](*args, **kwargs)
