@@ -20,13 +20,23 @@ entry for this type of task in their `task_map` attribute, they will be able to 
 """
 
 import uuid
-from typing import Any, Optional, Union
+from typing import Optional, Union
 import numpy as np
+from enum import IntEnum
+
+
+class TaskPriority(IntEnum):
+    """Enum for task priorities."""
+    HIGHEST = 1
+    HIGH = 3
+    MEDIUM = 5
+    LOW = 7
+    LOWEST = 9
+    FINISH = 11  # Special priority for FinishSignalTask
 
 
 class Task:
-    """
-    Base class for all task types in the distributed inference system.
+    """Base class for all task types in the distributed inference system.
 
     This class defines common attributes and methods required for task prioritization
     and identification. It should not be used directly but subclassed for specific
@@ -35,23 +45,23 @@ class Task:
     Attributes:
         from_node (str): The identifier of the node that sent the task.
         task_type (str): A string representation of the task's class name.
-        priority (int): The priority level of the task (1-10, lower is higher priority).
+        priority (TaskPriority): The priority level of the task.
 
     Methods:
         Comparison methods for priority-based sorting in the inbox.
     """
 
-    def __init__(self, from_node: str, priority: int = 5):
+    def __init__(self, from_node: str, priority: TaskPriority = TaskPriority.MEDIUM):
         """
         Initialize a new Task.
 
         Args:
             from_node (str): The identifier of the node sending the task.
-            priority (int, optional): The priority level of the task. Defaults to 5.
+            priority (TaskPriority, optional): The priority level of the task. Defaults to TaskPriority.MEDIUM.
         """
         self.from_node: str = from_node
         self.task_type: str = self.__class__.__name__
-        self.priority: int = priority
+        self.priority: TaskPriority = priority
 
     def __lt__(self, other: "Task") -> bool:
         return self.priority < other.priority
@@ -65,16 +75,22 @@ class Task:
     def __ge__(self, other: "Task") -> bool:
         return self.priority >= other.priority
 
+    def validate(self) -> None:
+        """
+        Validate the task parameters.
+        Subclasses should override this method to provide specific validation.
+        """
+        pass
+
 
 class SimpleInferenceTask(Task):
-    """
-    A task for performing a specific inference operation.
+    """A task for performing a specific inference operation.
 
     This task provides explicit instructions for how an inference should be performed,
     including the input, start and end layers, and where to send the results.
 
     Attributes:
-        input (Any): The input data for the inference.
+        input (np.ndarray): The input data for the inference.
         inference_id (Optional[str]): A unique identifier for the inference.
         start_layer (int): The starting layer for the inference.
         end_layer (Union[int, float]): The ending layer for the inference.
@@ -84,34 +100,32 @@ class SimpleInferenceTask(Task):
     def __init__(
         self,
         from_node: str,
-        input: Any,
+        input: np.ndarray,
         inference_id: Optional[str] = None,
         start_layer: int = 0,
         end_layer: Union[int, float] = np.inf,
         downstream_node: Optional[str] = None,
     ):
-        """
-        Initialize a new SimpleInferenceTask.
-
-        Args:
-            from_node (str): The identifier of the node sending the task.
-            input (Any): The input data for the inference.
-            inference_id (Optional[str], optional): A unique identifier for the inference. Defaults to None.
-            start_layer (int, optional): The starting layer for the inference. Defaults to 0.
-            end_layer (Union[int, float], optional): The ending layer for the inference. Defaults to np.inf.
-            downstream_node (Optional[str], optional): The node to send results to, if any. Defaults to None.
-        """
         super().__init__(from_node)
-        self.input: Any = input
+        self.input: np.ndarray = input
         self.start_layer: int = start_layer
         self.end_layer: Union[int, float] = end_layer
         self.downstream_node: Optional[str] = downstream_node
         self.inference_id: str = inference_id or str(uuid.uuid4())
 
+    def validate(self) -> None:
+        """Validate the task parameters."""
+        if not isinstance(self.input, np.ndarray):
+            raise ValueError("Input must be a numpy array")
+        if not isinstance(self.start_layer, int) or self.start_layer < 0:
+            raise ValueError("start_layer must be a non-negative integer")
+        if not (isinstance(self.end_layer, int) or self.end_layer == np.inf) or self.end_layer < self.start_layer:
+            raise ValueError(
+                "end_layer must be an integer greater than or equal to start_layer, or np.inf")
+
 
 class SingleInputInferenceTask(Task):
-    """
-    Sending this task to a node's inbox is like saying:
+    """Sending this task to a node's inbox is like saying:
 
     'Here is an input - your runner should have an `inference_sequence_per_input` method that
     specifies how you handle it.'
@@ -128,26 +142,22 @@ class SingleInputInferenceTask(Task):
 
     def __init__(
         self,
-        input: Any,
+        input: np.ndarray,
         inference_id: Optional[str] = None,
         from_node: str = "OBSERVER",
     ):
-        """
-        Initialize a new SingleInputInferenceTask.
-
-        Args:
-            input (Any): The input data to be processed.
-            inference_id (Optional[str], optional): A unique identifier for the inference. Defaults to None.
-            from_node (str, optional): The identifier of the node sending the task. Defaults to "OBSERVER".
-        """
         super().__init__(from_node)
-        self.input: Any = input
+        self.input: np.ndarray = input
         self.inference_id: Optional[str] = inference_id
+
+    def validate(self) -> None:
+        """Validate the task parameters."""
+        if not isinstance(self.input, np.ndarray):
+            raise ValueError("Input must be a numpy array")
 
 
 class InferOverDatasetTask(Task):
-    """
-    Sending this task to a node's inbox is like saying:
+    """Sending this task to a node's inbox is like saying:
 
     'Here is the name of a dataset instance that should be available to you via the observer's
     `get_dataset_reference` method. Use your `inference_sequence_per_input` method for each input
@@ -161,51 +171,39 @@ class InferOverDatasetTask(Task):
     def __init__(
         self, dataset_module: str, dataset_instance: str, from_node: str = "OBSERVER"
     ):
-        """
-        Initialize a new InferOverDatasetTask.
-
-        Args:
-            dataset_module (str): The name of the module containing the dataset.
-            dataset_instance (str): The name of the specific dataset instance to use.
-            from_node (str, optional): The identifier of the node sending the task. Defaults to "OBSERVER".
-        """
         super().__init__(from_node)
         self.dataset_module: str = dataset_module
         self.dataset_instance: str = dataset_instance
 
+    def validate(self) -> None:
+        """Validate the task parameters."""
+        if not isinstance(self.dataset_module, str) or not self.dataset_module:
+            raise ValueError("dataset_module must be a non-empty string")
+        if not isinstance(self.dataset_instance, str) or not self.dataset_instance:
+            raise ValueError("dataset_instance must be a non-empty string")
+
 
 class FinishSignalTask(Task):
-    """
-    A task to signal the completion of all tasks for a node.
+    """A task to signal the completion of all tasks for a node.
 
     This task has the highest priority to ensure it's processed last. It should
     only be sent when all other tasks for the receiving node have been completed.
     """
 
     def __init__(self, from_node: str = "OBSERVER"):
-        """
-        Initialize a new FinishSignalTask.
-
-        Args:
-            from_node (str, optional): The identifier of the node sending the task. Defaults to "OBSERVER".
-        """
-        super().__init__(from_node, priority=11)
+        super().__init__(from_node, priority=TaskPriority.FINISH)
 
 
 class WaitForTasksTask(Task):
-    """
-    A task to signal that the node should wait for a specific task to arrive.
-
-    This task is used to synchronize the order of tasks between nodes. The node will
-    wait until the specified task is received before continuing with its processing.
-    """
-
-    def __init__(self, from_node: str = "OBSERVER"):
-        """
-        Initialize a new WaitForTask.
-
-        Args:
-            task_type (str): The type of task to wait for.
-            from_node (str, optional): The identifier of the node sending the task. Defaults to "OBSERVER".
-        """
+    def __init__(self, task_type: str, from_node: str = "OBSERVER", timeout: Optional[float] = None):
         super().__init__(from_node)
+        self.task_type_to_wait_for: str = task_type
+        self.timeout: Optional[float] = timeout
+
+    def validate(self) -> None:
+        """Validate the task parameters."""
+        if not isinstance(self.task_type_to_wait_for, str) or not self.task_type_to_wait_for:
+            raise ValueError(
+                "task_type_to_wait_for must be a non-empty string")
+        if self.timeout is not None and not isinstance(self.timeout, (int, float)):
+            raise ValueError("timeout must be None or a number")
