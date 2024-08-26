@@ -10,7 +10,7 @@ from plumbum import SshMachine
 from plumbum.machines.local import LocalMachine
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
-from typing import Union
+from typing import Union, List
 from . import utils
 
 logger = logging.getLogger("tracr_logger")
@@ -35,7 +35,7 @@ class DeviceUnavailableException(Exception):
 class LAN:
     """Helps with general networking tasks that are not specific to one host."""
 
-    LOCAL_CIDR_BLOCK: list[str] = [
+    LOCAL_CIDR_BLOCK: List[str] = [
         str(ip) for ip in ipaddress.ip_network("192.168.1.0/24").hosts()
     ]
 
@@ -54,12 +54,12 @@ class LAN:
     @classmethod
     def get_available_hosts(
         cls,
-        try_hosts: list[str] = LOCAL_CIDR_BLOCK,
+        try_hosts: List[str] = LOCAL_CIDR_BLOCK,
         port: int = 22,
         timeout: Union[int, float] = 1.0,
         max_threads: int = 50,
         retries: int = 3,
-    ) -> list[str]:
+    ) -> List[str]:
         """Takes a list of strings (IP or hostname) and returns a new list containing only those that
         are available, without attempting to authenticate. Uses threading and implements retries.
         """
