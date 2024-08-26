@@ -1,11 +1,19 @@
-# Configuration for different model types
+# experiment_design/models/model_configs.yaml
 
+# YOLO model configuration
 yolo:
   depth: 2
   hook_style: post  # Hook must be applied at the end of a layer due to the internal results catalog
 
+# AlexNet model configuration
 alexnet:
   depth: 2
   hook_style: post
   # Note: Pre-hook style is obsolete
   # hook_style: pre  # Hook must be applied before starting the NEXT layer to catch non-torch.nn operations
+
+# Add configurations for other models here as needed
+# example_model:
+#   depth: 2
+#   hook_style: post
+#   additional_param: value
