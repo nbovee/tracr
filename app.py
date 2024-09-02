@@ -9,7 +9,6 @@ you to run the CLI from anywhere, and without preceding the command with
 the word "python".
 """
 
-
 import sys
 import traceback
 import warnings
@@ -45,45 +44,52 @@ logger = setup_logging()
 
 def create_model_factory() -> ModelFactoryInterface:
     """Creates a ModelFactory object for the experiment."""
-    from src.tracr.experiment_design.models.model_hooked import WrappedModelFactory
-
-    return WrappedModelFactory()
+    try:
+        from src.tracr.experiment_design.models.model_hooked import WrappedModelFactory
+        return WrappedModelFactory()
+    except ImportError as e:
+        logger.error(f"Failed to import WrappedModelFactory: {e}")
+        sys.exit(1)
 
 
 def device_ls(args: argparse.Namespace) -> None:
     """Lists available devices."""
-    device_mgr = DeviceMgr()
-    devices = device_mgr.get_devices()
-    console = Console()
+    try:
+        device_mgr = DeviceMgr()
+        devices = device_mgr.get_devices()
+        console = Console()
 
-    table = Table(show_header=True, header_style="bold magenta")
-    table.add_column("Name")
-    table.add_column("Type")
-    table.add_column("Reachable")
-    table.add_column("Ready")
-    table.add_column("Host")
-    table.add_column("User")
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("Name")
+        table.add_column("Type")
+        table.add_column("Reachable")
+        table.add_column("Ready")
+        table.add_column("Host")
+        table.add_column("User")
 
-    for device in devices:
-        name = device._name
-        device_type = device.get_type()
-        can_be_reached = device.is_reachable()
-        reachable = (
-            "[bold green]Yes[/bold green]"
-            if can_be_reached
-            else "[bold red]No[/bold red]"
-        )
-        ready = (
-            "[bold green]Yes[/bold green]"
-            if can_be_reached
-            else "[bold red]No[/bold red]"
-        )
-        host = device.get_current("host")
-        user = device.get_current("user")
+        for device in devices:
+            name = device._name
+            device_type = device.get_type()
+            can_be_reached = device.is_reachable()
+            reachable = (
+                "[bold green]Yes[/bold green]"
+                if can_be_reached
+                else "[bold red]No[/bold red]"
+            )
+            ready = (
+                "[bold green]Yes[/bold green]"
+                if can_be_reached
+                else "[bold red]No[/bold red]"
+            )
+            host = device.get_current("host")
+            user = device.get_current("user")
 
-        table.add_row(name, device_type, reachable, ready, host, user)
+            table.add_row(name, device_type, reachable, ready, host, user)
 
-    console.print(table)
+        console.print(table)
+    except Exception as e:
+        logger.error(f"Error listing devices: {str(e)}")
+        logger.error(traceback.format_exc())
 
 
 def experiment_run(args: argparse.Namespace) -> None:
@@ -92,7 +98,12 @@ def experiment_run(args: argparse.Namespace) -> None:
         exp_name = args.name[0]
         logger.info(f"Setting up experiment: {exp_name}")
         testcase_dir = PROJECT_ROOT / "src" / "tracr" / "app_api" / "test_cases"
-        manifest_yaml_fp = next(testcase_dir.glob(f"**/*{exp_name}.yaml"))
+
+        manifest_yaml_fp = next(
+            testcase_dir.glob(f"**/*{exp_name}.yaml"), None)
+        if not manifest_yaml_fp:
+            logger.error(f"No manifest found for experiment: {exp_name}")
+            sys.exit(1)
         logger.debug(f"Manifest found at: {manifest_yaml_fp}")
 
         rlog_server = get_server_running_in_thread()
@@ -102,9 +113,15 @@ def experiment_run(args: argparse.Namespace) -> None:
         device_manager = DeviceMgr()
         available_devices = device_manager.get_devices(available_only=True)
 
+        if not available_devices:
+            logger.error("No available devices found.")
+            sys.exit(1)
+
+        # Create an instance of ModelFactoryInterface
         model_factory = create_model_factory()
 
         logger.debug("Initializing Experiment")
+        # Pass the model_factory to the Experiment constructor
         experiment = Experiment(manifest, available_devices, model_factory)
         logger.debug(f"Running experiment: {exp_name}")
         experiment.run()
@@ -171,13 +188,18 @@ def setup_argparse() -> argparse.ArgumentParser:
 
 def main() -> None:
     """Main entry point for the CLI."""
-    parser = setup_argparse()
-    args = parser.parse_args()
+    try:
+        parser = setup_argparse()
+        args = parser.parse_args()
 
-    if hasattr(args, "func"):
-        args.func(args)
-    else:
-        parser.print_help()
+        if hasattr(args, "func"):
+            args.func(args)
+        else:
+            parser.print_help()
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        logger.error(traceback.format_exc())
+        sys.exit(1)
 
 
 if __name__ == "__main__":
