@@ -5,15 +5,21 @@ import socketserver
 import struct
 import pickle
 import threading
+import configparser
 from rich.console import Console
 from typing import Literal, Optional
 from pathlib import Path
 from . import utils
 
-MAIN_LOG_FP = (
-    Path(utils.get_repo_root()) / "src" / "tracr" /
-    "app_api" / "app_data" / "app.log"
-)
+# Load configuration
+config = configparser.ConfigParser()
+config.read(Path(utils.get_repo_root()) / 'logging_config.ini')
+
+MAIN_LOG_FP = Path(config.get('Paths', 'main_log_file', fallback=str(Path(
+    utils.get_repo_root()) / "src" / "tracr" / "app_api" / "app_data" / "app.log")))
+DEFAULT_PORT = config.getint('Network', 'default_port', fallback=9000)
+BUFFER_SIZE = config.getint('Network', 'buffer_size', fallback=100)
+
 logger = logging.getLogger("tracr_logger")
 
 DeviceType = Literal["SERVER", "PARTICIPANT"]
@@ -57,6 +63,7 @@ def setup_logging(verbosity: int = 3) -> logging.Logger:
             logger.addHandler(file_handler)
         except Exception as e:
             print(f"Warning: Could not set up file logging. Error: {e}")
+            logger.warning(f"Could not set up file logging. Error: {e}")
 
         console_handler = ConsoleHandler()
         console_handler.setFormatter(ColorByDeviceFormatter())
@@ -67,10 +74,12 @@ def setup_logging(verbosity: int = 3) -> logging.Logger:
 
 
 class ColorByDeviceFormatter(logging.Formatter):
-    COLORS: dict[DeviceType, tuple[str, str]] = {
-        "SERVER": ("cyan1", "cyan2"),
-        "PARTICIPANT": ("chartreuse3", "sea_green3"),
-    }
+    def __init__(self, color_scheme=None):
+        super().__init__()
+        self.COLORS = color_scheme or {
+            "SERVER": ("cyan1", "cyan2"),
+            "PARTICIPANT": ("chartreuse3", "sea_green3"),
+        }
 
     def format(self, record: logging.LogRecord) -> str:
         msg_body = super().format(record)
@@ -96,11 +105,15 @@ class LogRecordStreamHandler(socketserver.StreamRequestHandler):
                 record = logging.makeLogRecord(pickle.loads(chunk))
                 logger.handle(record)
             except pickle.UnpicklingError:
-                pass
+                logger.error("Error unpickling log record")
+            except Exception as e:
+                logger.error(f"Error processing log record: {e}")
 
 
 class ConsoleHandler(logging.StreamHandler):
-    console: Console = Console()
+    def __init__(self):
+        super().__init__()
+        self.console = Console()
 
     def emit(self, record: logging.LogRecord) -> None:
         log_message = self.format(record)
@@ -111,7 +124,28 @@ class DaemonThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServ
     daemon_threads = True
 
 
-def get_server_running_in_thread(port: int = 9000) -> DaemonThreadingTCPServer:
+class BufferedSocketHandler(logging.handlers.SocketHandler):
+    def __init__(self, host, port, buffer_size=BUFFER_SIZE):
+        super().__init__(host, port)
+        self.buffer = []
+        self.buffer_size = buffer_size
+
+    def emit(self, record):
+        self.buffer.append(record)
+        if len(self.buffer) >= self.buffer_size:
+            self.flush()
+
+    def flush(self):
+        try:
+            for record in self.buffer:
+                super().emit(record)
+        except Exception as e:
+            print(f"Error flushing log buffer: {e}")
+        finally:
+            self.buffer.clear()
+
+
+def get_server_running_in_thread(port: int = DEFAULT_PORT) -> DaemonThreadingTCPServer:
     LoggingContext.set_device("SERVER")  # Ensure server logs as SERVER
     logger = setup_logging()
     logger.info(f"Starting server on port {port}")
@@ -122,32 +156,37 @@ def get_server_running_in_thread(port: int = 9000) -> DaemonThreadingTCPServer:
         logger = setup_logging()
         logger.info("Shutting down remote log server after atexit invocation.")
         if utils.log_server_is_up():
-            server.shutdown()
+            shutdown_gracefully(server)
 
     atexit.register(shutdown_backup)
 
-    start_thd = threading.Thread(target=server.serve_forever, daemon=True)
-    start_thd.start()
+    start_thd = threading.Thread(
+        target=server.serve_forever, daemon=True).start()
     logger.info(f"Server thread started on port {port}")
 
     return server
 
 
 def shutdown_gracefully(running_server: DaemonThreadingTCPServer) -> None:
-    logger.info("Shutting down gracefully.")
-    running_server.shutdown()
-    running_server.server_close()
-    logger.info("Server shut down completed.")
+    logger.info("Initiating graceful shutdown.")
+    try:
+        running_server.shutdown()
+        running_server.server_close()
+        logger.info("Server shutdown completed successfully.")
+    except Exception as e:
+        logger.error(f"Error during server shutdown: {e}")
+    finally:
+        logging.shutdown()
 
 
 def setup_remote_logging(
-    device: DeviceType, observer_ip: str, port: int = 9000
+    device: DeviceType, observer_ip: str, port: int = DEFAULT_PORT
 ) -> logging.Logger:
     LoggingContext.set_device(device)
     logger = logging.getLogger(f"{device}_logger")
     logger.setLevel(logging.DEBUG)
 
-    socket_handler = logging.handlers.SocketHandler(observer_ip, port)
+    socket_handler = BufferedSocketHandler(observer_ip, port)
     socket_handler.setLevel(logging.DEBUG)
 
     logger.addHandler(socket_handler)
