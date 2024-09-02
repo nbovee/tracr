@@ -3,11 +3,13 @@ import socket
 import ipaddress
 import logging
 import pathlib
-import yaml
 import getpass
 import time
+import yaml
+from yaml.error import YAMLError
 from plumbum import SshMachine
 from plumbum.machines.local import LocalMachine
+from plumbum.machines import BaseRemoteMachine
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from typing import Union, List
@@ -40,16 +42,19 @@ class LAN:
     ]
 
     @classmethod
-    def host_is_reachable(
-        cls, host: str, port: int, timeout: Union[int, float]
-    ) -> bool:
+    def host_is_reachable(cls, host: str, port: int, timeout: Union[int, float]) -> bool:
         """Checks if the host is available at all, but does not attempt to authenticate."""
         try:
-            test_socket = socket.create_connection((host, port), timeout)
-            test_socket.close()
-            return True
-        except Exception:
-            return False
+            with socket.create_connection((host, port), timeout=timeout) as test_socket:
+                return True
+        except socket.timeout:
+            logger.debug(f"Connection to {host}:{port} timed out")
+        except ConnectionRefusedError:
+            logger.debug(f"Connection to {host}:{port} refused")
+        except OSError as e:
+            logger.debug(
+                f"OS error when connecting to {host}:{port}: {str(e)}")
+        return False
 
     @classmethod
     def get_available_hosts(
@@ -188,6 +193,8 @@ class Device:
                 self.working_cparams = p
                 break
 
+        self._pb_machine: Union[BaseRemoteMachine, None] = None
+
     def get_type(self) -> str:
         """Returns the type of the device."""
         return self._type
@@ -217,6 +224,9 @@ class Device:
 
     def as_pb_sshmachine(self) -> Union[SshMachine, LocalMachine]:
         """Returns a plumbum machine object for the device, if available."""
+        if self._pb_machine is not None:
+            return self._pb_machine
+
         if self.working_cparams is not None:
             logger.debug(f"Creating machine for device: {self._name}")
             logger.debug(f"Host: {self.working_cparams.host}")
@@ -228,22 +238,23 @@ class Device:
                 "::1",
             ]:
                 logger.debug("Using LocalMachine for localhost")
-                return LocalMachine()
-
-            logger.debug("Using SshMachine for remote connection")
-            return SshMachine(
-                self.working_cparams.host,
-                user=self.working_cparams.user,
-                keyfile=str(self.working_cparams.pkey_fp),
-                ssh_opts=[
-                    "-o StrictHostKeyChecking=no",
-                    "-o UserKnownHostsFile=/dev/null",
-                    "-o ConnectTimeout=10",  # Increase connection timeout
-                    "-o ServerAliveInterval=30",  # Keep-alive
-                    "-o ServerAliveCountMax=3",  # Max number of keep-alive messages
-                    "-v",
-                ],
-            )
+                self._pb_machine = LocalMachine()
+            else:
+                logger.debug("Using SshMachine for remote connection")
+                self._pb_machine = SshMachine(
+                    self.working_cparams.host,
+                    user=self.working_cparams.user,
+                    keyfile=str(self.working_cparams.pkey_fp),
+                    ssh_opts=[
+                        "-o StrictHostKeyChecking=no",
+                        "-o UserKnownHostsFile=/dev/null",
+                        "-o ConnectTimeout=10",
+                        "-o ServerAliveInterval=30",
+                        "-o ServerAliveCountMax=3",
+                        "-v",
+                    ],
+                )
+            return self._pb_machine
         else:
             raise DeviceUnavailableException(
                 f"Cannot make plumbum object from device {self._name}: not available."
@@ -287,32 +298,55 @@ class DeviceMgr:
                     data = yaml.safe_load(f)
                 logger.debug(f"Loaded data: {data}")
                 break
-            except Exception as e:
+            except FileNotFoundError:
+                logger.error(
+                    f"Device data file not found: {self.datafile_path}")
+                data = {}
+                break
+            except PermissionError:
+                logger.error(
+                    f"Permission denied when trying to read: {self.datafile_path}")
+                data = {}
+                break
+            except YAMLError as e:
+                logger.error(
+                    f"YAML parsing error in {self.datafile_path}: {str(e)}")
                 if attempt < retries - 1:
                     logger.warning(
-                        f"Failed to load known_devices.yaml (attempt {attempt + 1}): {str(e)}. Retrying..."
-                    )
+                        f"Retrying to load data file (attempt {attempt + 1})")
                     time.sleep(1)
                 else:
                     logger.error(
-                        f"Failed to load known_devices.yaml after {retries} attempts: {str(e)}"
-                    )
+                        f"Failed to parse {self.datafile_path} after {retries} attempts")
                     data = {}
+                    break
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error when loading {self.datafile_path}: {str(e)}")
+                if attempt < retries - 1:
+                    logger.warning(
+                        f"Retrying to load data file (attempt {attempt + 1})")
+                    time.sleep(1)
+                else:
+                    logger.error(
+                        f"Failed to load {self.datafile_path} after {retries} attempts")
+                    data = {}
+                    break
 
         self.devices = []
         for dname, drecord in data.items():
             try:
-                # Ensure the device type is either 'SERVER' or 'PARTICIPANT'
                 if drecord["device_type"].upper() not in ["SERVER", "PARTICIPANT"]:
                     logger.warning(
-                        f"Invalid device type for {dname}: {drecord['device_type']}. Skipping."
-                    )
+                        f"Invalid device type for {dname}: {drecord['device_type']}. Skipping.")
                     continue
                 device = Device(dname, drecord)
                 self.devices.append(device)
                 logger.debug(
-                    f"Successfully loaded device: {dname} (Type: {device.get_type()})"
-                )
+                    f"Successfully loaded device: {dname} (Type: {device.get_type()})")
+            except KeyError as e:
+                logger.error(
+                    f"Missing required field for device {dname}: {str(e)}")
             except Exception as e:
                 logger.error(f"Failed to load device {dname}: {str(e)}")
 
@@ -420,6 +454,30 @@ class SSHSession(paramiko.SSHClient):
             print(f"Directory {to_path} already exists on remote device")
         sftp.close()
 
-    def rpc_container_up(self):
-        """Placeholder for starting an RPC container. To be implemented."""
+    def rpc_container_up(self, image_name: str, container_name: str, ports: dict):
+        """Starts an RPC container on the remote device."""
         pass
+
+        # try:
+        #     # Create a Docker client on the remote machine
+        #     remote_docker = docker.DockerClient(
+        #         base_url=f'ssh://{self.login_params.user}@{self.host}')
+
+        #     # Pull the latest version of the image
+        #     remote_docker.images.pull(image_name)
+
+        #     # Create and start the container
+        #     container = remote_docker.containers.run(
+        #         image_name,
+        #         name=container_name,
+        #         detach=True,
+        #         ports=ports
+        #     )
+
+        #     logger.info(
+        #         f"RPC container {container_name} started on {self.host}")
+        #     return container.id
+        # except docker.errors.DockerException as e:
+        #     logger.error(
+        #         f"Failed to start RPC container on {self.host}: {str(e)}")
+        #     raise
