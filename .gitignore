@@ -133,39 +133,19 @@ dmypy.json
 .vscode
 .idea
 
-# Generated Code
-libcudnn8_8.4.0.27-1+cuda11.6_amd64.deb
-libcudnn8-dev_8.4.0.27-1+cuda11.6_amd64.deb
+# data folder
+data/
 
-# nn weights
-*.pt
+# results folder
+results/
 
-# Project specific
-src/tracr/app_api/user_data/
-src/tracr/experiment_design/models/pretrained/
-
-# Experiment results
-*_results.csv
-*_results.pkl
-
-# Docker
-.dockerignore
-
-# Logs
-*.log
-logs/
-
-# Temporary files
-/tmp
-*.tmp
-*.bak
-*.swp
-
-# ignore the known_devices.yaml file
-known_devices.yaml
-
-# ignore rsa keys
+# pkeys
 pkeys/
-*.pem
-id_rsa
-id_rsa.pub
+
+# devices.yaml
+devices.yaml
+
+# output_images
+output_images*/*
+
+*.yaml
