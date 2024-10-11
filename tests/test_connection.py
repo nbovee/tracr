@@ -358,7 +358,7 @@ class ConnectivityChecker:
             all_tests_passed = False
         finally:
             # Close the SSH session
-            if 'participant_ssh_session' in locals():
+            if "participant_ssh_session" in locals():
                 participant_ssh_session.close()
                 logger.info(f"SSH session to {host} closed.")
 

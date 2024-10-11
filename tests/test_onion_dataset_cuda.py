@@ -35,7 +35,9 @@ IOU_THRESHOLD = 0.45
 try:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-    print(f"Output directories created or already exist at {OUTPUT_DIR} and {OUTPUT_CSV_PATH.parent}")
+    print(
+        f"Output directories created or already exist at {OUTPUT_DIR} and {OUTPUT_CSV_PATH.parent}"
+    )
 except Exception as e:
     print(f"Failed to create output directories: {e}")
     sys.exit(1)
@@ -56,7 +58,7 @@ console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(logging.INFO)
 
 # Formatter
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 file_handler.setFormatter(formatter)
 console_handler.setFormatter(formatter)
 
@@ -66,10 +68,14 @@ logger.addHandler(console_handler)
 
 logger.info("Starting the Onion Dataset CUDA test")
 
-def custom_collate_fn(batch: List[Tuple[torch.Tensor, Image.Image, str]]) -> Tuple[torch.Tensor, List[Image.Image], List[str]]:
+
+def custom_collate_fn(
+    batch: List[Tuple[torch.Tensor, Image.Image, str]]
+) -> Tuple[torch.Tensor, List[Image.Image], List[str]]:
     """Custom collate function to handle batches without merging PIL Images."""
     images, original_images, image_files = zip(*batch)
     return torch.stack(images, 0), list(original_images), list(image_files)
+
 
 def process_batch(
     model1: WrappedModel,
@@ -79,7 +85,7 @@ def process_batch(
     image_filename: str,
     master_dict: MasterDict,
     font_path: Path,
-    verbose: bool = False
+    verbose: bool = False,
 ) -> None:
     """Processes a single batch of data."""
     logger.debug(f"Processing batch for image: {image_filename}")
@@ -100,7 +106,9 @@ def process_batch(
                     if verbose:
                         logger.debug(f"Moved tensor '{key}' to device {model2.device}.")
         else:
-            logger.warning(f"Result from model1 is not an instance of NotDict for {image_filename}.")
+            logger.warning(
+                f"Result from model1 is not an instance of NotDict for {image_filename}."
+            )
 
         # Run forward pass on model2 starting from split_layer
         out = model2(res, start=SPLIT_LAYER)
@@ -113,10 +121,14 @@ def process_batch(
         }
 
         # Post-process outputs to get detections
-        detections = postprocess(out, original_image.size, CLASS_NAMES, CONF_THRESHOLD, IOU_THRESHOLD)
+        detections = postprocess(
+            out, original_image.size, CLASS_NAMES, CONF_THRESHOLD, IOU_THRESHOLD
+        )
 
         # Draw detections on the original image
-        output_image = draw_detections(original_image, detections, CLASS_NAMES, FONT_PATH)
+        output_image = draw_detections(
+            original_image, detections, CLASS_NAMES, FONT_PATH
+        )
 
         # Save the output image
         output_image_path = OUTPUT_DIR / f"output_with_detections_{image_filename}"
@@ -128,16 +140,21 @@ def process_batch(
             if output_image_path.exists():
                 logger.debug(f"Verified existence of saved image: {output_image_path}")
             else:
-                logger.error(f"Image file was not found after saving: {output_image_path}")
+                logger.error(
+                    f"Image file was not found after saving: {output_image_path}"
+                )
         except Exception as e:
             logger.error(f"Failed to save image {image_filename}: {e}")
             raise
 
-        logger.info(f"Processed {image_filename}. Detections: {len(detections)}. Output saved to {output_image_path}")
+        logger.info(
+            f"Processed {image_filename}. Detections: {len(detections)}. Output saved to {output_image_path}"
+        )
 
     except Exception as e:
         logger.error(f"Error processing batch for {image_filename}: {e}")
         raise
+
 
 def main():
     """Main function to execute the testing pipeline."""
@@ -164,14 +181,13 @@ def main():
     dataloader_config = config.get("dataloader", {}).copy()
     dataloader_config["collate_fn"] = custom_collate_fn
 
-    final_config = {
-        "dataset": dataset_config,
-        "dataloader": dataloader_config
-    }
+    final_config = {"dataset": dataset_config, "dataloader": dataloader_config}
 
     try:
         data_loader = DataManager.get_data(final_config)
-        logger.info(f"DataLoader created with batch size {dataloader_config.get('batch_size', 1)}.")
+        logger.info(
+            f"DataLoader created with batch size {dataloader_config.get('batch_size', 1)}."
+        )
     except Exception as e:
         logger.error(f"Failed to create DataLoader: {e}")
         sys.exit(1)
@@ -190,20 +206,32 @@ def main():
     # Define path to the TrueType font
     font_path = Path("fonts/DejaVuSans-Bold.ttf")
     if not font_path.exists():
-        logger.error(f"Font file not found at {font_path}. Please ensure the font file is present.")
+        logger.error(
+            f"Font file not found at {font_path}. Please ensure the font file is present."
+        )
         sys.exit(1)
     else:
         logger.info(f"Using font file at {font_path}")
 
     # Process batches
     with torch.no_grad():
-        for images, original_images, image_files in tqdm(data_loader, desc=f"Testing split at layer {SPLIT_LAYER}"):
+        for images, original_images, image_files in tqdm(
+            data_loader, desc=f"Testing split at layer {SPLIT_LAYER}"
+        ):
             input_tensor = images.to(model1.device)
             original_image = original_images[0]
             image_filename = image_files[0]
 
             try:
-                process_batch(model1, model2, input_tensor, original_image, image_filename, master_dict, font_path)
+                process_batch(
+                    model1,
+                    model2,
+                    input_tensor,
+                    original_image,
+                    image_filename,
+                    master_dict,
+                    font_path,
+                )
             except Exception as e:
                 logger.error(f"Error processing batch for {image_filename}: {e}")
 
@@ -216,6 +244,7 @@ def main():
         logger.error(f"Failed to save inference results: {e}")
 
     logger.info("Onion Dataset CUDA test completed")
+
 
 if __name__ == "__main__":
     main()

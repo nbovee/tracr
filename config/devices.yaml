@@ -1,0 +1,40 @@
+# config/devices.yaml
+
+devices:
+  localhost_wsl:
+    device_type: SERVER
+    connection_params:
+      - host: 172.19.134.237
+        user: izhar
+        pkey_fp: /home/izhar/pkeys/jetson_to_wsl.rsa
+        default: true
+        services:
+          - description: "RPyC Registry"
+            command: "sudo systemctl start rpyc.service" # system-wide service (or provide full path if necessary)
+          - description: "Remote Log Server"
+            command: "sudo systemctl start remote_log_server.service"
+    
+  racr:
+    device_type: PARTICIPANT
+    connection_params:
+      - host: 10.0.0.147
+        user: racr
+        pkey_fp: /home/izhar/pkeys/wsl_to_jetson.rsa
+        default: true
+        allow_tunnel: true
+        services:
+          - description: "RPyC Registry"
+            command: "sudo systemctl start rpyc.service" # system-wide service (or provide full path if necessary)
+
+required_ports:
+  - host: 10.0.0.147
+    port: 18811
+    description: "RPyC Registry"
+
+  - host: 172.19.134.237
+    port: 18812
+    description: "RPyC Registry"
+
+  - host: 172.19.134.237
+    port: 9000
+    description: "Remote Log Server"

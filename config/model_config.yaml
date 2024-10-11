@@ -1,0 +1,83 @@
+# config/model_config.yaml
+
+# All top-level keys must be singular, e.g. dataset, dataloader, model
+
+# DEFAULT CONFIGURATIONS
+# ---------------------
+default:
+  device: cuda                 # Computation device (cuda for GPU, cpu for CPU). Will default to cpu
+  class: default               # Default model class ('default' for base model)
+  depth: 2                     # Depth for recursive model exploration (increase for more detailed layer analysis)
+  mode: eval                   # Model operation mode ('train' for training, 'eval' for evaluation)
+  flush_buffer_size: 100       # Number of inferences before flushing results to storage
+  warmup_iterations: 2         # Number of warmup iterations to stabilize model performance
+  default_model: yolo          # Default model to use (current options: alexnet, yolo, custom)
+  default_dataset: onion       # Default dataset to use (current options: onion, imagenet)
+  LOG_LEVEL: INFO              # Default log level (INFO, DEBUG, ERROR)
+
+# MODEL CONFIGURATIONS
+# ---------------------
+model:
+  alexnet:
+    model_name: alexnet        # Name of the model (must match torchvision model names)
+    version: null              # Version of the model (if applicable)
+    pretrained: true           # Whether to use pretrained weights
+    weight_path: data/runs/detect/train16/weights/best.pt  # Path to custom weights file
+    input_size: [3, 224, 224]  # Input tensor size [channels, height, width]
+    hook_style: pre            # Hook insertion style ('pre' or 'post')
+    save_layers: [2, 4, 6]     # Layer indices to save intermediate outputs
+
+  yolo:
+    model_name: yolov8s        # YOLO model variant (e.g., yolov8s, yolov8m, yolov8l)
+    version: null              # Version of YOLO (if applicable)
+    pretrained: false          # Whether to use pretrained weights
+    weight_path: data/runs/detect/train16/weights/best.pt  # Path to custom weights file
+    input_size: [3, 224, 224]  # Input tensor size [channels, height, width]
+    hook_style: post           # Hook insertion style ('pre' or 'post')
+    save_layers: [2, 4, 6]     # Layer indices to save intermediate outputs
+
+  custom:
+    model_name: custom_model   # Name for your custom model
+    version: null              # Version of your custom model (if applicable)
+    input_size: [3, 256, 256]  # Input tensor size [channels, height, width]
+    hook_style: pre            # Hook insertion style ('pre' or 'post')
+    save_layers: [3, 5, 7]     # Layer indices to save intermediate outputs
+    # Additional custom configurations (uncomment and modify as needed)
+    # dropout_rate: 0.5        # Dropout rate for custom model (if applicable)
+    # custom_layer_sizes: [128, 64]  # Custom layer sizes (if applicable)
+
+# DATASET CONFIGURATIONS
+# ---------------------
+dataset:
+  onion:
+    module: onion              # Python module name for the dataset (without .py extension)
+    class: OnionDataset        # Class name of the dataset
+    args:
+      root: data/onion/testing # Root directory of the dataset
+      transform: null          # Data transformations (null for default transformations)
+      max_samples: -1          # Maximum number of samples to load (-1 for all samples)
+
+  imagenet:
+    module: imagenet           # Python module name for the dataset
+    class: ImagenetDataset     # Class name of the dataset
+    args:
+      max_iter: -1             # Maximum number of iterations (-1 for no limit)
+      transform: null          # Data transformations (null for default)
+      target_transform: null   # Target transformations (null for default)
+
+  # Additional datasets can be added here
+  # cifar10:
+  #   module: cifar10
+  #   class: CIFAR10Dataset
+  #   args:
+  #     root: data/cifar10     # Root directory for CIFAR10 dataset
+  #     transform: default_transform  # Use default transformations
+  #     download: true         # Whether to download the dataset if not present
+
+# DATALOADER CONFIGURATIONS
+# ---------------------
+dataloader:
+  batch_size: 1                # Number of samples per batch
+  shuffle: false               # Whether to shuffle the data
+  num_workers: 4               # Number of subprocesses for data loading (adjust based on CPU cores)
+  collate_fn: null             # Custom collate function (null for default, set dynamically in test script)

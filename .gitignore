@@ -139,13 +139,9 @@ data/
 # results folder
 results/
 
-# pkeys
-pkeys/
-
-# devices.yaml
-devices.yaml
-
 # output_images
 output_images*/*
 
-*.yaml
+# pkeys
+pkeys/
+

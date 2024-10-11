@@ -137,7 +137,12 @@ def draw_detections(
 
                 # Draw label background
                 draw.rectangle(
-                    [label_x, label_y - text_height - padding, label_x + text_width, label_y],
+                    [
+                        label_x,
+                        label_y - text_height - padding,
+                        label_x + text_width,
+                        label_y,
+                    ],
                     fill=color,
                 )
                 draw.text(
@@ -147,7 +152,9 @@ def draw_detections(
                     font=font,
                 )
 
-                logger.debug(f"Drew detection: {label} at position ({x1}, {y1}, {x2}, {y2})")
+                logger.debug(
+                    f"Drew detection: {label} at position ({x1}, {y1}, {x2}, {y2})"
+                )
             else:
                 logger.warning(f"Invalid box format for detection {idx}: {box}")
         except Exception as e:

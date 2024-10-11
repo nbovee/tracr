@@ -1,0 +1,81 @@
+# This file is used to store information about the devices that have been configured for use with experiments. Each device has:
+#   1. a unique nickname (the top-level keys in this file)
+#   2. one of the supported device types
+#   3. a list of connection parameters, each of which has:
+#       a. a hostname or IP address (host)
+#       b. a username (user)
+#       c. a path to a private key file (pkey_fp)
+#       d. a boolean indicating whether this is the default connection parameter for this device (default)
+#
+#
+# STEPS TO CONNECT TO DEVICES:
+# 1. Find IP address of current device (localhost):
+#    hostname -I | awk '{print $1}'
+# 2. Connect Jetson via USB serial:
+#    - Connect Jetson to Laptop via USB cable
+#    - On Laptop, Device Manager / Ports (COM & LPT) / COM#
+#    - PuTTy connect via Serial -> Speed = 115200
+#    - Authenticate and connect to Jetson
+# 3. Find IP address of Jetson:
+#    - hostname -I | awk '{print $1}'
+# 4. Turn on WiFi on Jetson:
+#    - nmcli r wifi on
+# 5. List WiFi networks:
+#    - nmcli d wifi list     # SSID is the WiFi name
+# 6. Connect to Jetson WiFi:
+#    - sudo nmcli dev wifi con "SSID" password "WiFiPassword"
+# 7. SSH into Jetson:
+#    - ssh racr@<jetson_ip_address>
+#
+# Once you are connected to the jetson via usb serial, you can create a ssh-keypair on your laptop
+# and the jetson and share the public key with the other party (inside ~/.ssh/authorized_keys)
+#
+# The top-level names (localhost, racr) need to match exactly as defined in alexnetsplit.yaml
+#
+# The rpyc service is a system-wide service that is used to control the RPyC server.
+# It is located at /usr/local/bin/rpyc_service.py
+# To create a system-wide service, run the following command:
+#   - sudo cp rpyc_service.py /usr/local/bin/rpyc.service
+#   - sudo systemctl enable rpyc.service
+#   - sudo systemctl start rpyc.service
+#
+# To check the status of the rpyc service, run the following command:
+#   - sudo systemctl status rpyc.service
+#
+# If it is not already running, start the rpyc service with the following command:
+#   - sudo systemctl start rpyc.service
+# Notice you that you've to configure ssh for passwordless `sudo` execution as root.
+#
+# To configure ssh for passwordless `sudo` execution as root, run the following command:
+# Open the sudoers file in a text editor:
+#   - sudo visudo
+# Add the following line to the end of the file:
+# # Allow 'izhar' to run specific systemctl commands without a password on WSL
+# izhar ALL=(ALL) NOPASSWD: /bin/systemctl start rpyc_wsl.service
+# # Allow 'racr' to run specific systemctl commands without a password on Jetson
+# racr ALL=(ALL) NOPASSWD: /bin/systemctl start rpyc.service
+#
+# Verify sudoers configuration:
+# # On WSL
+# sudo -l -U izhar
+#
+# # On Jetson
+# sudo -l -U racr
+
+
+devices:
+  localhost:
+    device_type: SERVER
+    connection_params:
+      - host: <localhost_ip_address>
+        user: <username>
+        pkey_fp: <path_to_pkey>
+        default: true
+    
+  <other_device>:
+    device_type: PARTICIPANT
+    connection_params:
+      - host: <device_ip_address>
+        user: <device_username>
+        pkey_fp: <path_to_pkey>
+        default: true
