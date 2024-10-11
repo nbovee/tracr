@@ -2,7 +2,6 @@
 
 import logging
 import os
-import signal
 import sys
 import threading
 import paramiko  # type: ignore
@@ -19,7 +18,8 @@ from src.utils.logger import setup_logger, DeviceType
 from src.utils.ssh import (
     execute_remote_command,
     ssh_connect,
-    SSHSession
+    SSHSession,
+    SSHAuthenticationException,
 )
 
 logger = setup_logger()
@@ -271,7 +271,6 @@ class ConnectivityChecker:
 
     def send_and_run_test_scripts(self) -> bool:
         """Send and run predefined test scripts on the PARTICIPANT device."""
-        global logger
         logger.info("Starting test scripts execution")
         all_tests_passed = True
 
@@ -317,37 +316,51 @@ class ConnectivityChecker:
         user = participant_conn["user"]
         pkey_fp = participant_conn["pkey_fp"]
 
-        # Send and run Bash test script
-        logger.info(f"Sending and running Bash test script on {host}")
-        bash_test_success = SSHSession.send_and_run_test_script(
-            script_content=bash_test_script,
-            script_name="bash_test.sh",
-            host=host,
-            user=user,
-            pkey_fp=pkey_fp,
-            config=self.config,
-        )
-        if bash_test_success:
-            logger.info(f"Bash test script executed successfully on {host}.")
-        else:
-            logger.error(f"Bash test script execution failed on {host}.")
-            all_tests_passed = False
+        try:
+            # Initialize SSHSession instance for PARTICIPANT
+            participant_ssh_session = SSHSession(
+                host=host,
+                user=user,
+                pkey_fp=pkey_fp,
+            )
 
-        # Send and run PyTorch test script
-        logger.info(f"Sending and running PyTorch test script on {host}")
-        pytorch_test_success = SSHSession.send_and_run_test_script(
-            script_content=pytorch_test_script,
-            script_name="pytorch_test.py",
-            host=host,
-            user=user,
-            pkey_fp=pkey_fp,
-            config=self.config,
-        )
-        if pytorch_test_success:
-            logger.info(f"PyTorch test script executed successfully on {host}.")
-        else:
-            logger.error(f"PyTorch test script execution failed on {host}.")
+            # Send and run Bash test script
+            logger.info(f"Sending and running Bash test script on {host}")
+            bash_test_success = participant_ssh_session.send_and_run_test_script(
+                script_content=bash_test_script,
+                script_name="bash_test.sh",
+                config=self.config,
+            )
+            if bash_test_success:
+                logger.info(f"Bash test script executed successfully on {host}.")
+            else:
+                logger.error(f"Bash test script execution failed on {host}.")
+                all_tests_passed = False
+
+            # Send and run PyTorch test script
+            logger.info(f"Sending and running PyTorch test script on {host}")
+            pytorch_test_success = participant_ssh_session.send_and_run_test_script(
+                script_content=pytorch_test_script,
+                script_name="pytorch_test.py",
+                config=self.config,
+            )
+            if pytorch_test_success:
+                logger.info(f"PyTorch test script executed successfully on {host}.")
+            else:
+                logger.error(f"PyTorch test script execution failed on {host}.")
+                all_tests_passed = False
+
+        except SSHAuthenticationException as e:
+            logger.error(f"SSH Authentication failed: {e}")
             all_tests_passed = False
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {e}")
+            all_tests_passed = False
+        finally:
+            # Close the SSH session
+            if 'participant_ssh_session' in locals():
+                participant_ssh_session.close()
+                logger.info(f"SSH session to {host} closed.")
 
         logger.info("Test scripts execution completed")
         return all_tests_passed
@@ -375,13 +388,11 @@ class ConnectivityChecker:
         return True
 
 
-def timeout_handler(signum, frame):
-    raise TimeoutError("Logging shutdown timed out")
-
 def close_loggers(logger):
     for handler in logger.handlers:
         handler.close()
     logging.shutdown()
+
 
 def main():
     """Main function to perform connectivity checks before running experiments."""
@@ -419,11 +430,9 @@ def main():
             shutdown_thread.join(timeout=5)  # 5-second timeout
             if shutdown_thread.is_alive():
                 print("Logging shutdown timed out. Forcing exit.")
-        
+
         # Force exit
         os._exit(0)
-
-
 
 
 if __name__ == "__main__":

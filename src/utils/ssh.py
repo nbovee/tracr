@@ -2,7 +2,7 @@
 
 import logging
 import os
-import paramiko
+import paramiko  # type: ignore
 import select
 import threading
 import pathlib
