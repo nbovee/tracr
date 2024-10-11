@@ -1,8 +1,17 @@
 # src/experiment_design/utils.py
 
+import os
+import sys
 import logging
 from typing import Any, List, Tuple
 import numpy as np
+from pathlib import Path
+
+# Add parent module (src) to path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
 logger = logging.getLogger(__name__)
 
@@ -78,64 +87,71 @@ def postprocess(
 
 
 def draw_detections(
-    image: Any,  # this is a PIL image, but import inside the ftn to avoid unnecessary imports
+    image: Any,
     detections: List[Tuple[List[int], float, int]],
     class_names: List[str],
+    font_path: Path,
     padding: int = 2,
-) -> Any:  # Image.Image
-    """Draws bounding boxes and labels on the input image based on detected objects.
-    Adds moderate padding to ensure text labels are clearly visible."""
+) -> Any:
     from PIL import ImageDraw, ImageFont
 
     logger.info("Starting to draw detections on image")
     logger.debug(f"Number of detections to draw: {len(detections)}")
+    logger.debug(f"Class names: {class_names}")
 
     draw = ImageDraw.Draw(image)
     try:
-        # Attempt to load a TrueType font; fallback to default if unavailable
-        font = ImageFont.truetype("arial.ttf", 12)
-        logger.debug("Using TrueType font (arial.ttf)")
+        font = ImageFont.truetype(str(font_path), 12)
+        logger.debug(f"Using TrueType font ({font_path})")
     except IOError:
         font = ImageFont.load_default()
         logger.debug("Using default font")
 
-    for box, score, class_id in detections:
-        x1, y1, w, h = box
-        x2, y2 = x1 + w, y1 + h
+    for idx, detection in enumerate(detections):
+        logger.debug(f"Processing detection {idx}: {detection}")
+        try:
+            box, score, class_id = detection
+            if isinstance(box, (list, tuple)) and len(box) == 4:
+                x1, y1, w, h = box
+                x2, y2 = x1 + w, y1 + h
 
-        color = "red"
-        draw.rectangle([x1, y1, x2, y2], outline=color, width=2)
-        label = f"{class_names[class_id]}: {score:.2f}"
+                color = "red"
+                draw.rectangle([x1, y1, x2, y2], outline=color, width=2)
+                label = f"{class_names[class_id]}: {score:.2f}"
 
-        # Calculate text size using textbbox
-        bbox = draw.textbbox((0, 0), label, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
+                # Calculate text size using textbbox
+                bbox = draw.textbbox((0, 0), label, font=font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
 
-        # Determine label position
-        label_x = x1
-        label_y = (
-            y1 - text_height - padding
-            if y1 - text_height - padding > 0
-            else y1 + h + padding
-        )
+                # Determine label position
+                label_x = x1
+                label_y = (
+                    y1 - text_height - padding
+                    if y1 - text_height - padding > 0
+                    else y1 + h + padding
+                )
 
-        # Ensure label does not overflow image boundaries
-        label_x = min(label_x, image.width - text_width - padding)
+                # Ensure label does not overflow image boundaries
+                label_x = min(label_x, image.width - text_width - padding)
 
-        # Draw label background
-        draw.rectangle(
-            [label_x, label_y - text_height - padding, label_x + text_width, label_y],
-            fill=color,
-        )
-        draw.text(
-            (label_x, label_y - text_height - padding),
-            label,
-            fill=(255, 255, 255),
-            font=font,
-        )
+                # Draw label background
+                draw.rectangle(
+                    [label_x, label_y - text_height - padding, label_x + text_width, label_y],
+                    fill=color,
+                )
+                draw.text(
+                    (label_x, label_y - text_height - padding),
+                    label,
+                    fill=(255, 255, 255),
+                    font=font,
+                )
 
-        logger.debug(f"Drew detection: {label} at position ({x1}, {y1}, {x2}, {y2})")
+                logger.debug(f"Drew detection: {label} at position ({x1}, {y1}, {x2}, {y2})")
+            else:
+                logger.warning(f"Invalid box format for detection {idx}: {box}")
+        except Exception as e:
+            logger.error(f"Error drawing detection {idx}: {e}")
 
     logger.info("Finished drawing all detections")
     return image

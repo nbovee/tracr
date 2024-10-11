@@ -27,7 +27,6 @@ EXCLUDES=(
     "data/imagenet"
     "logs"
     "results"
-    "tests"
 )
 
 # Local results directory
@@ -91,9 +90,8 @@ ssh "${REMOTE_USER}@${REMOTE_HOST}" bash << EOF
     echo "Navigating to repository directory..."
     cd "${REMOTE_REPO_DIR}"
 
-    # Confirm that dependencies are installed
     echo "Verifying Python dependencies..."
-    python3 -c "import torch, ultralytics"  # Modify this line to include other necessary imports
+    python3 -c "import torch, ultralytics" || { echo "Dependency check failed."; exit 1; }
 
     echo "Running the test script..."
     python3 tests/test_onion_dataset_cuda.py
@@ -116,10 +114,32 @@ rsync -avz \
 echo "Results retrieved successfully to ${LOCAL_RESULTS_DIR}"
 
 # ----------------------------
-# Step 4: Cleanup (Optional)
+# Step 4: Verify Retrieved Files
 # ----------------------------
 
-echo "=== Step 4: Cleaning up temporary files on Jetson ==="
+echo "=== Step 4: Verifying retrieved results ==="
+
+# List contents of output_images directory
+if [ -d "${LOCAL_RESULTS_DIR}/output_images/" ]; then
+    echo "Listing contents of the output_images directory:"
+    ls -l "${LOCAL_RESULTS_DIR}/output_images/" || echo "No images found in output_images/"
+else
+    echo "output_images directory does not exist in results/"
+fi
+
+# Check for inference_results.csv
+if [ -f "${LOCAL_RESULTS_DIR}/inference_results.csv" ]; then
+    echo "Inference CSV file found:"
+    ls -l "${LOCAL_RESULTS_DIR}/inference_results.csv"
+else
+    echo "Inference CSV file not found."
+fi
+
+# ----------------------------
+# Step 5: Cleanup on Jetson
+# ----------------------------
+
+echo "=== Step 5: Cleaning up temporary files on Jetson ==="
 
 ssh "${REMOTE_USER}@${REMOTE_HOST}" bash << EOF
     set -e
@@ -137,3 +157,4 @@ echo "Temporary files cleaned up on Jetson."
 # ----------------------------
 
 echo "=== All steps completed successfully! ==="
+echo "Results are now available in ${LOCAL_RESULTS_DIR}"
