@@ -12,9 +12,9 @@ from typing import Any, Optional, Union, Dict
 import numpy as np
 import torch
 from PIL import Image
-from torchinfo import summary
+from torchinfo import summary # type: ignore
 
-# # Add parent module (src) to path
+# Add parent module (src) to path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:

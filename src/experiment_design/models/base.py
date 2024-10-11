@@ -10,7 +10,7 @@ from PIL import Image
 import torch
 import torch.nn as nn
 from torch import Tensor
-from torchvision.transforms import ToTensor
+from torchvision.transforms import ToTensor # type: ignore
 
 logger = logging.getLogger(__name__)
 

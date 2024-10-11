@@ -14,6 +14,7 @@ default:
   default_model: yolo          # Default model to use (current options: alexnet, yolo, custom)
   default_dataset: onion       # Default dataset to use (current options: onion, imagenet)
   LOG_LEVEL: INFO              # Default log level (INFO, DEBUG, ERROR)
+  RUN_ON_JETSON: true         # Flag to determine if running on Jetson (true) or locally (false)
 
 # MODEL CONFIGURATIONS
 # ---------------------

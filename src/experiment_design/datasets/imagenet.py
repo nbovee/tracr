@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional, Callable, Tuple, Dict, List
 from PIL import Image
 import torch
-import torchvision.transforms as transforms
+import torchvision.transforms as transforms # type: ignore
 from .custom import BaseDataset
 
 logger = logging.getLogger(__name__)

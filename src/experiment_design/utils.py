@@ -24,7 +24,7 @@ def postprocess(
     iou_threshold: float = 0.45,
 ) -> List[Tuple[List[int], float, int]]:
     """Performs post-processing on the model's output to extract bounding boxes, scores, and class IDs."""
-    import cv2
+    import cv2 # type: ignore
 
     logger.info("Starting postprocessing of model outputs")
     logger.debug(

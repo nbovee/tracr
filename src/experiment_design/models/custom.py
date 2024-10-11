@@ -4,7 +4,7 @@ import logging
 import torch
 import torch.nn as nn
 from torch import Tensor
-from torchvision import models
+from torchvision import models # type: ignore
 from typing import Dict, Any, Optional
 
 from .registry import ModelRegistry
@@ -41,7 +41,7 @@ class YOLOModel(nn.Module):
     def __init__(
         self, config: Dict[str, Any], weights_path: Optional[str] = None, **kwargs
     ):
-        from ultralytics import YOLO
+        from ultralytics import YOLO # type: ignore
 
         super().__init__()
         logger.info("Initializing YOLOModel")
