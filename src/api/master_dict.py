@@ -45,9 +45,13 @@ class MasterDict:
                     self.inner_dict[key]["layer_information"].update(
                         filtered_layer_info
                     )
-                    logger.debug(f"Updated existing key {key} with new layer information")
+                    logger.debug(
+                        f"Updated existing key {key} with new layer information"
+                    )
                 else:
-                    logger.error(f"Cannot integrate inference_dict without 'layer_information' field for key {key}")
+                    logger.error(
+                        f"Cannot integrate inference_dict without 'layer_information' field for key {key}"
+                    )
                     raise ValueError(
                         "Cannot integrate inference_dict without 'layer_information' field"
                     )
@@ -114,7 +118,9 @@ class MasterDict:
 
         bytes_per_second = mb_per_s * 1e6
         latency_ns = int((sent_output_size_bytes / bytes_per_second) * 1e9)
-        logger.debug(f"Calculated transmission latency for inference {inference_id}, split layer {split_layer}: {latency_ns} ns")
+        logger.debug(
+            f"Calculated transmission latency for inference {inference_id}, split layer {split_layer}: {latency_ns} ns"
+        )
         return latency_ns
 
     def get_total_inference_time(
@@ -137,7 +143,9 @@ class MasterDict:
             for layer in layer_info.values()
             if layer.get("inference_time") and layer.get("completed_by_node") in nodes
         )
-        logger.debug(f"Calculated total inference time for {inference_id}: Client: {inf_time_client} ns, Edge: {inf_time_edge} ns")
+        logger.debug(
+            f"Calculated total inference time for {inference_id}: Client: {inf_time_client} ns, Edge: {inf_time_edge} ns"
+        )
         return inf_time_client, inf_time_edge
 
     def get_split_layer(
@@ -152,7 +160,9 @@ class MasterDict:
         layer_info = inf_data.get("layer_information", {})
         sorted_layers = sorted(layer_info.keys())
         if not sorted_layers:
-            logger.error(f"No layer information found for inference ID '{inference_id}'")
+            logger.error(
+                f"No layer information found for inference ID '{inference_id}'"
+            )
             raise ValueError(
                 f"No layer information found for inference ID '{inference_id}'."
             )
@@ -161,10 +171,14 @@ class MasterDict:
         for layer_id in sorted_layers:
             current_node = layer_info[layer_id].get("completed_by_node")
             if current_node != start_node:
-                logger.debug(f"Split layer for inference {inference_id} determined: {layer_id}")
+                logger.debug(
+                    f"Split layer for inference {inference_id} determined: {layer_id}"
+                )
                 return int(layer_id)
 
-        logger.debug(f"No split layer found for inference {inference_id}, returning default value")
+        logger.debug(
+            f"No split layer found for inference {inference_id}, returning default value"
+        )
         # TODO: Replace hardcoded return values (0 or 20) with dynamic logic
         return 0 if start_node in nodes else 20
 
@@ -177,8 +191,10 @@ class MasterDict:
         transmission_latency = self.get_transmission_latency(inference_id, split_layer)
         inf_time_client, inf_time_edge = self.get_total_inference_time(inference_id)
         total_time_to_result = inf_time_client + inf_time_edge + transmission_latency
-        logger.debug(f"Supermetrics for {inference_id}: split_layer={split_layer}, transmission_latency={transmission_latency}, "
-                     f"inf_time_client={inf_time_client}, inf_time_edge={inf_time_edge}, total_time={total_time_to_result}")
+        logger.debug(
+            f"Supermetrics for {inference_id}: split_layer={split_layer}, transmission_latency={transmission_latency}, "
+            f"inf_time_client={inf_time_client}, inf_time_edge={inf_time_edge}, total_time={total_time_to_result}"
+        )
         return (
             split_layer,
             transmission_latency,
@@ -197,7 +213,9 @@ class MasterDict:
             for superfields in self.inner_dict.values():
                 inf_id = superfields.get("inference_id")
                 if not inf_id:
-                    logger.warning(f"Skipping entry without inference_id: {superfields}")
+                    logger.warning(
+                        f"Skipping entry without inference_id: {superfields}"
+                    )
                     continue
 
                 try:
@@ -217,7 +235,9 @@ class MasterDict:
                 ).items():
                     layer_id = subdict.get("layer_id")
                     if layer_id is None:
-                        logger.warning(f"Skipping layer without layer_id for inference {inf_id}")
+                        logger.warning(
+                            f"Skipping layer without layer_id for inference {inf_id}"
+                        )
                         continue
 
                     if not layer_attrs:

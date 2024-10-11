@@ -24,6 +24,7 @@ BUFFER_SIZE = 100
 
 logger = logging.getLogger(__name__)
 
+
 # Enum for Device Types
 class DeviceType(Enum):
     SERVER = "SERVER"

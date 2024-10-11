@@ -18,7 +18,9 @@ def postprocess(
     import cv2
 
     logger.info("Starting postprocessing of model outputs")
-    logger.debug(f"Confidence threshold: {conf_threshold}, IoU threshold: {iou_threshold}")
+    logger.debug(
+        f"Confidence threshold: {conf_threshold}, IoU threshold: {iou_threshold}"
+    )
 
     if isinstance(outputs, tuple):
         outputs = outputs[0]  # Adjust based on the structure of outputs
@@ -69,7 +71,9 @@ def postprocess(
             )
             detections.append((box, score, class_id))
 
-    logger.info(f"Postprocessing complete. Found {len(detections)} detections after NMS")
+    logger.info(
+        f"Postprocessing complete. Found {len(detections)} detections after NMS"
+    )
     return detections
 
 

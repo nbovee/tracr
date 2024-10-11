@@ -199,7 +199,9 @@ class Device:
                 ssh_opts=["-o StrictHostKeyChecking=no"],
             )
         else:
-            logger.error(f"Cannot create SshMachine for device {self._name}: not available")
+            logger.error(
+                f"Cannot create SshMachine for device {self._name}: not available"
+            )
             raise DeviceUnavailableException(
                 f"Cannot make plumbum object from device {self._name}: not available."
             )
@@ -220,7 +222,9 @@ class DeviceMgr:
 
     def get_devices(self, available_only: bool = False) -> List[Device]:
         devices = [d for d in self.devices if not available_only or d.is_reachable()]
-        logger.info(f"Retrieved {len(devices)} devices (available_only={available_only})")
+        logger.info(
+            f"Retrieved {len(devices)} devices (available_only={available_only})"
+        )
         return devices
 
     def _load(self) -> None:

@@ -70,7 +70,7 @@ class WrappedModel(BaseModel):
 
         # Load model using the BaseModel's load_model method
         self.model = self.load_model()
-        self.drop_save_dict = getattr(self.model, 'save', {})
+        self.drop_save_dict = getattr(self.model, "save", {})
         logger.debug(f"Model loaded with drop_save_dict: {self.drop_save_dict}")
 
         # Load model summary and layer count
@@ -125,7 +125,9 @@ class WrappedModel(BaseModel):
                                 "output_bytes": layer_info.output_bytes,
                             }
                         )
-                        logger.debug(f"Registered layer {walk_i}: {layer_info.class_name}")
+                        logger.debug(
+                            f"Registered layer {walk_i}: {layer_info.class_name}"
+                        )
 
                     pre_hook = child.register_forward_pre_hook(
                         create_forward_prehook(
@@ -141,7 +143,7 @@ class WrappedModel(BaseModel):
                     self.forward_post_hooks.append(post_hook)
                     walk_i += 1
         return walk_i
-        
+
     def forward(
         self,
         x: Union[torch.Tensor, Image.Image],
@@ -152,7 +154,9 @@ class WrappedModel(BaseModel):
     ) -> Any:
         """Performs a forward pass with optional slicing and logging."""
         end = self.layer_count if end == np.inf else end
-        logger.info(f"Starting forward pass: inference_id={inference_id}, start={start}, end={end}, log={log}")
+        logger.info(
+            f"Starting forward pass: inference_id={inference_id}, start={start}, end={end}, log={log}"
+        )
 
         # Configure hooks
         self.log = log
@@ -205,6 +209,4 @@ class WrappedModel(BaseModel):
             self.master_dict.update(self.io_buffer)
             self.io_buffer.clear()
         else:
-            logger.info(
-                "MasterDict not updated: buffer empty or MasterDict is None."
-            )
+            logger.info("MasterDict not updated: buffer empty or MasterDict is None.")

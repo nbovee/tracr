@@ -29,7 +29,9 @@ class BaseModel(nn.Module):
                 logger.debug(f"Loaded custom config from {custom_config_path}")
             else:
                 logger.error(f"No custom config file found at {custom_config_path}")
-                raise FileNotFoundError(f"No custom config file found at {custom_config_path}")
+                raise FileNotFoundError(
+                    f"No custom config file found at {custom_config_path}"
+                )
         else:
             self.config = read_yaml_file(config)
             logger.debug("Loaded config from provided dictionary")
@@ -53,12 +55,16 @@ class BaseModel(nn.Module):
         default_model_name = self.default_configs.get("default_model")
         if not default_model_name:
             logger.error("Default model name not specified in configuration")
-            raise ValueError("Default model name must be specified in the configuration.")
-        
+            raise ValueError(
+                "Default model name must be specified in the configuration."
+            )
+
         self.model_config = self.config["model"].get(default_model_name)
         if not self.model_config:
             logger.error(f"Model configuration for '{default_model_name}' not found")
-            raise ValueError(f"Model configuration for '{default_model_name}' not found.")
+            raise ValueError(
+                f"Model configuration for '{default_model_name}' not found."
+            )
 
         # Extract other configurations
         self.model_name = self.model_config.get("model_name")
@@ -68,12 +74,22 @@ class BaseModel(nn.Module):
         self.save_layers = self.model_config.get("save_layers", [])
 
         # Set other configurations with defaults if not specified
-        self.depth = self.model_config.get("depth", self.default_configs.get("depth", 2))
-        self.mode = self.model_config.get("mode", self.default_configs.get("mode", "eval"))
-        self.flush_buffer_size = self.model_config.get("flush_buffer_size", self.default_configs.get("flush_buffer_size", 100))
-        self.warmup_iterations = self.model_config.get("warmup_iterations", self.default_configs.get("warmup_iterations", 2))
+        self.depth = self.model_config.get(
+            "depth", self.default_configs.get("depth", 2)
+        )
+        self.mode = self.model_config.get(
+            "mode", self.default_configs.get("mode", "eval")
+        )
+        self.flush_buffer_size = self.model_config.get(
+            "flush_buffer_size", self.default_configs.get("flush_buffer_size", 100)
+        )
+        self.warmup_iterations = self.model_config.get(
+            "warmup_iterations", self.default_configs.get("warmup_iterations", 2)
+        )
 
-        logger.debug(f"Model configurations: name={self.model_name}, mode={self.mode}, input_size={self.input_size}")
+        logger.debug(
+            f"Model configurations: name={self.model_name}, mode={self.mode}, input_size={self.input_size}"
+        )
 
         # Extract dataset-specific configurations
         self._extract_dataset_configurations()
@@ -85,24 +101,34 @@ class BaseModel(nn.Module):
         default_dataset_name = self.default_configs.get("default_dataset")
         if not default_dataset_name:
             logger.error("Default dataset name not specified in configuration")
-            raise ValueError("Default dataset name must be specified in the configuration.")
-        
+            raise ValueError(
+                "Default dataset name must be specified in the configuration."
+            )
+
         self.dataset_config = self.config["dataset"].get(default_dataset_name)
         if not self.dataset_config:
-            logger.error(f"Dataset configuration for '{default_dataset_name}' not found")
-            raise ValueError(f"Dataset configuration for '{default_dataset_name}' not found.")
+            logger.error(
+                f"Dataset configuration for '{default_dataset_name}' not found"
+            )
+            raise ValueError(
+                f"Dataset configuration for '{default_dataset_name}' not found."
+            )
 
         self.dataset_module = self.dataset_config.get("module")
         self.dataset_class = self.dataset_config.get("class")
         self.dataset_args = self.dataset_config.get("args", {})
-        logger.debug(f"Dataset configurations: module={self.dataset_module}, class={self.dataset_class}")
+        logger.debug(
+            f"Dataset configurations: module={self.dataset_module}, class={self.dataset_class}"
+        )
 
     def _extract_dataloader_configurations(self):
         self.dataloader_config = self.config.get("dataloader", {})
         self.batch_size = self.dataloader_config.get("batch_size", 1)
         self.shuffle = self.dataloader_config.get("shuffle", False)
         self.num_workers = self.dataloader_config.get("num_workers", 4)
-        logger.debug(f"DataLoader configurations: batch_size={self.batch_size}, shuffle={self.shuffle}, num_workers={self.num_workers}")
+        logger.debug(
+            f"DataLoader configurations: batch_size={self.batch_size}, shuffle={self.shuffle}, num_workers={self.num_workers}"
+        )
 
     def load_model(self) -> nn.Module:
         """Loads the model using the ModelRegistry."""
@@ -112,7 +138,7 @@ class BaseModel(nn.Module):
                 self.model_name,
                 config=self.config,
                 weights_path=self.weight_path,
-                input_size=self.input_size
+                input_size=self.input_size,
             )
             logger.info(f"Successfully loaded model: {self.model_name}")
             return model
@@ -123,7 +149,11 @@ class BaseModel(nn.Module):
     def to_device(self, device: Optional[str] = None) -> None:
         """Moves the model to the specified device."""
         target_device = device or self.device
-        device_obj = torch.device(target_device) if isinstance(target_device, str) else target_device
+        device_obj = (
+            torch.device(target_device)
+            if isinstance(target_device, str)
+            else target_device
+        )
         self.model.to(device_obj)
         self.device = target_device
         logger.info(f"Moved model to device: {self.device}")
@@ -149,7 +179,7 @@ class BaseModel(nn.Module):
     def get_mode(self) -> str:
         """Returns the current mode of the model (either 'train' or 'eval')."""
         return self.mode
-    
+
     def parse_input(self, input_data: Any) -> "Tensor":
         """Converts input data to a tensor and moves it to the correct device."""
         logger.debug(f"Parsing input of type: {type(input_data)}")

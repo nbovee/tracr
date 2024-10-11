@@ -4,6 +4,7 @@ import sys
 import logging
 from pathlib import Path
 from typing import Tuple, List
+import inspect
 
 import torch
 from PIL import Image
@@ -24,10 +25,15 @@ from src.utils.utilities import read_yaml_file
 # Constants and Configuration
 CONFIG_YAML_PATH = Path("config/model_config.yaml")
 OUTPUT_DIR = Path("results/output_images")
+OUTPUT_CSV_PATH = Path("results/inference_results.csv")
 CLASS_NAMES = ["with_weeds", "without_weeds"]
 SPLIT_LAYER = 5
 CONF_THRESHOLD = 0.25
 IOU_THRESHOLD = 0.45
+
+# Create output directories
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # Load configuration
 config = read_yaml_file(CONFIG_YAML_PATH)
@@ -86,7 +92,6 @@ def process_batch(
 
     # Save the output image
     output_image_path = OUTPUT_DIR / f"output_with_detections_{image_filename}"
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_image.save(output_image_path)
 
     logger.info(f"Processed {image_filename}. Detections: {len(detections)}. Output saved to {output_image_path}")
@@ -154,13 +159,18 @@ def main():
     # Save results
     try:
         df = master_dict.to_dataframe()
-        csv_path = OUTPUT_DIR / "inference_results.csv"
-        df.to_csv(csv_path, index=False)
-        logger.info(f"Inference results saved to {csv_path}")
+        df.to_csv(OUTPUT_CSV_PATH, index=False)
+        logger.info(f"Inference results saved to {OUTPUT_CSV_PATH}")
     except Exception as e:
         logger.error(f"Failed to save inference results: {e}")
 
     logger.info("Onion Dataset CUDA test completed")
+
+def create_test_script() -> str:
+    """Create the test script to be run on the Jetson."""
+    script_content = inspect.getsource(main)
+    return script_content
+
 
 if __name__ == "__main__":
     main()

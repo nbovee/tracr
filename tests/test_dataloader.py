@@ -4,7 +4,7 @@ import sys
 import os
 import yaml
 import logging
-from torchvision import transforms
+from torchvision import transforms # type: ignore
 
 # Add parent module (src) to path
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

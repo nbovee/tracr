@@ -36,6 +36,7 @@ def read_yaml_file(path: Any) -> Dict[str, Any]:
         logger.error(f"Error reading YAML file {path}: {e}")
         raise
 
+
 def get_repo_root(markers: Optional[List[str]] = None) -> Path:
     """Returns the root directory of the repository as a pathlib.Path object."""
     if markers is None:

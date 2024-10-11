@@ -11,14 +11,17 @@ from .registry import ModelRegistry
 
 logger = logging.getLogger(__name__)
 
+
 @ModelRegistry.register("alexnet")
 class AlexNetModel(nn.Module):
     """Wrapper for the AlexNet model."""
 
-    def __init__(self, config: Dict[str, Any], weights_path: Optional[str] = None, **kwargs):
+    def __init__(
+        self, config: Dict[str, Any], weights_path: Optional[str] = None, **kwargs
+    ):
         super().__init__()
         logger.info("Initializing AlexNetModel")
-        pretrained = config.get('pretrained', True)
+        pretrained = config.get("pretrained", True)
         version = tuple(map(int, torch.__version__.split(".")[:2]))
         if version <= (0, 11):
             self.model = models.alexnet(pretrained=pretrained)
@@ -35,7 +38,9 @@ class AlexNetModel(nn.Module):
 class YOLOModel(nn.Module):
     """Wrapper for the YOLO model."""
 
-    def __init__(self, config: Dict[str, Any], weights_path: Optional[str] = None, **kwargs):
+    def __init__(
+        self, config: Dict[str, Any], weights_path: Optional[str] = None, **kwargs
+    ):
         from ultralytics import YOLO
 
         super().__init__()
@@ -55,10 +60,12 @@ class YOLOModel(nn.Module):
 class CustomModel(nn.Module):
     """Defines and returns the custom model architecture."""
 
-    def __init__(self, config: Dict[str, Any], weights_path: Optional[str] = None, **kwargs):
+    def __init__(
+        self, config: Dict[str, Any], weights_path: Optional[str] = None, **kwargs
+    ):
         super().__init__()
         logger.info("Initializing CustomModel")
-        input_size = config.get('input_size', (3, 224, 224))
+        input_size = config.get("input_size", (3, 224, 224))
         layers = []
         in_channels = input_size[0]
         spatial_dim = input_size[1:]

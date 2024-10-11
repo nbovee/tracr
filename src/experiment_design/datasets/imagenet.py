@@ -28,7 +28,9 @@ class ImagenetDataset(BaseDataset):
         self.CLASS_TEXTFILE = Path(
             self.DATA_SOURCE_DIRECTORY / "imagenet" / "imagenet_classes.txt"
         )
-        self.IMG_DIRECTORY = Path(self.DATA_SOURCE_DIRECTORY / "imagenet" / "sample_images")
+        self.IMG_DIRECTORY = Path(
+            self.DATA_SOURCE_DIRECTORY / "imagenet" / "sample_images"
+        )
 
         logger.info(f"Initializing ImagenetDataset with max_iter={max_iter}")
         logger.debug(f"Class text file: {self.CLASS_TEXTFILE}")
@@ -37,7 +39,7 @@ class ImagenetDataset(BaseDataset):
         if not self.IMG_DIRECTORY.exists():
             logger.error(f"Image directory not found: {self.IMG_DIRECTORY}")
             raise FileNotFoundError(f"Image directory not found: {self.IMG_DIRECTORY}")
-        
+
         if not self.CLASS_TEXTFILE.exists():
             logger.error(f"Class text file not found: {self.CLASS_TEXTFILE}")
             raise FileNotFoundError(f"Class text file not found: {self.CLASS_TEXTFILE}")
