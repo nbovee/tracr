@@ -13,8 +13,8 @@ default:
   warmup_iterations: 2         # Number of warmup iterations to stabilize model performance
   default_model: yolo          # Default model to use (current options: alexnet, yolo, custom)
   default_dataset: onion       # Default dataset to use (current options: onion, imagenet)
-  LOG_LEVEL: INFO              # Default log level (INFO, DEBUG, ERROR)
-  RUN_ON_JETSON: true         # Flag to determine if running on Jetson (true) or locally (false)
+  LOG_LEVEL: ERROR              # Default log level (INFO, DEBUG, ERROR)
+  RUN_ON_EDGE: true            # Flag to determine if running on Edge device (true) or locally (false)
 
 # MODEL CONFIGURATIONS
 # ---------------------
@@ -23,7 +23,7 @@ model:
     model_name: alexnet        # Name of the model (must match torchvision model names)
     version: null              # Version of the model (if applicable)
     pretrained: true           # Whether to use pretrained weights
-    weight_path: data/runs/detect/train16/weights/best.pt  # Path to custom weights file
+    weight_path: null          # Path to custom weights file
     input_size: [3, 224, 224]  # Input tensor size [channels, height, width]
     hook_style: pre            # Hook insertion style ('pre' or 'post')
     save_layers: [2, 4, 6]     # Layer indices to save intermediate outputs
@@ -78,7 +78,7 @@ dataset:
 # DATALOADER CONFIGURATIONS
 # ---------------------
 dataloader:
-  batch_size: 1                # Number of samples per batch
+  batch_size: 16               # Number of samples per batch
   shuffle: false               # Whether to shuffle the data
   num_workers: 4               # Number of subprocesses for data loading (adjust based on CPU cores)
   collate_fn: null             # Custom collate function (null for default, set dynamically in test script)

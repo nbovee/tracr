@@ -11,26 +11,26 @@
 # STEPS TO CONNECT TO DEVICES:
 # 1. Find IP address of current device (localhost):
 #    hostname -I | awk '{print $1}'
-# 2. Connect Jetson via USB serial:
-#    - Connect Jetson to Laptop via USB cable
+# 2. Connect Edge device (Jetson) via USB serial:
+#    - Connect Edge device to Laptop via USB cable
 #    - On Laptop, Device Manager / Ports (COM & LPT) / COM#
 #    - PuTTy connect via Serial -> Speed = 115200
-#    - Authenticate and connect to Jetson
-# 3. Find IP address of Jetson:
+#    - Authenticate and connect to Edge device
+# 3. Find IP address of Edge device:
 #    - hostname -I | awk '{print $1}'
-# 4. Turn on WiFi on Jetson:
+# 4. Turn on WiFi on Edge device:
 #    - nmcli r wifi on
 # 5. List WiFi networks:
 #    - nmcli d wifi list     # SSID is the WiFi name
-# 6. Connect to Jetson WiFi:
+# 6. Connect to Edge device WiFi:
 #    - sudo nmcli dev wifi con "SSID" password "WiFiPassword"
-# 7. SSH into Jetson:
-#    - ssh racr@<jetson_ip_address>
+# 7. SSH into Edge device:
+#    - ssh <edge_device_username>@<edge_device_ip_address>
 #
-# Once you are connected to the jetson via usb serial, you can create a ssh-keypair on your laptop
-# and the jetson and share the public key with the other party (inside ~/.ssh/authorized_keys)
+# Once you are connected to the Edge device via usb serial, you can create a ssh-keypair on your laptop
+# and the Edge device and share the public key with the other party (inside ~/.ssh/authorized_keys)
 #
-# The top-level names (localhost, racr) need to match exactly as defined in alexnetsplit.yaml
+# The top-level names (localhost, <edge_device_username>) need to match exactly as defined in alexnetsplit.yaml
 #
 # The rpyc service is a system-wide service that is used to control the RPyC server.
 # It is located at /usr/local/bin/rpyc_service.py
@@ -50,17 +50,17 @@
 # Open the sudoers file in a text editor:
 #   - sudo visudo
 # Add the following line to the end of the file:
-# # Allow 'izhar' to run specific systemctl commands without a password on WSL
-# izhar ALL=(ALL) NOPASSWD: /bin/systemctl start rpyc_wsl.service
-# # Allow 'racr' to run specific systemctl commands without a password on Jetson
-# racr ALL=(ALL) NOPASSWD: /bin/systemctl start rpyc.service
+# # Allow '<localhost_username>' to run specific systemctl commands without a password on WSL
+# <localhost_username> ALL=(ALL) NOPASSWD: /bin/systemctl start rpyc_wsl.service
+# # Allow '<edge_device_username>' to run specific systemctl commands without a password on Edge device
+# <edge_device_username> ALL=(ALL) NOPASSWD: /bin/systemctl start rpyc.service
 #
 # Verify sudoers configuration:
 # # On WSL
-# sudo -l -U izhar
+# sudo -l -U <localhost_username>
 #
-# # On Jetson
-# sudo -l -U racr
+# # On Edge device
+# sudo -l -U <edge_device_username>
 
 
 devices:
