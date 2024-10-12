@@ -71,6 +71,11 @@ devices:
         user: <username>
         pkey_fp: <path_to_pkey>
         default: true
+        services:
+          - description: "RPyC Registry"
+            command: "sudo systemctl start rpyc.service" # system-wide service (or provide full path if necessary)
+          - description: "Remote Log Server"
+            command: "sudo systemctl start remote_log_server.service"
     
   <other_device>:
     device_type: PARTICIPANT
@@ -79,3 +84,20 @@ devices:
         user: <device_username>
         pkey_fp: <path_to_pkey>
         default: true
+        services:
+          - description: "RPyC Registry"
+            command: "sudo systemctl start rpyc.service" # system-wide service (or provide full path if necessary)
+
+
+required_ports:
+  - host: <device_ip_address>
+    port: <port_number> # 18811 for RPyC Registry
+    description: "<service_description>" # RPyC Registry
+
+  - host: <localhost_ip_address>
+    port: <port_number> # 18812 for RPyC Registry
+    description: "<service_description>" # RPyC Registry
+
+  - host: <localhost_ip_address>
+    port: <port_number> # 9000 for Remote Log Server
+    description: "<service_description>" # Remote Log Server
