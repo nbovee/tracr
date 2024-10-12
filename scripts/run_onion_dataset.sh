@@ -94,7 +94,7 @@ ssh "${REMOTE_USER}@${REMOTE_HOST}" bash << EOF
     python3 -c "import torch, ultralytics" || { echo "Dependency check failed."; exit 1; }
 
     echo "Running the test script..."
-    python3 tests/test_onion_dataset_cuda.py
+    python3 scripts/run_onion_dataset.py
 
     echo "Test script executed successfully."
 EOF
@@ -107,11 +107,18 @@ echo "Test script executed successfully on Jetson."
 
 echo "=== Step 3: Retrieving results from Jetson ==="
 
-rsync -avz \
-    "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_TMP_DIR}/results/" \
-    "${LOCAL_RESULTS_DIR}/"
+# Get the model and dataset names from the config file
+MODEL_NAME=$(grep "default_model:" "${LOCAL_REPO_PATH}/config/model_config.yaml" | awk '{print $2}')
+DATASET_NAME=$(grep "default_dataset:" "${LOCAL_REPO_PATH}/config/model_config.yaml" | awk '{print $2}')
 
-echo "Results retrieved successfully to ${LOCAL_RESULTS_DIR}"
+REMOTE_RESULTS_DIR="${REMOTE_TMP_DIR}/results/${MODEL_NAME}_${DATASET_NAME}"
+LOCAL_RESULTS_SUBDIR="${LOCAL_RESULTS_DIR}/${MODEL_NAME}_${DATASET_NAME}"
+
+rsync -avz \
+    "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_RESULTS_DIR}/" \
+    "${LOCAL_RESULTS_SUBDIR}/"
+
+echo "Results retrieved successfully to ${LOCAL_RESULTS_SUBDIR}"
 
 # ----------------------------
 # Step 4: Verify Retrieved Files
@@ -120,17 +127,17 @@ echo "Results retrieved successfully to ${LOCAL_RESULTS_DIR}"
 echo "=== Step 4: Verifying retrieved results ==="
 
 # List contents of output_images directory
-if [ -d "${LOCAL_RESULTS_DIR}/output_images/" ]; then
+if [ -d "${LOCAL_RESULTS_SUBDIR}/output_images/" ]; then
     echo "Listing contents of the output_images directory:"
-    ls -l "${LOCAL_RESULTS_DIR}/output_images/" || echo "No images found in output_images/"
+    ls -l "${LOCAL_RESULTS_SUBDIR}/output_images/" || echo "No images found in output_images/"
 else
-    echo "output_images directory does not exist in results/"
+    echo "output_images directory does not exist in ${LOCAL_RESULTS_SUBDIR}/"
 fi
 
 # Check for inference_results.csv
-if [ -f "${LOCAL_RESULTS_DIR}/inference_results.csv" ]; then
+if [ -f "${LOCAL_RESULTS_SUBDIR}/inference_results.csv" ]; then
     echo "Inference CSV file found:"
-    ls -l "${LOCAL_RESULTS_DIR}/inference_results.csv"
+    ls -l "${LOCAL_RESULTS_SUBDIR}/inference_results.csv"
 else
     echo "Inference CSV file not found."
 fi
@@ -157,4 +164,4 @@ echo "Temporary files cleaned up on Jetson."
 # ----------------------------
 
 echo "=== All steps completed successfully! ==="
-echo "Results are now available in ${LOCAL_RESULTS_DIR}"
+echo "Results are now available in ${LOCAL_RESULTS_SUBDIR}"

@@ -1,4 +1,4 @@
-# tests/test_onion_dataset_cuda.py
+# scripts/run_onion_dataset.py
 
 import sys
 import logging
@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Tuple, List
 
 import torch
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from tqdm import tqdm
 
 # Add parent module (src) to path
@@ -21,52 +21,55 @@ from src.experiment_design.datasets.dataloader import DataManager
 from src.experiment_design.utils import postprocess, draw_detections
 from src.utils.utilities import read_yaml_file
 
-# Constants and Configuration
+
+# ----------- CONSTANTS AND CONFIGURATION -----------#
 CONFIG_YAML_PATH = Path("config/model_config.yaml")
-FONT_PATH = Path("fonts/DejaVuSans-Bold.ttf")
-OUTPUT_DIR = Path("/tmp/RACR_AI/results/output_images")  # Absolute path
-OUTPUT_CSV_PATH = Path("/tmp/RACR_AI/results/inference_results.csv")  # Absolute path
+config = read_yaml_file(CONFIG_YAML_PATH)
+
+logger = logging.getLogger(__name__)
+logger.setLevel(config['default']['LOG_LEVEL'])
+
+# Update paths based on RUN_ON_EDGE
+if config['default']['RUN_ON_EDGE']:
+    BASE_DIR = Path("/tmp/RACR_AI")
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent
+
+FONT_PATH = BASE_DIR / "fonts" / "DejaVuSans-Bold.ttf"
 CLASS_NAMES = ["with_weeds", "without_weeds"]
 SPLIT_LAYER = 5
 CONF_THRESHOLD = 0.25
 IOU_THRESHOLD = 0.45
 
+# Get dataset and model names from config
+DATASET_NAME = config['default']['default_dataset']
+MODEL_NAME = config['default']['default_model']
+
+# Function to create an incremented directory
+def create_incremented_dir(base_path: Path) -> Path:
+    i = 1
+    while True:
+        new_path = base_path.with_name(f"{base_path.name}_{i}")
+        if not new_path.exists():
+            new_path.mkdir(parents=True)
+            return new_path
+        i += 1
+
+# Create results directory
+RESULTS_DIR = BASE_DIR / "results" / f"{MODEL_NAME}_{DATASET_NAME}"
+if RESULTS_DIR.exists():
+    RESULTS_DIR = create_incremented_dir(RESULTS_DIR)
+else:
+    RESULTS_DIR.mkdir(parents=True)
+
+OUTPUT_DIR = RESULTS_DIR / "output_images"
+OUTPUT_CSV_PATH = RESULTS_DIR / "inference_results.csv"
+LOG_FILE_PATH = RESULTS_DIR / f"{MODEL_NAME}_{DATASET_NAME}.log"
+
 # Create output directories
-try:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    OUTPUT_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-    print(
-        f"Output directories created or already exist at {OUTPUT_DIR} and {OUTPUT_CSV_PATH.parent}"
-    )
-except Exception as e:
-    print(f"Failed to create output directories: {e}")
-    sys.exit(1)
+OUTPUT_DIR.mkdir(exist_ok=True)
 
-# Load configuration
-config = read_yaml_file(CONFIG_YAML_PATH)
-
-# Configure logging to file and console
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-# File handler
-file_handler = logging.FileHandler(OUTPUT_DIR / "test_log.log")
-file_handler.setLevel(logging.DEBUG)
-
-# Console handler
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setLevel(logging.INFO)
-
-# Formatter
-formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-file_handler.setFormatter(formatter)
-console_handler.setFormatter(formatter)
-
-# Add handlers to logger
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
-
-logger.info("Starting the Onion Dataset CUDA test")
+# ---------------------------------------------------#
 
 
 def custom_collate_fn(
@@ -84,7 +87,6 @@ def process_batch(
     original_image: Image.Image,
     image_filename: str,
     master_dict: MasterDict,
-    font_path: Path,
     verbose: bool = False,
 ) -> None:
     """Processes a single batch of data."""
@@ -158,7 +160,11 @@ def process_batch(
 
 def main():
     """Main function to execute the testing pipeline."""
-    logger.info("Starting the Onion Dataset CUDA test")
+    logger.info(f"Starting the {MODEL_NAME.capitalize()} model test on {DATASET_NAME.capitalize()} dataset")
+
+    # Check if running on edge device
+    run_on_edge = config['default']['RUN_ON_EDGE']
+    logger.info(f"Running on edge device: {run_on_edge}")
 
     # Select the model and dataset from configuration
     default_model = config.get("default", {}).get("default_model", "yolo")
@@ -174,6 +180,10 @@ def main():
         logger.error("Dataset or model configuration not found.")
         sys.exit(1)
 
+    # Update dataset path if running on edge
+    if run_on_edge:
+        dataset_config['args']['root'] = str(BASE_DIR / dataset_config['args']['root'])
+    
     # Initialize MasterDict
     master_dict = MasterDict()
 
@@ -243,7 +253,7 @@ def main():
     except Exception as e:
         logger.error(f"Failed to save inference results: {e}")
 
-    logger.info("Onion Dataset CUDA test completed")
+    logger.info(f"{MODEL_NAME.capitalize()} model test on {DATASET_NAME.capitalize()} dataset completed")
 
 
 if __name__ == "__main__":
