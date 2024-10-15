@@ -124,31 +124,30 @@ def draw_detections(
                 text_width = bbox[2] - bbox[0]
                 text_height = bbox[3] - bbox[1]
 
-                # Determine label position
-                label_x = x1
-                label_y = (
-                    y1 - text_height - padding
-                    if y1 - text_height - padding > 0
-                    else y1 + h + padding
-                )
+                # Determine label position inside the bounding box
+                label_x = x1 + padding
+                label_y = y1 + padding
 
-                # Ensure label does not overflow image boundaries
-                label_x = min(label_x, image.width - text_width - padding)
+                # Ensure label does not overflow bounding box
+                if label_x + text_width > x2:
+                    label_x = x2 - text_width - padding
+                if label_y + text_height > y2:
+                    label_y = y2 - text_height - padding
 
-                # Draw label background
+                # Draw semi-transparent background for better readability
                 draw.rectangle(
                     [
                         label_x,
-                        label_y - text_height - padding,
-                        label_x + text_width,
                         label_y,
+                        label_x + text_width,
+                        label_y + text_height,
                     ],
-                    fill=color,
+                    fill=(0, 0, 0, 128),  # Semi-transparent black
                 )
                 draw.text(
-                    (label_x, label_y - text_height - padding),
+                    (label_x, label_y),
                     label,
-                    fill=(255, 255, 255),
+                    fill=(255, 255, 255),  # White text
                     font=font,
                 )
 
