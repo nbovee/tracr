@@ -27,9 +27,14 @@ CONFIG_YAML_PATH = Path("config/model_config.yaml")
 config = read_yaml_file(CONFIG_YAML_PATH)
 
 logger = logging.getLogger(__name__)
-logger.setLevel(config['default']['log_level'])
-logger.addHandler(logging.StreamHandler())
+if config['default']['log_file']:
+    file_handler = logging.FileHandler(config['default']['log_file'])
+    file_handler.setLevel(config['default']['log_level'])
+    logger.addHandler(file_handler)
+else:
+    logger.addHandler(logging.StreamHandler())
 
+logger.setLevel(config['default']['log_level'])
 logger.info(f"Running with config: {config}")
 
 # Update paths based on RUN_ON_EDGE

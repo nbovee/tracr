@@ -146,4 +146,4 @@ output_images*/*
 pkeys/
 
 # devices.yaml
-config/devices.yaml
+config/devices_config.yaml

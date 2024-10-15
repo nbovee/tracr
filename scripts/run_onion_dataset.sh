@@ -25,6 +25,7 @@ EXCLUDES=(
     "__pycache__"
     "venv"
     "data/imagenet"
+    "data/runs"
     "logs"
     "results"
 )
