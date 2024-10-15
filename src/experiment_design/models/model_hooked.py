@@ -28,6 +28,8 @@ from .hooks import (
     NotDict,
     HookExitException,
 )
+from .templates import LAYER_TEMPLATE
+from src.utils.power_meter import PowerMeter
 
 # Register atexit handler to clear CUDA cache
 atexit.register(torch.cuda.empty_cache)
@@ -38,18 +40,6 @@ logger = logging.getLogger("tracr_logger")
 
 class WrappedModel(BaseModel):
     """Wraps a pretrained model with features necessary for edge computing tests."""
-
-    layer_template = {
-        "layer_id": None,
-        "completed_by_node": None,
-        "class": None,
-        "inference_time": 0,
-        "parameters": None,
-        "parameter_bytes": None,
-        "cpu_cycles_used": None,
-        "watts_used": None,
-    }
-
     def __init__(
         self,
         config: Dict[str, Any],
@@ -86,6 +76,9 @@ class WrappedModel(BaseModel):
         self.banked_input: Optional[Any] = None
         self.log = False
 
+        self.node_name = config.get('default', {}).get('device_type', 'UNKNOWN')
+        self.power_meter = PowerMeter(self.device)  # Implement a PowerMeter class to measure power usage
+
         self.to_device(self.device)
         self.warmup(iterations=2)
         logger.info("WrappedModel initialization complete")
@@ -112,7 +105,7 @@ class WrappedModel(BaseModel):
                         None,
                     )
                     if layer_info:
-                        self.forward_info[walk_i] = copy.deepcopy(self.layer_template)
+                        self.forward_info[walk_i] = copy.deepcopy(LAYER_TEMPLATE)
                         self.forward_info[walk_i].update(
                             {
                                 "depth": depth,
@@ -153,6 +146,8 @@ class WrappedModel(BaseModel):
         log: bool = True,
     ) -> Any:
         """Performs a forward pass with optional slicing and logging."""
+        start_time = time.perf_counter_ns()
+        start_energy = self.power_meter.get_energy()
         end = self.layer_count if end == np.inf else end
         logger.info(
             f"Starting forward pass: inference_id={inference_id}, start={start}, end={end}, log={log}"
@@ -185,6 +180,15 @@ class WrappedModel(BaseModel):
             output = NotDict(e.result)
             for i in range(self.model_stop_i, self.layer_count):
                 self.forward_info.pop(i, None)
+        end_time = time.perf_counter_ns()
+        end_energy = self.power_meter.get_energy()
+
+        total_time = end_time - start_time
+        total_energy = end_energy - start_energy
+
+        # Update inference info with timing and power usage
+        self.inference_info["total_time"] = total_time
+        self.inference_info["total_energy"] = total_energy
 
         # Handle inference info
         self.inference_info["layer_information"] = self.forward_info

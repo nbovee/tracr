@@ -27,23 +27,27 @@ CONFIG_YAML_PATH = Path("config/model_config.yaml")
 config = read_yaml_file(CONFIG_YAML_PATH)
 
 logger = logging.getLogger(__name__)
-logger.setLevel(config['default']['LOG_LEVEL'])
+logger.setLevel(config['default']['log_level'])
+logger.addHandler(logging.StreamHandler())
+
+logger.info(f"Running with config: {config}")
 
 # Update paths based on RUN_ON_EDGE
-if config['default']['RUN_ON_EDGE']:
+if config['default']['run_on_edge']:
     BASE_DIR = Path("/tmp/RACR_AI")
 else:
     BASE_DIR = Path(__file__).resolve().parent.parent
 
-FONT_PATH = BASE_DIR / "fonts" / "DejaVuSans-Bold.ttf"
-CLASS_NAMES = ["with_weeds", "without_weeds"]
-SPLIT_LAYER = 5
+
+DATASET_NAME = config['default']['default_dataset']
+CLASS_NAMES = config['dataset'][DATASET_NAME]['class_names']
+
+MODEL_NAME = config['default']['default_model']
+SPLIT_LAYER = config['model'][MODEL_NAME]['split_layer']
+
 CONF_THRESHOLD = 0.25
 IOU_THRESHOLD = 0.45
-
-# Get dataset and model names from config
-DATASET_NAME = config['default']['default_dataset']
-MODEL_NAME = config['default']['default_model']
+FONT_PATH = BASE_DIR / "fonts" / "DejaVuSans-Bold.ttf"
 
 # Function to create an incremented directory
 def create_incremented_dir(base_path: Path) -> Path:
@@ -96,7 +100,7 @@ def process_batch(
         # Run forward pass on model1 up to split_layer
         res = model1(input_tensor, end=SPLIT_LAYER)
         if verbose:
-            logger.info(f"Processed split layer {SPLIT_LAYER} for {image_filename}.")
+            logger.debug(f"Processed split layer {SPLIT_LAYER} for {image_filename}.")
 
         # Handle early exit or intermediate results
         if isinstance(res, NotDict):
@@ -163,7 +167,7 @@ def main():
     logger.info(f"Starting the {MODEL_NAME.capitalize()} model test on {DATASET_NAME.capitalize()} dataset")
 
     # Check if running on edge device
-    run_on_edge = config['default']['RUN_ON_EDGE']
+    run_on_edge = config['default']['run_on_edge']
     logger.info(f"Running on edge device: {run_on_edge}")
 
     # Select the model and dataset from configuration
@@ -202,11 +206,13 @@ def main():
         logger.error(f"Failed to create DataLoader: {e}")
         sys.exit(1)
 
-    # Initialize models
+    # Initialize models with device types
     try:
         model1 = WrappedModel(config=config)
+        model1.node_name = "CLIENT1"
         model1.eval()
         model2 = WrappedModel(config=config)
+        model2.node_name = "EDGE1"
         model2.eval()
         logger.info("Models initialized and set to evaluation mode.")
     except Exception as e:

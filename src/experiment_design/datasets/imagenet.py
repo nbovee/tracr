@@ -3,7 +3,7 @@
 import pathlib
 import logging
 from pathlib import Path
-from typing import Optional, Callable, Tuple, Dict, List
+from typing import Optional, Callable, Tuple, Dict, List, Union
 from PIL import Image
 import torch
 import torchvision.transforms as transforms # type: ignore
@@ -19,20 +19,18 @@ class ImagenetDataset(BaseDataset):
 
     def __init__(
         self,
-        max_iter: int = -1,
+        root: Optional[Union[str, Path]] = None,
         transform: Optional[Callable] = None,
         target_transform: Optional[Callable] = None,
+        max_samples: int = -1,
     ):
         """Initializes the ImagenetDataset."""
         super().__init__()
-        self.CLASS_TEXTFILE = Path(
-            self.DATA_SOURCE_DIRECTORY / "imagenet" / "imagenet_classes.txt"
-        )
-        self.IMG_DIRECTORY = Path(
-            self.DATA_SOURCE_DIRECTORY / "imagenet" / "sample_images"
-        )
+        self.root = Path(root) if root else self.DATA_SOURCE_DIRECTORY / "imagenet"
+        self.CLASS_TEXTFILE = self.root / "imagenet_classes.txt"
+        self.IMG_DIRECTORY = self.root / "sample_images"
 
-        logger.info(f"Initializing ImagenetDataset with max_iter={max_iter}")
+        logger.info(f"Initializing ImagenetDataset with root={root}, max_samples={max_samples}")
         logger.debug(f"Class text file: {self.CLASS_TEXTFILE}")
         logger.debug(f"Image directory: {self.IMG_DIRECTORY}")
 
@@ -44,21 +42,24 @@ class ImagenetDataset(BaseDataset):
             logger.error(f"Class text file not found: {self.CLASS_TEXTFILE}")
             raise FileNotFoundError(f"Class text file not found: {self.CLASS_TEXTFILE}")
 
-        self.transform = transform or transforms.ToTensor()
+        self.transform = transform or transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor()
+        ])
         self.target_transform = target_transform
 
-        self.img_labels = self._load_labels(max_iter)
+        self.img_labels = self._load_labels(max_samples)
         self.img_map = self._create_image_map()
         logger.info(f"Initialized ImagenetDataset with {len(self.img_labels)} images")
 
-    def _load_labels(self, max_iter: int) -> List[str]:
+    def _load_labels(self, max_samples: int) -> List[str]:
         """Load and process image labels from the class text file."""
         logger.debug(f"Loading labels from {self.CLASS_TEXTFILE}")
         try:
             with open(self.CLASS_TEXTFILE) as file:
                 img_labels = file.read().splitlines()
-            if max_iter > 0:
-                img_labels = img_labels[:max_iter]
+            if max_samples > 0:
+                img_labels = img_labels[:max_samples]
             logger.debug(f"Loaded {len(img_labels)} labels")
             # Replace spaces with underscores in labels
             img_labels = [label.replace(" ", "_") for label in img_labels]
@@ -129,8 +130,10 @@ class ImagenetDataset(BaseDataset):
 
 
 def imagenet_dataset(
-    max_iter: int = -1, transform: Optional[Callable] = None
+    root: Optional[Union[str, Path]] = None,
+    transform: Optional[Callable] = None,
+    max_samples: int = -1
 ) -> ImagenetDataset:
     """Factory function to create an ImagenetDataset with optional transformations."""
-    logger.info(f"Creating ImagenetDataset with max_iter={max_iter}")
-    return ImagenetDataset(max_iter=max_iter, transform=transform)
+    logger.info(f"Creating ImagenetDataset with root={root}, max_samples={max_samples}")
+    return ImagenetDataset(root=root, transform=transform, max_samples=max_samples)

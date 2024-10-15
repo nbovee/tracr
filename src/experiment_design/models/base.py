@@ -117,6 +117,9 @@ class BaseModel(nn.Module):
         self.dataset_module = self.dataset_config.get("module")
         self.dataset_class = self.dataset_config.get("class")
         self.dataset_args = self.dataset_config.get("args", {})
+        if not isinstance(self.dataset_args, dict):
+            logger.error(f"Invalid dataset arguments: {self.dataset_args}")
+            raise ValueError("Dataset arguments must be a dictionary")
         logger.debug(
             f"Dataset configurations: module={self.dataset_module}, class={self.dataset_class}"
         )

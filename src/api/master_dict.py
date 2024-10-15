@@ -184,16 +184,18 @@ class MasterDict:
 
     def calculate_supermetrics(
         self, inference_id: str
-    ) -> Tuple[int, int, int, int, int]:
+    ) -> Tuple[int, int, int, int, int, float]:
         """Calculates various metrics for an inference."""
         logger.info(f"Calculating supermetrics for inference {inference_id}")
         split_layer = self.get_split_layer(inference_id)
         transmission_latency = self.get_transmission_latency(inference_id, split_layer)
         inf_time_client, inf_time_edge = self.get_total_inference_time(inference_id)
         total_time_to_result = inf_time_client + inf_time_edge + transmission_latency
+        watts_used = self.calculate_total_watts_used(inference_id)
         logger.debug(
             f"Supermetrics for {inference_id}: split_layer={split_layer}, transmission_latency={transmission_latency}, "
-            f"inf_time_client={inf_time_client}, inf_time_edge={inf_time_edge}, total_time={total_time_to_result}"
+            f"inf_time_client={inf_time_client}, inf_time_edge={inf_time_edge}, total_time={total_time_to_result}, "
+            f"watts_used={watts_used}"
         )
         return (
             split_layer,
@@ -201,7 +203,23 @@ class MasterDict:
             inf_time_client,
             inf_time_edge,
             total_time_to_result,
+            watts_used,
         )
+
+    def calculate_total_watts_used(self, inference_id: str) -> float:
+        """Calculates the total watts used for an inference."""
+        inf_data = self.inner_dict.get(inference_id)
+        if not inf_data:
+            logger.error(f"Inference ID '{inference_id}' not found in MasterDict")
+            raise KeyError(f"Inference ID '{inference_id}' not found.")
+
+        layer_info = inf_data.get("layer_information", {})
+        total_watts = sum(
+            float(layer["watts_used"] or 0)
+            for layer in layer_info.values()
+        )
+        logger.debug(f"Total watts used for inference {inference_id}: {total_watts}")
+        return total_watts
 
     def to_dataframe(self) -> pd.DataFrame:
         """Converts the master dictionary into a pandas DataFrame."""
@@ -213,9 +231,7 @@ class MasterDict:
             for superfields in self.inner_dict.values():
                 inf_id = superfields.get("inference_id")
                 if not inf_id:
-                    logger.warning(
-                        f"Skipping entry without inference_id: {superfields}"
-                    )
+                    logger.warning(f"Skipping entry without inference_id: {superfields}")
                     continue
 
                 try:
@@ -225,6 +241,7 @@ class MasterDict:
                         inf_time_client,
                         inf_time_edge,
                         total_time_to_result,
+                        watts_used,
                     ) = self.calculate_supermetrics(inf_id)
                 except (KeyError, ValueError) as e:
                     logger.error(f"Error calculating supermetrics for {inf_id}: {e}")
@@ -251,6 +268,7 @@ class MasterDict:
                         "inf_time_client": inf_time_client,
                         "inf_time_edge": inf_time_edge,
                         "transmission_latency_ns": trans_latency,
+                        "watts_used": watts_used,
                         "layer_id": layer_id,
                     }
                     for attr in layer_attrs:

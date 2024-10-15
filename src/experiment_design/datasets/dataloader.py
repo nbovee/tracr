@@ -25,6 +25,9 @@ class DatasetFactory:
         dataset_module = dataset_config.get("module")
         dataset_class = dataset_config.get("class")
         dataset_args = dataset_config.get("args", {})
+        if dataset_args is not None and not isinstance(dataset_args, dict):
+            logger.error(f"Invalid dataset arguments: {dataset_args}")
+            raise ValueError("Dataset arguments must be a dictionary")
 
         try:
             # Add parent module (src) to path
