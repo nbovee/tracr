@@ -213,7 +213,9 @@ class Device:
 class DeviceMgr:
     """Manages a collection of Device objects."""
 
-    DATAFILE_PATH: pathlib.Path = get_repo_root() / "config" / "devices.yaml"
+    DATAFILE_PATH: pathlib.Path = get_repo_root() / "config" / "devices_config.yaml"
+    if not DATAFILE_PATH.exists():
+        raise FileNotFoundError(f"Devices config file not found at {DATAFILE_PATH}")
 
     def __init__(self, dfile_path: Union[pathlib.Path, None] = None) -> None:
         self.datafile_path = dfile_path or self.DATAFILE_PATH

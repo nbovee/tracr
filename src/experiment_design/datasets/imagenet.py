@@ -1,6 +1,5 @@
 # src/experiment_design/datasets/imagenet.py
 
-import pathlib
 import logging
 from pathlib import Path
 from typing import Optional, Callable, Tuple, Dict, List, Union
@@ -31,8 +30,6 @@ class ImagenetDataset(BaseDataset):
         self.IMG_DIRECTORY = self.root / "sample_images"
 
         logger.info(f"Initializing ImagenetDataset with root={root}, max_samples={max_samples}")
-        logger.debug(f"Class text file: {self.CLASS_TEXTFILE}")
-        logger.debug(f"Image directory: {self.IMG_DIRECTORY}")
 
         if not self.IMG_DIRECTORY.exists():
             logger.error(f"Image directory not found: {self.IMG_DIRECTORY}")
@@ -49,20 +46,29 @@ class ImagenetDataset(BaseDataset):
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
         self.target_transform = target_transform
+        self.max_samples = max_samples
 
         self.classes = self._load_classes()
-        self.img_files = self._load_image_files(max_samples)
+        self.img_files = self._load_image_files()
         logger.info(f"Initialized ImagenetDataset with {len(self.img_files)} images")
 
     def _load_classes(self) -> List[str]:
+        """Load the classes from the class text file."""
         with open(self.CLASS_TEXTFILE, 'r') as f:
             return [line.strip() for line in f.readlines()]
 
-    def _load_image_files(self, max_samples: int) -> List[Path]:
-        img_files = sorted(self.IMG_DIRECTORY.glob('*.JPEG'))
-        if max_samples > 0:
-            img_files = img_files[:max_samples]
-        return img_files
+    def _load_image_files(self) -> List[Path]:
+        """Load the image files from the image directory."""
+        image_files = sorted(
+            [
+                f
+                for f in self.IMG_DIRECTORY.iterdir()
+                if f.suffix.lower() in [".jpg", ".jpeg", ".png"]
+            ]
+        )
+        if self.max_samples > 0:
+            image_files = image_files[:self.max_samples]
+        return image_files
 
     def __len__(self) -> int:
         """Get the number of items in the dataset."""
@@ -72,7 +78,7 @@ class ImagenetDataset(BaseDataset):
         """Get an item (image tensor, original image, and filename) from the dataset."""
         img_path = self.img_files[idx]
         image = Image.open(img_path).convert("RGB")
-
+        
         if self.transform:
             image = self.transform(image)
 

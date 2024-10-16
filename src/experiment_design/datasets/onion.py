@@ -28,7 +28,6 @@ class OnionDataset(BaseDataset):
         logger.info(
             f"Initializing OnionDataset with root={root}, max_samples={max_samples}"
         )
-        logger.debug(f"Image directory: {self.IMG_DIRECTORY}")
 
         if not isinstance(self.IMG_DIRECTORY, Path):
             self.IMG_DIRECTORY = Path(self.IMG_DIRECTORY)

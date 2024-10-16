@@ -11,11 +11,11 @@ default:
   depth: 2                     # Depth for recursive model exploration
   flush_buffer_size: 100       # Number of inferences before flushing results to storage
   warmup_iterations: 2         # Number of warmup iterations to stabilize model performance
-  default_model: alexnet          # Default model to use (current options: alexnet, yolo, custom)
-  default_dataset: imagenet       # Default dataset to use (current options: onion, imagenet)
+  default_model: alexnet       # Default model to use (current options: alexnet, yolo, custom)
+  default_dataset: imagenet    # Default dataset to use (current options: onion, imagenet)
   run_on_edge: false           # Flag to determine if running on Edge device (true) or locally (false)
   log_level: INFO              # Default log level (INFO, DEBUG, ERROR)
-  log_file: logs/app.log       # Default log file (null for no file logging)
+  log_file: app.log            # Default log file (null for no file logging)
 
 # MODEL CONFIGURATIONS
 # ---------------------
@@ -29,7 +29,7 @@ model:
     split_layer: 5             # Layer to split the model at
     hook_style: pre            # Hook insertion style ('pre' or 'post')
     save_layers: [2, 4, 6]     # Layer indices to save intermediate outputs
-    log_file: logs/alexnet.log # Log file for the model
+    log_file: alexnet.log      # Log file for the model
 
   yolo:
     model_name: yolov8s        # YOLO model variant (e.g., yolov8s, yolov8m, yolov8l)
@@ -40,7 +40,7 @@ model:
     split_layer: 5             # Layer to split the model at
     hook_style: post           # Hook insertion style ('pre' or 'post')
     save_layers: [2, 4, 6]     # Layer indices to save intermediate outputs
-    log_file: logs/yolo.log    # Log file for the model
+    log_file: yolo.log         # Log file for the model
 
   # custom:
   #   model_name: custom_model   # Name for your custom model
