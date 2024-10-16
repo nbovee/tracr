@@ -26,7 +26,6 @@ EXCLUDES=(
     "venv"
     "data/imagenet"
     "data/runs"
-    "logs"
     "results"
 )
 
@@ -49,6 +48,21 @@ construct_excludes() {
 # Function to check if a command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
+}
+
+# Function to create an incremented directory
+create_incremented_dir() {
+    local base_path="$1"
+    local i=1
+    while true; do
+        new_path="${base_path}_${i}"
+        if [ ! -d "$new_path" ]; then
+            mkdir -p "$new_path"
+            echo "$new_path"
+            return
+        fi
+        ((i++))
+    done
 }
 
 # ----------------------------
@@ -95,7 +109,7 @@ ssh "${REMOTE_USER}@${REMOTE_HOST}" bash << EOF
     python3 -c "import torch, ultralytics" || { echo "Dependency check failed."; exit 1; }
 
     echo "Running the test script..."
-    python3 scripts/run_onion_dataset.py
+    python3 scripts/run_onion_yolo.py
 
     echo "Test script executed successfully."
 EOF
@@ -114,6 +128,9 @@ DATASET_NAME=$(grep "default_dataset:" "${LOCAL_REPO_PATH}/config/model_config.y
 
 REMOTE_RESULTS_DIR="${REMOTE_TMP_DIR}/results/${MODEL_NAME}_${DATASET_NAME}"
 LOCAL_RESULTS_SUBDIR="${LOCAL_RESULTS_DIR}/${MODEL_NAME}_${DATASET_NAME}"
+
+# Create an incremented directory for the results
+LOCAL_RESULTS_SUBDIR=$(create_incremented_dir "${LOCAL_RESULTS_SUBDIR}")
 
 rsync -avz \
     "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_RESULTS_DIR}/" \

@@ -18,24 +18,13 @@ if str(parent_dir) not in sys.path:
 from src.api.master_dict import MasterDict
 from src.experiment_design.models.model_hooked import WrappedModel, NotDict
 from src.experiment_design.datasets.dataloader import DataManager
-from src.experiment_design.utils import postprocess, draw_detections
+from src.experiment_design.utils import DetectionUtils
 from src.utils.utilities import read_yaml_file
 
 
 # ----------- CONSTANTS AND CONFIGURATION -----------#
 CONFIG_YAML_PATH = Path("config/model_config.yaml")
 config = read_yaml_file(CONFIG_YAML_PATH)
-
-logger = logging.getLogger(__name__)
-if config['default']['log_file']:
-    file_handler = logging.FileHandler(config['default']['log_file'])
-    file_handler.setLevel(config['default']['log_level'])
-    logger.addHandler(file_handler)
-else:
-    logger.addHandler(logging.StreamHandler())
-
-logger.setLevel(config['default']['log_level'])
-logger.info(f"Running with config: {config}")
 
 # Update paths based on RUN_ON_EDGE
 if config['default']['run_on_edge']:
@@ -53,6 +42,16 @@ SPLIT_LAYER = config['model'][MODEL_NAME]['split_layer']
 CONF_THRESHOLD = 0.25
 IOU_THRESHOLD = 0.45
 FONT_PATH = BASE_DIR / "fonts" / "DejaVuSans-Bold.ttf"
+
+LOG_FILE = config['model'][MODEL_NAME]['log_file']
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+logger = logging.getLogger(__name__)
+file_handler = logging.FileHandler(LOG_FILE)
+file_handler.setLevel(config['default']['log_level'])
+logger.addHandler(file_handler)
+
 
 # Function to create an incremented directory
 def create_incremented_dir(base_path: Path) -> Path:
@@ -79,6 +78,8 @@ LOG_FILE_PATH = RESULTS_DIR / f"{MODEL_NAME}_{DATASET_NAME}.log"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------#
+
+detection_utils = DetectionUtils(CLASS_NAMES, str(FONT_PATH), CONF_THRESHOLD, IOU_THRESHOLD)
 
 
 def custom_collate_fn(
@@ -132,19 +133,19 @@ def process_batch(
         }
 
         # Post-process outputs to get detections
-        detections = postprocess(
-            out, original_image.size, CLASS_NAMES, CONF_THRESHOLD, IOU_THRESHOLD
+        detections = detection_utils.postprocess(
+            out, original_image.size
         )
 
         # Draw detections on the original image
-        output_image = draw_detections(
-            original_image, detections, CLASS_NAMES, FONT_PATH
+        output_image = detection_utils.draw_detections(
+            original_image, detections
         )
 
         # Save the output image
         output_image_path = OUTPUT_DIR / f"output_with_detections_{image_filename}"
         try:
-            output_image.save(output_image_path)
+            output_image.save(str(output_image_path))  # Convert PosixPath to string
             logger.info(f"Saved image: {output_image_path}")
 
             # Verify that the image was saved successfully
@@ -251,7 +252,7 @@ def main():
                     original_image,
                     image_filename,
                     master_dict,
-                    font_path,
+                    verbose=False,  # Remove the font_path argument
                 )
             except Exception as e:
                 logger.error(f"Error processing batch for {image_filename}: {e}")

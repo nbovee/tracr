@@ -48,34 +48,31 @@ class ClassificationUtils:
         top5_prob, top5_catid = torch.topk(probabilities, 5)
         return list(zip(top5_catid.tolist(), top5_prob.tolist()))
 
+    @staticmethod
     def draw_imagenet_prediction(
-        self,
         image: Image.Image,
         predictions: List[Tuple[int, float]],
+        font_path: str,
+        class_names: List[str],
         font_size: int = 20,
-        text_color: Tuple[int, int, int] = (255, 0, 0),  # Red
-        bg_color: Tuple[int, int, int, int] = (
-            255,
-            255,
-            255,
-            200,
-        ),  # Semi-transparent white
+        text_color: str = "red",  # Changed to string
+        bg_color: str = "white",  # Changed to string
         padding: int = 5,
     ) -> Image.Image:
         """Draws the top prediction on the image."""
         draw = ImageDraw.Draw(image)
         try:
-            font = ImageFont.truetype(self.font_path, font_size)
-            logger.debug(f"Using TrueType font from {self.font_path}")
+            font = ImageFont.truetype(font_path, font_size)
+            logger.debug(f"Using TrueType font from {font_path}")
         except IOError:
             font = ImageFont.load_default()
             logger.warning(
-                f"Failed to load font from {self.font_path}. Using default font."
+                f"Failed to load font from {font_path}. Using default font."
             )
 
         # Get the top prediction
         top_class_id, top_prob = predictions[0]
-        class_name = self.class_names[top_class_id]
+        class_name = class_names[top_class_id]
 
         # Format the text
         text = f"{class_name}: {top_prob:.2%}"
