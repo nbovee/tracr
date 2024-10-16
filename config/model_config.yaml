@@ -1,9 +1,15 @@
 # config/model_config.yaml
 
-# All top-level keys must be singular, e.g., dataset, dataloader, model
+# SPLIT INFERENCE CONFIGURATIONS
+# ------------------------------
+split_inference:
+  enabled: true
+  participants: ["PARTICIPANT"]  # Only one participant (Jetson Orin)
+  server: "SERVER"
+
 
 # DEFAULT CONFIGURATIONS
-# ---------------------
+# ----------------------
 default:
   device: cuda                 # Computation device (cuda for GPU, cpu for CPU). Will default to cpu
   class: default               # Default class to use (current options: default, custom)
@@ -17,8 +23,11 @@ default:
   log_level: INFO              # Default log level (INFO, DEBUG, ERROR)
   log_file: logs/app.log       # Default log file (null for no file logging)
 
+
+# All top-level keys must be singular, e.g., dataset, dataloader, model
+
 # MODEL CONFIGURATIONS
-# ---------------------
+# --------------------
 model:
   alexnet:
     model_name: alexnet        # Name of the model (must match torchvision model names)
@@ -52,7 +61,7 @@ model:
   #   custom_layer_sizes: [128, 64]  # Custom layer sizes (if applicable)
 
 # DATASET CONFIGURATIONS
-# ---------------------
+# ----------------------
 dataset:
   onion:
     module: onion              # Python module name for the dataset (without .py extension)
@@ -82,7 +91,7 @@ dataset:
   #     download: true            # Whether to download the dataset if not present
 
 # DATALOADER CONFIGURATIONS
-# ---------------------
+# -------------------------
 dataloader:
   batch_size: 1                # Number of samples per batch
   shuffle: false               # Whether to shuffle the data
