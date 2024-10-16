@@ -43,91 +43,50 @@ class ImagenetDataset(BaseDataset):
             raise FileNotFoundError(f"Class text file not found: {self.CLASS_TEXTFILE}")
 
         self.transform = transform or transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor()
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
         self.target_transform = target_transform
 
-        self.img_labels = self._load_labels(max_samples)
-        self.img_map = self._create_image_map()
-        logger.info(f"Initialized ImagenetDataset with {len(self.img_labels)} images")
+        self.classes = self._load_classes()
+        self.img_files = self._load_image_files(max_samples)
+        logger.info(f"Initialized ImagenetDataset with {len(self.img_files)} images")
 
-    def _load_labels(self, max_samples: int) -> List[str]:
-        """Load and process image labels from the class text file."""
-        logger.debug(f"Loading labels from {self.CLASS_TEXTFILE}")
-        try:
-            with open(self.CLASS_TEXTFILE) as file:
-                img_labels = file.read().splitlines()
-            if max_samples > 0:
-                img_labels = img_labels[:max_samples]
-            logger.debug(f"Loaded {len(img_labels)} labels")
-            # Replace spaces with underscores in labels
-            img_labels = [label.replace(" ", "_") for label in img_labels]
-            return img_labels
-        except FileNotFoundError:
-            logger.error(f"Class text file not found: {self.CLASS_TEXTFILE}")
-            raise
-        except Exception as e:
-            logger.error(f"Error loading labels: {e}")
-            raise
+    def _load_classes(self) -> List[str]:
+        with open(self.CLASS_TEXTFILE, 'r') as f:
+            return [line.strip() for line in f.readlines()]
 
-    def _create_image_map(self) -> Dict[str, pathlib.Path]:
-        """Create a mapping of image labels to their file paths."""
-        logger.debug("Creating image map")
-        img_map = {}
-        for i in range(len(self.img_labels) - 1, -1, -1):
-            img_name = self.img_labels[i]
-            try:
-                # Using glob to find images matching the label
-                img_file = next(self.IMG_DIRECTORY.glob(f"*{img_name}*"))
-                img_map[img_name] = img_file
-            except StopIteration:
-                logger.warning(
-                    f"Couldn't find image with name '{img_name}' in directory. Skipping."
-                )
-                # Remove label if image not found
-                self.img_labels.pop(i)
-            except Exception as e:
-                logger.error(f"Error finding image for label '{img_name}': {e}")
-                self.img_labels.pop(i)
-
-        logger.info(f"Created image map with {len(img_map)} images.")
-        return img_map
+    def _load_image_files(self, max_samples: int) -> List[Path]:
+        img_files = sorted(self.IMG_DIRECTORY.glob('*.JPEG'))
+        if max_samples > 0:
+            img_files = img_files[:max_samples]
+        return img_files
 
     def __len__(self) -> int:
         """Get the number of items in the dataset."""
-        return len(self.img_labels)
+        return len(self.img_files)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
-        """Get an item (image and label index) from the dataset."""
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int, str]:
+        """Get an item (image tensor, original image, and filename) from the dataset."""
+        img_path = self.img_files[idx]
+        image = Image.open(img_path).convert("RGB")
+
+        if self.transform:
+            image = self.transform(image)
+
+        # Extract class from filename (e.g., "n01440764_tench.JPEG" -> "tench")
+        class_name = ' '.join(img_path.stem.split('_')[1:])
+        
+        # Find the index of the class in self.classes
         try:
-            label = self.img_labels[idx]
-            img_fp = self.img_map[label]
-            image = Image.open(img_fp).convert("RGB")
-            image = image.resize((224, 224))
+            class_idx = self.classes.index(class_name)
+        except ValueError:
+            logger.warning(f"Class '{class_name}' not found in class list. Using -1 as index.")
+            class_idx = -1
 
-            if self.transform:
-                image = self.transform(image)
-
-            # Ensure the image is a 3D tensor (C, H, W)
-            if image.dim() == 2:
-                image = image.unsqueeze(0)
-
-            # Convert label to index
-            label_index = idx  # Assuming labels are in order; adjust as needed
-
-            if self.target_transform:
-                label_index = self.target_transform(label_index)
-
-            logger.debug(f"Retrieved item at index {idx}: label='{label}'")
-            return image, label_index
-        except IndexError:
-            logger.error(f"Index {idx} out of range")
-            raise
-        except Exception as e:
-            logger.error(f"Error processing image at index {idx}: {e}")
-            raise
-
+        return image, class_idx, img_path.name
 
 def imagenet_dataset(
     root: Optional[Union[str, Path]] = None,

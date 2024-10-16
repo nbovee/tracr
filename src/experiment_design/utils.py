@@ -4,8 +4,10 @@ import os
 import sys
 import logging
 from typing import Any, List, Tuple
-import numpy as np
 from pathlib import Path
+import numpy as np
+import torch
+from PIL import Image, ImageDraw, ImageFont
 
 # Add parent module (src) to path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -15,6 +17,47 @@ if parent_dir not in sys.path:
 
 logger = logging.getLogger(__name__)
 
+def load_imagenet_classes(class_file_path: str) -> List[str]:
+    with open(class_file_path, 'r') as f:
+        class_names = [line.strip() for line in f.readlines()]
+    return class_names
+
+def postprocess_imagenet(output: torch.Tensor) -> List[Tuple[int, float]]:
+    probabilities = torch.nn.functional.softmax(output[0], dim=0)
+    top5_prob, top5_catid = torch.topk(probabilities, 5)
+    return list(zip(top5_catid.tolist(), top5_prob.tolist()))
+
+def draw_imagenet_prediction(image: Image.Image, predictions: List[Tuple[int, float]], font_path: str, class_names: List[str]) -> Image.Image:
+    draw = ImageDraw.Draw(image)
+    try:
+        font = ImageFont.truetype(str(font_path), 20)
+    except IOError:
+        font = ImageFont.load_default()
+        logger.warning(f"Failed to load font from {font_path}. Using default font.")
+
+    # Get the top prediction
+    top_class_id, top_prob = predictions[0]
+    class_name = class_names[top_class_id]
+    
+    # Format the text
+    text = f"{class_name}: {top_prob:.2%}"
+    
+    # Get text size using getbbox instead of textsize
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    
+    # Calculate position (top right corner)
+    x = image.width - text_width - 10
+    y = 10
+    
+    # Draw white rectangle as background for text
+    draw.rectangle([x-5, y-5, x+text_width+5, y+text_height+5], fill='white')
+    
+    # Draw text (changed fill color to string 'red')
+    draw.text((x, y), text, font=font, fill='red')
+    
+    return image
 
 def postprocess(
     outputs: Any,
@@ -84,7 +127,6 @@ def postprocess(
         f"Postprocessing complete. Found {len(detections)} detections after NMS"
     )
     return detections
-
 
 def draw_detections(
     image: Any,

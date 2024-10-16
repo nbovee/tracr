@@ -38,8 +38,15 @@ class DatasetFactory:
 
             # Import the module
             module = import_module(f"experiment_design.datasets.{dataset_module}")
-            dataset_cls = getattr(module, dataset_class)
-            dataset = dataset_cls(**dataset_args)
+            
+            # Check if there's a factory function available
+            factory_function = getattr(module, f"{dataset_module}_dataset", None)
+            if factory_function and callable(factory_function):
+                dataset = factory_function(**dataset_args)
+            else:
+                dataset_cls = getattr(module, dataset_class)
+                dataset = dataset_cls(**dataset_args)
+            
             logger.info(f"Successfully created dataset: {dataset_class}")
             return dataset
         except ImportError as e:
