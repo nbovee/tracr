@@ -215,8 +215,7 @@ class MasterDict:
 
         layer_info = inf_data.get("layer_information", {})
         total_watts = sum(
-            float(layer["watts_used"] or 0)
-            for layer in layer_info.values()
+            float(layer["watts_used"] or 0) for layer in layer_info.values()
         )
         logger.debug(f"Total watts used for inference {inference_id}: {total_watts}")
         return total_watts
@@ -231,7 +230,9 @@ class MasterDict:
             for superfields in self.inner_dict.values():
                 inf_id = superfields.get("inference_id")
                 if not inf_id:
-                    logger.warning(f"Skipping entry without inference_id: {superfields}")
+                    logger.warning(
+                        f"Skipping entry without inference_id: {superfields}"
+                    )
                     continue
 
                 try:
