@@ -1,9 +1,11 @@
-# scripts/run_onion_dataset.py
+# scripts/run_onion_yolo.py
 
 import sys
+import argparse
 import logging
 from pathlib import Path
 from typing import Tuple, List
+import os
 
 import torch
 from PIL import Image
@@ -171,11 +173,12 @@ def process_batch(
         raise
 
 
-def main():
+def main(warmup_only=False, split_experiment=False):
     """Main function to execute the testing pipeline."""
     logger.info(
         f"Starting the {MODEL_NAME.capitalize()} model test on {DATASET_NAME.capitalize()} dataset"
     )
+    logger.info(f"Warmup only: {warmup_only}, Split experiment: {split_experiment}")
 
     # Check if running on edge device
     run_on_edge = config["default"]["run_on_edge"]
@@ -195,9 +198,8 @@ def main():
         logger.error("Dataset or model configuration not found.")
         sys.exit(1)
 
-    # Update dataset path if running on edge
-    if run_on_edge:
-        dataset_config["args"]["root"] = str(BASE_DIR / dataset_config["args"]["root"])
+    dataset_config["args"]["root"] = str(BASE_DIR / dataset_config["args"]["root"])    
+    logger.info(f"Dataset root: {dataset_config['args']['root']}")
 
     # Initialize MasterDict
     master_dict = MasterDict()
@@ -242,12 +244,22 @@ def main():
 
     # Process batches
     with torch.no_grad():
-        for images, original_images, image_files in tqdm(
+        for i, (images, original_images, image_files) in enumerate(tqdm(
             data_loader, desc=f"Testing split at layer {SPLIT_LAYER}"
-        ):
+        )):
             input_tensor = images.to(model1.device)
             original_image = original_images[0]
             image_filename = image_files[0]
+
+            if warmup_only and i >= config["default"]["warmup_iterations"]:
+                logger.info(f"Warmup iterations completed. Processed {i} iterations.")
+                break
+
+            if split_experiment and i < config["default"]["warmup_iterations"]:
+                logger.info(f"Skipping warmup iteration {i+1}")
+                continue
+
+            logger.info(f"Processing batch {i+1}, image: {image_filename}")
 
             try:
                 process_batch(
@@ -257,18 +269,19 @@ def main():
                     original_image,
                     image_filename,
                     master_dict,
-                    verbose=False,  # Remove the font_path argument
+                    verbose=True,  # Set to True for more detailed logging
                 )
             except Exception as e:
                 logger.error(f"Error processing batch for {image_filename}: {e}")
 
     # Save results
-    try:
-        df = master_dict.to_dataframe()
-        df.to_csv(OUTPUT_CSV_PATH, index=False)
-        logger.info(f"Inference results saved to {OUTPUT_CSV_PATH}")
-    except Exception as e:
-        logger.error(f"Failed to save inference results: {e}")
+    if not warmup_only:
+        try:
+            df = master_dict.to_dataframe()
+            df.to_csv(OUTPUT_CSV_PATH, index=False)
+            logger.info(f"Inference results saved to {OUTPUT_CSV_PATH}")
+        except Exception as e:
+            logger.error(f"Failed to save inference results: {e}")
 
     logger.info(
         f"{MODEL_NAME.capitalize()} model test on {DATASET_NAME.capitalize()} dataset completed"
@@ -276,4 +289,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Run YOLO model on Onion dataset")
+    parser.add_argument("--warmup_only", action="store_true", help="Run only warmup iterations")
+    parser.add_argument("--split_experiment", action="store_true", help="Run split experiment")
+    args = parser.parse_args()
+
+    main(warmup_only=args.warmup_only, split_experiment=args.split_experiment)

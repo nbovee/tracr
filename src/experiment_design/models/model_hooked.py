@@ -83,7 +83,7 @@ class WrappedModel(BaseModel):
         )  # Implement a PowerMeter class to measure power usage
 
         self.to_device(self.device)
-        self.warmup(iterations=2)
+        self.warmup(iterations=self.warmup_iterations)
         logger.info("WrappedModel initialization complete")
 
     def _walk_modules(self, modules, depth: int, walk_i: int) -> int:

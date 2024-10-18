@@ -83,10 +83,10 @@ class BaseModel(nn.Module):
         self.flush_buffer_size = self.model_config.get(
             "flush_buffer_size", self.default_configs.get("flush_buffer_size", 100)
         )
+
         self.warmup_iterations = self.model_config.get(
             "warmup_iterations", self.default_configs.get("warmup_iterations", 2)
         )
-
         logger.debug(
             f"Model configurations: name={self.model_name}, mode={self.mode}, input_size={self.input_size}"
         )
