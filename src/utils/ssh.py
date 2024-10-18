@@ -9,6 +9,7 @@ import pathlib
 from typing import Union, Optional, Dict, Any
 
 from .utilities import get_repo_root
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -233,6 +234,7 @@ class SSHSession(paramiko.SSHClient):
         self.pkey_fp = pathlib.Path(pkey_fp).absolute().expanduser()
         self.port = port
         self.timeout = timeout
+        self.sftp = None
 
         logger.info(f"Initializing SSHSession for {user}@{host}:{port}")
         try:
@@ -254,6 +256,7 @@ class SSHSession(paramiko.SSHClient):
                 auth_timeout=5,
                 timeout=1,
             )
+            self.sftp = self.open_sftp()
             logger.info(
                 f"SSH connection established to {self.user}@{self.host}:{self.port}"
             )
@@ -262,31 +265,25 @@ class SSHSession(paramiko.SSHClient):
             raise
 
     def copy_over(
-        self, from_path: pathlib.Path, to_path: pathlib.Path, exclude: list = []
+        self, from_path: Union[str, Path], to_path: Union[str, Path], exclude: list = []
     ):
         """Copy a file or directory over to the remote device."""
-        sftp = self.open_sftp()
+        from_path = Path(from_path)
+        to_path = Path(to_path)
         if from_path.name not in exclude:
             if from_path.is_dir():
-                try:
-                    sftp.stat(str(to_path))
-                except FileNotFoundError:
-                    sftp.mkdir(str(to_path))
-
+                self.sftp.mkdir(str(to_path), exist_ok=True)
                 for item in from_path.iterdir():
-                    self.copy_over(item, to_path / item.name)
+                    self.copy_over(item, to_path / item.name, exclude)
             else:
-                sftp.put(str(from_path), str(to_path))
-        sftp.close()
+                self.sftp.put(str(from_path), str(to_path))
 
     def mkdir(self, to_path: pathlib.Path, perms: int = 0o777):
         """Create a directory on the remote device with specified permissions."""
-        sftp = self.open_sftp()
         try:
-            sftp.mkdir(str(to_path), perms)
+            self.sftp.mkdir(str(to_path), perms)
         except OSError:
             logger.info(f"Directory {to_path} already exists on remote device")
-        sftp.close()
 
     def execute_command(self, command: str) -> Dict[str, Any]:
         """Execute a command on the remote host."""
@@ -305,6 +302,7 @@ class SSHSession(paramiko.SSHClient):
                 logger.error(
                     f"Command '{command}' failed on {self.host}. Exit status: {exit_status}"
                 )
+            result["exit_status"] = exit_status
         except Exception as e:
             logger.error(f"Error executing command '{command}' on {self.host}: {e}")
         return result

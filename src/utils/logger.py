@@ -22,8 +22,6 @@ DEFAULT_LOG_FILE = os.path.join(LOGS_DIR, "app.log")
 DEFAULT_PORT = 9020
 BUFFER_SIZE = 100
 
-logger = logging.getLogger(__name__)
-
 
 # Enum for Device Types
 class DeviceType(Enum):
