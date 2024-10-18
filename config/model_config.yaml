@@ -19,7 +19,7 @@ default:
   warmup_iterations: 2         # Number of warmup iterations to stabilize model performance
   default_model: alexnet          # Default model to use (current options: alexnet, yolo, custom)
   default_dataset: imagenet       # Default dataset to use (current options: onion, imagenet)
-  run_on_edge: false            # Flag to determine if running on Edge device (true) or locally (false)
+  run_on_edge: true            # Flag to determine if running on Edge device (true) or locally (false)
   log_level: INFO              # Default log level (INFO, DEBUG, ERROR)
   log_file: logs/app.log       # Default log file (null for no file logging)
 

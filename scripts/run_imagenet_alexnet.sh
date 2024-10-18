@@ -25,6 +25,10 @@ EXCLUDES=(
     "__pycache__"
     "venv"
     "data/onion"
+    "data/imagnet2_tr"
+    "data/imagnet10_tr"
+    "data/imagnet50_tr"
+    "data/imagnet100_tr"
     "data/runs"
     "results"
 )

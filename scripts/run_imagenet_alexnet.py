@@ -6,6 +6,7 @@ import torch
 import logging
 from tqdm import tqdm
 from PIL import Image
+import pandas as pd
 
 # Add the project root to the Python path
 project_root = Path(__file__).resolve().parent.parent
@@ -136,12 +137,13 @@ logger.info(f"\nTotal images: {total_images}")
 logger.info(f"Correct predictions: {correct_predictions}")
 logger.info(f"Accuracy: {accuracy:.2f}%")
 
-# # Save results to CSV
-# import pandas as pd
-# df = pd.DataFrame.from_dict(master_dict, orient='index')
-# df.to_csv(str(OUTPUT_CSV_PATH), index=False)
-# logger.info(f"Results saved to {OUTPUT_CSV_PATH}")
+# Save results to CSV
+try:
+    results = [master_dict.get(key) for key in master_dict]
+    df = pd.DataFrame(results)
+    df.to_csv(str(OUTPUT_CSV_PATH), index=False)
+    logger.info(f"Results saved to {OUTPUT_CSV_PATH}")
+except Exception as e:
+    logger.error(f"Failed to save results to CSV: {e}")
 
-logger.info(
-    f"{MODEL_NAME.capitalize()} model test on {DATASET_NAME.capitalize()} dataset completed"
-)
+logger.info(f"{MODEL_NAME.capitalize()} model test on {DATASET_NAME.capitalize()} dataset completed")
