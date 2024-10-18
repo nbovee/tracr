@@ -5,7 +5,7 @@ from typing import Callable, List, Optional, Tuple
 from pathlib import Path
 from PIL import Image
 import torch
-from torchvision import transforms # type: ignore
+from torchvision import transforms  # type: ignore
 from .custom import BaseDataset
 
 logger = logging.getLogger(__name__)
