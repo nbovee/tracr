@@ -12,7 +12,7 @@ from typing import Any, Optional, Union, Dict
 import numpy as np
 import torch
 from PIL import Image
-from torchinfo import summary # type: ignore
+from torchinfo import summary  # type: ignore
 
 # Add parent module (src) to path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -40,6 +40,7 @@ logger = logging.getLogger("tracr_logger")
 
 class WrappedModel(BaseModel):
     """Wraps a pretrained model with features necessary for edge computing tests."""
+
     def __init__(
         self,
         config: Dict[str, Any],
@@ -76,8 +77,10 @@ class WrappedModel(BaseModel):
         self.banked_input: Optional[Any] = None
         self.log = False
 
-        self.node_name = config.get('default', {}).get('device_type', 'UNKNOWN')
-        self.power_meter = PowerMeter(self.device)  # Implement a PowerMeter class to measure power usage
+        self.node_name = config.get("default", {}).get("device_type", "UNKNOWN")
+        self.power_meter = PowerMeter(
+            self.device
+        )  # Implement a PowerMeter class to measure power usage
 
         self.to_device(self.device)
         self.warmup(iterations=2)

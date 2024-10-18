@@ -97,9 +97,15 @@ def create_forward_prehook(
 
         # Prepare timestamps for current layer
         if wrapped_model.log and fixed_layer_i >= wrapped_model.model_start_i:
-            wrapped_model.forward_info[fixed_layer_i]["completed_by_node"] = wrapped_model.node_name
-            wrapped_model.forward_info[fixed_layer_i]["inference_time"] = -wrapped_model.timer()
-            wrapped_model.forward_info[fixed_layer_i]["start_energy"] = wrapped_model.power_meter.get_energy()
+            wrapped_model.forward_info[fixed_layer_i][
+                "completed_by_node"
+            ] = wrapped_model.node_name
+            wrapped_model.forward_info[fixed_layer_i][
+                "inference_time"
+            ] = -wrapped_model.timer()
+            wrapped_model.forward_info[fixed_layer_i][
+                "start_energy"
+            ] = wrapped_model.power_meter.get_energy()
 
         logger.debug(f"End prehook {fixed_layer_i} - {layer_name}")
         return hook_output
@@ -122,10 +128,16 @@ def create_forward_posthook(
         logger.debug(f"Start posthook {fixed_layer_i} - {layer_name}")
 
         if wrapped_model.log and fixed_layer_i >= wrapped_model.model_start_i:
-            wrapped_model.forward_info[fixed_layer_i]["inference_time"] += wrapped_model.timer()
+            wrapped_model.forward_info[fixed_layer_i][
+                "inference_time"
+            ] += wrapped_model.timer()
             end_energy = wrapped_model.power_meter.get_energy()
-            energy_used = end_energy - wrapped_model.forward_info[fixed_layer_i]["start_energy"]
-            wrapped_model.forward_info[fixed_layer_i]["watts_used"] = energy_used / (wrapped_model.forward_info[fixed_layer_i]["inference_time"] / 1e9)
+            energy_used = (
+                end_energy - wrapped_model.forward_info[fixed_layer_i]["start_energy"]
+            )
+            wrapped_model.forward_info[fixed_layer_i]["watts_used"] = energy_used / (
+                wrapped_model.forward_info[fixed_layer_i]["inference_time"] / 1e9
+            )
 
         if fixed_layer_i in wrapped_model.drop_save_dict or (
             wrapped_model.model_start_i == fixed_layer_i

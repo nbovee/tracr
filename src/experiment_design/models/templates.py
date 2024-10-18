@@ -10,5 +10,5 @@ LAYER_TEMPLATE = {
     "output_bytes": None,
     "completed_by_node": None,
     "watts_used": None,
-    "start_energy": None
+    "start_energy": None,
 }

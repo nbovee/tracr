@@ -49,7 +49,7 @@ class ModelRegistry:
         # If not in registry, try to dynamically import
         try:
             if "yolo" in name_lower:
-                from ultralytics import YOLO # type: ignore
+                from ultralytics import YOLO  # type: ignore
 
                 logger.debug(f"Loading YOLO model: {name}")
                 model = YOLO(weights_path if weights_path else f"{name}.pt")
