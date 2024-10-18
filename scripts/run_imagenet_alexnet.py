@@ -29,6 +29,10 @@ FONT_PATH = str(project_root / "fonts" / "DejaVuSans-Bold.ttf")
 IMAGENET_CLASSES_PATH = str(project_root / "data/imagenet/imagenet_classes.txt")
 LOG_FILE = config['model'][MODEL_NAME]['log_file']
 
+log_dir = Path(LOG_FILE).parent
+if not log_dir.exists():
+    log_dir.mkdir(parents=True, exist_ok=True)
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
