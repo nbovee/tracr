@@ -17,9 +17,9 @@ default:
   depth: 2                     # Depth for recursive model exploration
   flush_buffer_size: 100       # Number of inferences before flushing results to storage
   warmup_iterations: 2         # Number of warmup iterations to stabilize model performance
-  default_model: yolo          # Default model to use (current options: alexnet, yolo, custom)
-  default_dataset: onion       # Default dataset to use (current options: onion, imagenet)
-  run_on_edge: false           # Flag to determine if running on Edge device (true) or locally (false)
+  default_model: alexnet          # Default model to use (current options: alexnet, yolo, custom)
+  default_dataset: imagenet       # Default dataset to use (current options: onion, imagenet)
+  run_on_edge: false            # Flag to determine if running on Edge device (true) or locally (false)
   log_level: INFO              # Default log level (INFO, DEBUG, ERROR)
   log_file: logs/app.log       # Default log file (null for no file logging)
 
@@ -39,6 +39,7 @@ model:
     hook_style: pre            # Hook insertion style ('pre' or 'post')
     save_layers: [2, 4, 6]     # Layer indices to save intermediate outputs
     log_file: logs/alexnet.log # Log file for the model
+    num_classes: null          # This will be set dynamically in the script
 
   yolo:
     model_name: yolov8s        # YOLO model variant (e.g., yolov8s, yolov8m, yolov8l)
@@ -80,6 +81,24 @@ dataset:
       root: data/imagenet      # Root directory of the dataset
       transform: null          # Data transformations (null for default)
       max_samples: -1          # Maximum number of samples to load (-1 for all samples)
+
+  imagenet10_tr:
+    module: imagenet
+    class: ImagenetDataset
+    class_names: null
+    args:
+      root: data/imagenet10_tr
+      transform: null
+      max_samples: -1
+
+  imagenet50_tr:
+    module: imagenet
+    class: ImagenetDataset
+    class_names: null
+    args:
+      root: data/imagenet50_tr
+      transform: null
+      max_samples: -1
 
   # cifar10:
   #   module: cifar10
