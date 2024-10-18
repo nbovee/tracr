@@ -111,7 +111,9 @@ class ImagenetDataset(BaseDataset):
             )
             class_idx = -1
 
-        logger.debug(f"Loaded image: {img_path}, class: {class_name}, index: {class_idx}")
+        logger.debug(
+            f"Loaded image: {img_path}, class: {class_name}, index: {class_idx}"
+        )
         return image, class_idx, img_path.name
 
     @classmethod

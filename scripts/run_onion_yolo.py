@@ -27,33 +27,33 @@ CONFIG_YAML_PATH = Path("config/model_config.yaml")
 config = read_yaml_file(CONFIG_YAML_PATH)
 
 # Update paths based on RUN_ON_EDGE
-if config['default']['run_on_edge']:
+if config["default"]["run_on_edge"]:
     BASE_DIR = Path("/tmp/RACR_AI")
 else:
     BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-DATASET_NAME = config['default']['default_dataset']
-CLASS_NAMES = config['dataset'][DATASET_NAME]['class_names']
+DATASET_NAME = config["default"]["default_dataset"]
+CLASS_NAMES = config["dataset"][DATASET_NAME]["class_names"]
 
-MODEL_NAME = config['default']['default_model']
-SPLIT_LAYER = config['model'][MODEL_NAME]['split_layer']
+MODEL_NAME = config["default"]["default_model"]
+SPLIT_LAYER = config["model"][MODEL_NAME]["split_layer"]
 
 CONF_THRESHOLD = 0.25
 IOU_THRESHOLD = 0.45
 FONT_PATH = BASE_DIR / "fonts" / "DejaVuSans-Bold.ttf"
 
-LOG_FILE = config['model'][MODEL_NAME]['log_file']
+LOG_FILE = config["model"][MODEL_NAME]["log_file"]
 
 log_dir = Path(LOG_FILE).parent
 if not log_dir.exists():
     log_dir.mkdir(parents=True, exist_ok=True)
-    
+
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(message)s')
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 file_handler = logging.FileHandler(LOG_FILE)
-file_handler.setLevel(config['default']['log_level'])
+file_handler.setLevel(config["default"]["log_level"])
 logger.addHandler(file_handler)
 
 
@@ -66,6 +66,7 @@ def create_incremented_dir(base_path: Path) -> Path:
             new_path.mkdir(parents=True)
             return new_path
         i += 1
+
 
 # Create results directory
 RESULTS_DIR = BASE_DIR / "results" / f"{MODEL_NAME}_{DATASET_NAME}"
@@ -83,7 +84,9 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------#
 
-detection_utils = DetectionUtils(CLASS_NAMES, str(FONT_PATH), CONF_THRESHOLD, IOU_THRESHOLD)
+detection_utils = DetectionUtils(
+    CLASS_NAMES, str(FONT_PATH), CONF_THRESHOLD, IOU_THRESHOLD
+)
 
 
 def custom_collate_fn(
@@ -137,14 +140,10 @@ def process_batch(
         }
 
         # Post-process outputs to get detections
-        detections = detection_utils.postprocess(
-            out, original_image.size
-        )
+        detections = detection_utils.postprocess(out, original_image.size)
 
         # Draw detections on the original image
-        output_image = detection_utils.draw_detections(
-            original_image, detections
-        )
+        output_image = detection_utils.draw_detections(original_image, detections)
 
         # Save the output image
         output_image_path = OUTPUT_DIR / f"output_with_detections_{image_filename}"
@@ -174,10 +173,12 @@ def process_batch(
 
 def main():
     """Main function to execute the testing pipeline."""
-    logger.info(f"Starting the {MODEL_NAME.capitalize()} model test on {DATASET_NAME.capitalize()} dataset")
+    logger.info(
+        f"Starting the {MODEL_NAME.capitalize()} model test on {DATASET_NAME.capitalize()} dataset"
+    )
 
     # Check if running on edge device
-    run_on_edge = config['default']['run_on_edge']
+    run_on_edge = config["default"]["run_on_edge"]
     logger.info(f"Running on edge device: {run_on_edge}")
 
     # Select the model and dataset from configuration
@@ -196,8 +197,8 @@ def main():
 
     # Update dataset path if running on edge
     if run_on_edge:
-        dataset_config['args']['root'] = str(BASE_DIR / dataset_config['args']['root'])
-    
+        dataset_config["args"]["root"] = str(BASE_DIR / dataset_config["args"]["root"])
+
     # Initialize MasterDict
     master_dict = MasterDict()
 
@@ -269,7 +270,9 @@ def main():
     except Exception as e:
         logger.error(f"Failed to save inference results: {e}")
 
-    logger.info(f"{MODEL_NAME.capitalize()} model test on {DATASET_NAME.capitalize()} dataset completed")
+    logger.info(
+        f"{MODEL_NAME.capitalize()} model test on {DATASET_NAME.capitalize()} dataset completed"
+    )
 
 
 if __name__ == "__main__":

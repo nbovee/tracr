@@ -299,7 +299,7 @@ class MasterDict:
     def __iter__(self):
         """Enables iteration over the master dictionary."""
         return iter(self.inner_dict)
-    
+
     def __len__(self):
         """Returns the number of items in the master dictionary."""
         return len(self.inner_dict)

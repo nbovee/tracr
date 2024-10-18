@@ -22,22 +22,22 @@ from src.experiment_design.utils import ClassificationUtils
 config = read_yaml_file(project_root / "config/model_config.yaml")
 
 # Constants and Configuration
-DATASET_NAME = config['default']['default_dataset']
-MODEL_NAME = config['default']['default_model']
-SPLIT_LAYER = config['model'][MODEL_NAME]['split_layer']
+DATASET_NAME = config["default"]["default_dataset"]
+MODEL_NAME = config["default"]["default_model"]
+SPLIT_LAYER = config["model"][MODEL_NAME]["split_layer"]
 FONT_PATH = str(project_root / "fonts" / "DejaVuSans-Bold.ttf")
 IMAGENET_CLASSES_PATH = str(project_root / "data/imagenet/imagenet_classes.txt")
-LOG_FILE = config['model'][MODEL_NAME]['log_file']
+LOG_FILE = config["model"][MODEL_NAME]["log_file"]
 
 log_dir = Path(LOG_FILE).parent
 if not log_dir.exists():
     log_dir.mkdir(parents=True, exist_ok=True)
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(message)s')
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 file_handler = logging.FileHandler(LOG_FILE)
-file_handler.setLevel(config['default']['log_level'])
+file_handler.setLevel(config["default"]["log_level"])
 logger.addHandler(file_handler)
 
 # Set up the device
@@ -57,7 +57,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 dataset = ImagenetDataset(
     root=project_root / "data/imagenet",
     transform=None,  # Use default transform
-    max_samples=-1  # Use all samples
+    max_samples=-1,  # Use all samples
 )
 
 # Create DataLoader
@@ -79,9 +79,11 @@ total_images = 0
 classification_utils = ClassificationUtils(IMAGENET_CLASSES_PATH, FONT_PATH)
 
 with torch.no_grad():
-    for img_tensor, class_idx, img_filename in tqdm(dataloader, desc="Processing images"):
+    for img_tensor, class_idx, img_filename in tqdm(
+        dataloader, desc="Processing images"
+    ):
         total_images += 1
-        
+
         # Move input to device
         img_tensor = img_tensor.to(device)
 
@@ -102,18 +104,22 @@ with torch.no_grad():
             correct_predictions += 1
             logger.info(f"Correct: {img_filename[0]} - Predicted: {predicted_label}")
         else:
-            logger.info(f"Wrong: {img_filename[0]} - Predicted: {predicted_label}, True: {true_label}")
+            logger.info(
+                f"Wrong: {img_filename[0]} - Predicted: {predicted_label}, True: {true_label}"
+            )
 
         # Save the output image
-        original_image = Image.open(project_root / "data/imagenet/sample_images" / img_filename[0])
+        original_image = Image.open(
+            project_root / "data/imagenet/sample_images" / img_filename[0]
+        )
         output_image = classification_utils.draw_imagenet_prediction(
-            image=original_image, 
-            predictions=predictions, 
+            image=original_image,
+            predictions=predictions,
             font_path=FONT_PATH,
-            class_names=imagenet_classes
+            class_names=imagenet_classes,
         )
         output_image_path = OUTPUT_DIR / f"output_with_prediction_{img_filename[0]}"
-        output_image.save(str(output_image_path), format='PNG')
+        output_image.save(str(output_image_path), format="PNG")
 
         # Update master_dict
         master_dict[img_filename[0]] = {
@@ -121,7 +127,7 @@ with torch.no_grad():
             "predicted_label": predicted_label,
             "true_label": true_label,
             "correct": predicted_label.lower() == true_label.lower(),
-            "top5_predictions": predictions
+            "top5_predictions": predictions,
         }
 
 # Print summary
@@ -136,4 +142,6 @@ logger.info(f"Accuracy: {accuracy:.2f}%")
 # df.to_csv(str(OUTPUT_CSV_PATH), index=False)
 # logger.info(f"Results saved to {OUTPUT_CSV_PATH}")
 
-logger.info(f"{MODEL_NAME.capitalize()} model test on {DATASET_NAME.capitalize()} dataset completed")
+logger.info(
+    f"{MODEL_NAME.capitalize()} model test on {DATASET_NAME.capitalize()} dataset completed"
+)

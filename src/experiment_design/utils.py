@@ -66,9 +66,7 @@ class ClassificationUtils:
             logger.debug(f"Using TrueType font from {font_path}")
         except IOError:
             font = ImageFont.load_default()
-            logger.warning(
-                f"Failed to load font from {font_path}. Using default font."
-            )
+            logger.warning(f"Failed to load font from {font_path}. Using default font.")
 
         # Get the top prediction
         top_class_id, top_prob = predictions[0]
