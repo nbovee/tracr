@@ -1,7 +1,5 @@
 # src/experiment_design/utils.py
 
-"""This module contains utility classes for both classification and detection tasks."""
-
 import os
 import sys
 import time
@@ -18,6 +16,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
+
+from src.experiment_design.models.model_hooked import WrappedModel, NotDict
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +58,8 @@ class ClassificationUtils:
         font_path: str,
         class_names: List[str],
         font_size: int = 20,
-        text_color: str = "red",  # Changed to string
-        bg_color: str = "white",  # Changed to string
+        text_color: str = "red",
+        bg_color: str = "white",
         padding: int = 5,
     ) -> Image.Image:
         """Draws the top prediction on the image."""
@@ -114,6 +114,32 @@ class DetectionUtils:
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
         self.input_size = input_size  # (height, width)
+
+    def process_image(
+        self,
+        model: WrappedModel,
+        out: Any, 
+        original_img_size: Tuple[int, int], 
+        split_layer_index: int
+    ) -> Tuple[Any, float]:
+        """Process a single image and return detections and processing time."""
+        server_start_time = time.time()
+
+        with torch.no_grad():
+            if isinstance(out, NotDict):
+                inner_dict = out.inner_dict
+                for key, value in inner_dict.items():
+                    if isinstance(value, torch.Tensor):
+                        inner_dict[key] = value.to(model.device)
+                        logger.debug(f"Intermediate tensors of {key} moved to the correct device.")
+            else:
+                logger.warning("out is not an instance of NotDict")
+            
+            res, layer_outputs = model(out, start=split_layer_index)
+            detections = self.postprocess(res, original_img_size)
+
+        server_processing_time = time.time() - server_start_time
+        return detections, server_processing_time
 
     def postprocess(
         self, outputs: Any, original_img_size: Tuple[int, int]
@@ -252,27 +278,23 @@ class DetectionUtils:
 
 
 class DataUtils:
-    """Utility class for data handling."""
-
-    def __init__(self):
-        pass
-
-
-    @staticmethod
-    def compress_data(data):
+    def compress_data(self, data):
+        """Compress data using Blosc2."""
         serialized_data = pickle.dumps(data)
         compressed_data = blosc2.compress(serialized_data, clevel=4, filter=blosc2.Filter.SHUFFLE, codec=blosc2.Codec.ZSTD)
         size_bytes = len(compressed_data)
-        return compressed_data,size_bytes
+        logger.debug(f"Compressed data size: {size_bytes} bytes")
+        return compressed_data, size_bytes
 
-    @staticmethod
-    def decompress_data(compressed_data):
+    def decompress_data(self, compressed_data):
+        """Decompress data using Blosc2."""
         decompressed_data = blosc2.decompress(compressed_data)
         data = pickle.loads(decompressed_data)
+        logger.debug(f"Decompressed data size: {len(decompressed_data)} bytes")
         return data
-    
-    @staticmethod
-    def receive_full_message(conn, expected_length):
+
+    def receive_full_message(self, conn, expected_length):
+        """Receive a full message from a socket connection."""
         data_chunks = []
         bytes_recd = 0
         while bytes_recd < expected_length:
@@ -282,9 +304,9 @@ class DataUtils:
             data_chunks.append(chunk)
             bytes_recd += len(chunk)
         return b''.join(data_chunks)
-    
-    @staticmethod
-    def receive_data(conn):
+
+    def receive_data(self, conn):
+        """Receive the split layer index and expected length from a socket connection."""
         split_layer_index_bytes = conn.recv(4)
         if not split_layer_index_bytes:
             return None
@@ -293,13 +315,13 @@ class DataUtils:
         length_data = conn.recv(4)
         expected_length = int.from_bytes(length_data, 'big')
 
-        compressed_data = DataUtils.receive_full_message(conn, expected_length)
-        received_data = DataUtils.decompress_data(compressed_data)
+        compressed_data = self.receive_full_message(conn, expected_length)
+        received_data = self.decompress_data(compressed_data)
 
         return (*received_data, split_layer_index)
 
-    @staticmethod
-    def send_result(conn, result):
+    def send_result(self, conn, result):
+        """Send the result and processing time to a socket connection."""
         server_processing_time = time.time()
         response_data = pickle.dumps((result, server_processing_time))
         conn.sendall(response_data)

@@ -100,6 +100,12 @@ class DataManager:
         logger.info("Data pipeline initialized successfully")
         return dataloader
 
+    @staticmethod
+    def get_dataset(config: Dict[str, Any]) -> Dataset:
+        dataset_config = config.get("dataset", {})
+        dataset_class = getattr(import_module(f"src.experiment_design.datasets.{dataset_config['module']}"), dataset_config['class'])
+        return dataset_class(**dataset_config['args'])
+
 
 class DataLoaderIterator:
     def __init__(self, dataloader: DataLoader):

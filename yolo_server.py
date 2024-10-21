@@ -1,102 +1,104 @@
 import logging
 import pickle
-import sys
+import socket
 import time
 from pathlib import Path
-
+import sys
 import torch
+from typing import Dict, Any
 
 # Add the project root to the Python path
-project_root = Path(__file__).resolve().parent.parent
+project_root = Path(__file__).resolve().parent
 sys.path.append(str(project_root))
 
-from src.api.device_mgmt import DeviceMgr
 from src.experiment_design.models.model_hooked import WrappedModel, NotDict
-from src.experiment_design.utils import DetectionUtils, DataUtils
+from src.experiment_design.utils import DataUtils, DetectionUtils
+from src.utils.utilities import read_yaml_file
 
+# Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("yolo_server")
 
+def get_experiment_configs() -> Dict[str, Any]:
+    """Load and return experiment configurations."""
+    CONFIG_YAML_PATH = project_root / "config" / "model_config.yaml"
+    config = read_yaml_file(CONFIG_YAML_PATH)
 
-# ------------------ FIX THIS PART (START) ------------------
-weight_path = 'data/runs/detect/train16/weights/best.pt'
-class_names = ["with_weeds", "without_weeds"]
-yaml_file_path = 'config/model_config.yaml'
-font_path = 'fonts/DejaVuSans-Bold.ttf'
+    experiment_config = {
+        "MODEL_NAME": config["default"]["default_model"],
+        "DATASET_NAME": config["default"]["default_dataset"],
+        "CLASS_NAMES": config["dataset"][config["default"]["default_dataset"]]["class_names"],
+        "FONT_PATH": project_root / config["default"]["font_path"],
+        "SPLIT_LAYER": config["model"][config["default"]["default_model"]]["split_layer"],
+        "device": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    }
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = WrappedModel(config=yaml_file_path)
+    logger.info(f"Experiment configuration loaded. Using device: {experiment_config['device']}")
+    return config, experiment_config
 
-# ------------------ FIX THIS PART (END) ------------------
+def run_experiment(config: Dict[str, Any], experiment_config: Dict[str, Any]):
+    """Run the YOLO server experiment."""
+    model = WrappedModel(config=config)
+    model.to(experiment_config['device'])
+    model.eval()
 
-device_mgr = DeviceMgr()
-server_device = device_mgr.get_devices(available_only=True, device_type="SERVER")[0]
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    host, port = '0.0.0.0', 12345
+    server_socket.bind((host, port))
+    server_socket.listen(1)
+    logger.info(f"Server is listening on {host}:{port}...")
 
-# Use DeviceMgr to create the server socket
-host = '0.0.0.0'  # Listen on all available interfaces
-port = 12345
-server_socket = device_mgr.create_server_socket(host, port)
-logger.info(f"Server is listening on {host}:{port}...")
+    conn, addr = server_socket.accept()
+    logger.info(f"Connected by {addr}")
 
-conn, addr = server_socket.accept()
-logger.info(f"Connected by {addr}")
-logger.info(f"Using device: {device}")
+    data_utils = DataUtils()
+    detection_utils = DetectionUtils(experiment_config['CLASS_NAMES'], str(experiment_config['FONT_PATH']))
 
-# Process data
-model.eval()
+    try:
+        while True:
+            split_layer_index_bytes = conn.recv(4)
+            if not split_layer_index_bytes:
+                logger.info("Client disconnected")
+                break
+            split_layer_index = int.from_bytes(split_layer_index_bytes, 'big')
 
-# Server Code Snippet for Processing Each Image
-try:
-    while True:
-        # Receiving split layer index
-        split_layer_index_bytes = conn.recv(4)
-        if not split_layer_index_bytes:
-            break
-        split_layer_index = int.from_bytes(split_layer_index_bytes, 'big')
+            length_data = conn.recv(4)
+            expected_length = int.from_bytes(length_data, 'big')
+            logger.debug(f"Expected compressed data length: {expected_length}")
 
-        # Receiving data length
-        length_data = conn.recv(4)
-        expected_length = int.from_bytes(length_data, 'big')
+            compressed_data = data_utils.receive_full_message(conn, expected_length)
+            logger.debug(f"Received compressed data of size: {len(compressed_data)}")
 
-        # Receiving compressed data
-        compressed_data = DataUtils.receive_full_message(conn, expected_length)
- 
-        # Assuming decompress_data function returns the deserialized object
-        received_data = DataUtils.decompress_data(compressed_data)
+            received_data = data_utils.decompress_data(compressed_data)
+            out, original_img_size = received_data
 
-        # Unpack the received data
-        out, original_img_size = received_data
+            server_start_time = time.time()
+            with torch.no_grad():
+                if isinstance(out, NotDict):
+                    inner_dict = out.inner_dict
+                    for key, value in inner_dict.items():
+                        if isinstance(value, torch.Tensor):
+                            inner_dict[key] = value.to(model.device)
+                            logger.debug(f"Intermediate tensors of {key} moved to the correct device.")
+                else:
+                    logger.warning("out is not an instance of NotDict")
+                
+                res, layer_outputs = model(out, start=split_layer_index)
+                detections = detection_utils.postprocess(res, original_img_size)
 
-        # Start timing server processing
-        server_start_time = time.time()
+            server_processing_time = time.time() - server_start_time
 
-        with torch.no_grad():
-            if isinstance(out, NotDict):
-                inner_dict = out.inner_dict  # Access the inner dictionary
-                # Move all tensors in the dictionary to the correct device
-                for key in inner_dict:
-                    if isinstance(inner_dict[key], torch.Tensor):
-                        inner_dict[key] = inner_dict[key].to(model.device)  # Move tensors to the correct device
-                        logger.debug(f"Intermediate tensors of {key} moved to the correct device.")
-            else:
-                logger.warning("out is not an instance of NotDict")
-            res, layer_outputs = model(out, start=split_layer_index)
-            detection_utils = DetectionUtils(class_names=class_names, font_path=font_path)
-            detections = detection_utils.postprocess(res, original_img_size)
+            response_data = pickle.dumps((detections, server_processing_time))
+            conn.sendall(response_data)
+            logger.debug(f"Sent response data of size: {len(response_data)} bytes")
 
-        # End timing server processing
-        server_processing_time = time.time() - server_start_time
+    except Exception as e:
+        logger.error(f"Encountered exception: {e}", exc_info=True)
+    finally:
+        conn.close()
+        server_socket.close()
+        logger.info("Server socket closed.")
 
-        # Send back prediction and server processing time
-        response_data = pickle.dumps((detections, server_processing_time))
-        conn.sendall(response_data)
-
-except Exception as e:
-    logger.error(f"Encountered exception: {e}")
-finally:
-    conn.close()
-    server_socket.close()
-    logger.info("Server socket closed.")
-
-
-
+if __name__ == "__main__":
+    config, experiment_config = get_experiment_configs()
+    run_experiment(config, experiment_config)
