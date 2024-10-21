@@ -4,6 +4,7 @@
 
 import os
 import sys
+import time
 import logging
 from typing import Any, List, Tuple
 import numpy as np
@@ -281,3 +282,24 @@ class DataUtils:
             data_chunks.append(chunk)
             bytes_recd += len(chunk)
         return b''.join(data_chunks)
+    
+    @staticmethod
+    def receive_data(conn):
+        split_layer_index_bytes = conn.recv(4)
+        if not split_layer_index_bytes:
+            return None
+        split_layer_index = int.from_bytes(split_layer_index_bytes, 'big')
+
+        length_data = conn.recv(4)
+        expected_length = int.from_bytes(length_data, 'big')
+
+        compressed_data = DataUtils.receive_full_message(conn, expected_length)
+        received_data = DataUtils.decompress_data(compressed_data)
+
+        return (*received_data, split_layer_index)
+
+    @staticmethod
+    def send_result(conn, result):
+        server_processing_time = time.time()
+        response_data = pickle.dumps((result, server_processing_time))
+        conn.sendall(response_data)

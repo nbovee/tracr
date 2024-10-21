@@ -155,8 +155,7 @@ class SSHConnectionParams:
 class Device:
     """A basic interface for keeping track of devices."""
 
-    def __init__(self, name: str, record: dict) -> None:
-        self._name = name
+    def __init__(self, record: dict) -> None:
         self._type = record["device_type"]
         self._cparams = [
             SSHConnectionParams.from_dict(d) for d in record["connection_params"]
@@ -165,18 +164,17 @@ class Device:
         self.working_cparams = next(
             (p for p in self._cparams if p.host_reachable()), None
         )
-        logger.info(f"Initialized Device {name} of type {self._type}")
+        logger.info(f"Initialized Device of type {self._type}")
         if self.working_cparams:
-            logger.info(f"Device {name} is reachable")
+            logger.info(f"Device is reachable")
         else:
-            logger.warning(f"Device {name} is not reachable")
+            logger.warning(f"Device is not reachable")
 
     def is_reachable(self) -> bool:
         return self.working_cparams is not None
 
     def serialized(self) -> tuple[str, dict[str, Union[str, bool]]]:
-        return self._name, {
-            "device_type": self._type,
+        return self._type, {
             "connection_params": [c.as_dict() for c in self._cparams],
         }
 
@@ -191,7 +189,7 @@ class Device:
 
     def as_pb_sshmachine(self) -> SshMachine:
         if self.working_cparams is not None:
-            logger.debug(f"Creating SshMachine for device {self._name}")
+            logger.debug(f"Creating SshMachine for device {self._type}")
             return SshMachine(
                 self.working_cparams.host,
                 user=self.working_cparams.user,
@@ -200,10 +198,10 @@ class Device:
             )
         else:
             logger.error(
-                f"Cannot create SshMachine for device {self._name}: not available"
+                f"Cannot create SshMachine for device {self._type}: not available"
             )
             raise DeviceUnavailableException(
-                f"Cannot make plumbum object from device {self._name}: not available."
+                f"Cannot make plumbum object from device {self._type}: not available."
             )
 
 
@@ -222,18 +220,32 @@ class DeviceMgr:
         self._load()
         logger.info(f"DeviceMgr initialized with {len(self.devices)} devices")
 
-    def get_devices(self, available_only: bool = False) -> List[Device]:
-        devices = [d for d in self.devices if not available_only or d.is_reachable()]
+    def get_devices(self, available_only: bool = False, device_type: str = None) -> List[Device]:
+        devices = [d for d in self.devices 
+                   if (not available_only or d.is_reachable()) and
+                   (device_type is None or d._type == device_type)]
         logger.info(
-            f"Retrieved {len(devices)} devices (available_only={available_only})"
+            f"Retrieved {len(devices)} devices (available_only={available_only}, device_type={device_type})"
         )
         return devices
+
+    def create_server_socket(self, host, port):
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.bind((host, port))
+        except OSError:
+            logger.warning(f"Could not bind to {host}. Falling back to all available interfaces.")
+            host = ''
+            sock.bind((host, port))
+        sock.listen(1)
+        return sock
 
     def _load(self) -> None:
         logger.info(f"Loading devices from {self.datafile_path}")
         with open(self.datafile_path) as file:
             data = yaml.load(file, Loader=yaml.SafeLoader)
-        self.devices = [Device(dname, drecord) for dname, drecord in data.items()]
+        self.devices = [Device(drecord) for drecord in data['devices']]
         logger.info(f"Loaded {len(self.devices)} devices")
 
     def _save(self) -> None:

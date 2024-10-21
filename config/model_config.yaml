@@ -22,6 +22,7 @@ default:
   run_on_edge: false           # Flag to determine if running on Edge device (true) or locally (false)
   log_level: INFO              # Default log level (INFO, DEBUG, ERROR)
   log_file: logs/app.log       # Default log file (null for no file logging)
+  font_path: fonts/DejaVuSans-Bold.ttf
 
 
 # All top-level keys must be singular, e.g., dataset, dataloader, model

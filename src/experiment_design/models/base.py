@@ -41,6 +41,7 @@ class BaseModel(nn.Module):
 
         # Initialize the model
         self.model = self.load_model()
+        self.total_layers = len(list(self.model.children()))
         self.to_device()
         self.set_mode(self.mode)
         logger.info("BaseModel initialization complete")

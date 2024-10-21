@@ -44,7 +44,7 @@ def main():
     devices_config = read_yaml_file(CONFIG_PATH)
 
     # Get the racr device configuration
-    racr_config = devices_config["devices"]["racr"]
+    racr_config = devices_config["devices"][1]
     host = racr_config["connection_params"][0]["host"]
     user = racr_config["connection_params"][0]["user"]
     pkey_fp = racr_config["connection_params"][0]["pkey_fp"]
