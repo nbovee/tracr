@@ -16,7 +16,7 @@ logger = setup_logger()
 
 # Configuration
 LOCAL_REPO_PATH = project_root
-REMOTE_TMP_DIR = "/tmp/RACR_AI"
+REMOTE_TMP_DIR = "/tmp/RACR_AI_TEST"
 CONFIG_PATH = project_root / "config/devices_config.yaml"
 
 # Excluded files and directories
@@ -25,8 +25,17 @@ EXCLUDES = [
     ".git",
     "__pycache__",
     "venv",
-    "data/runs",
+    "data/imagenet",
+    "data/imagenet2_tr",
+    "data/imagenet10_tr",
+    "data/imagenet50_tr",
+    "data/imagenet100_tr",
     "results",
+    "src/experiment_design/models1/",
+    "src/experiment_design/partitioners/",
+    "tests/",
+    "logs/",
+    "scripts/"
 ]
 
 

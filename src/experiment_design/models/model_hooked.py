@@ -76,8 +76,6 @@ class WrappedModel(BaseModel):
         self.model_stop_i: Optional[int] = None
         self.banked_input: Optional[Any] = None
         self.log = False
-
-        self.node_name = config.get("default", {}).get("device_type", "UNKNOWN")
         self.power_meter = PowerMeter(
             self.device
         )  # Implement a PowerMeter class to measure power usage
@@ -137,6 +135,9 @@ class WrappedModel(BaseModel):
                     )
                     self.forward_hooks.append(pre_hook)
                     self.forward_post_hooks.append(post_hook)
+                    logger.debug(
+                        f"{'-'*depth}Layer {walk_i}: {child_name} had hooks applied."
+                    )
                     walk_i += 1
         return walk_i
 

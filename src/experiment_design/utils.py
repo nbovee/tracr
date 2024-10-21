@@ -7,6 +7,8 @@ import sys
 import logging
 from typing import Any, List, Tuple
 import numpy as np
+import blosc2 # type: ignore
+import pickle
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
@@ -246,3 +248,36 @@ class DetectionUtils:
 
         logger.info("Finished drawing all detections")
         return image
+
+
+class DataUtils:
+    """Utility class for data handling."""
+
+    def __init__(self):
+        pass
+
+
+    @staticmethod
+    def compress_data(data):
+        serialized_data = pickle.dumps(data)
+        compressed_data = blosc2.compress(serialized_data, clevel=4, filter=blosc2.Filter.SHUFFLE, codec=blosc2.Codec.ZSTD)
+        size_bytes = len(compressed_data)
+        return compressed_data,size_bytes
+
+    @staticmethod
+    def decompress_data(compressed_data):
+        decompressed_data = blosc2.decompress(compressed_data)
+        data = pickle.loads(decompressed_data)
+        return data
+    
+    @staticmethod
+    def receive_full_message(conn, expected_length):
+        data_chunks = []
+        bytes_recd = 0
+        while bytes_recd < expected_length:
+            chunk = conn.recv(min(expected_length - bytes_recd, 4096))
+            if chunk == b'':
+                raise RuntimeError("Socket connection broken")
+            data_chunks.append(chunk)
+            bytes_recd += len(chunk)
+        return b''.join(data_chunks)
