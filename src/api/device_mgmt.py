@@ -8,6 +8,7 @@ import ipaddress
 import pathlib
 import yaml
 from typing import Union, List
+from pathlib import Path
 
 from plumbum import SshMachine
 from concurrent.futures import ThreadPoolExecutor
@@ -129,6 +130,12 @@ class SSHConnectionParams:
     def _set_pkey(self, rsa_pkey_path: Union[pathlib.Path, str]) -> None:
         if not isinstance(rsa_pkey_path, pathlib.Path):
             rsa_pkey_path = pathlib.Path(rsa_pkey_path)
+        
+        # If the path is not absolute, assume it's relative to the project root
+        if not rsa_pkey_path.is_absolute():
+            project_root = Path(__file__).resolve().parents[2]
+            rsa_pkey_path = project_root / rsa_pkey_path
+
         expanded_path = rsa_pkey_path.absolute().expanduser()
 
         if expanded_path.exists() and expanded_path.is_file():
@@ -216,7 +223,8 @@ class DeviceMgr:
         raise FileNotFoundError(f"Devices config file not found at {DATAFILE_PATH}")
 
     def __init__(self, dfile_path: Union[pathlib.Path, None] = None) -> None:
-        self.datafile_path = dfile_path or self.DATAFILE_PATH
+        self.project_root = Path(__file__).resolve().parents[2]  # Go up 3 levels to reach project root
+        self.datafile_path = dfile_path or (self.project_root / "config" / "devices_config.yaml")
         self._load()
         logger.info(f"DeviceMgr initialized with {len(self.devices)} devices")
 
@@ -244,6 +252,13 @@ class DeviceMgr:
         logger.info(f"Loading devices from {self.datafile_path}")
         with open(self.datafile_path) as file:
             data = yaml.load(file, Loader=yaml.SafeLoader)
+        
+        # Update key paths to be relative to project root
+        for device in data['devices']:
+            for conn_param in device['connection_params']:
+                if 'pkey_fp' in conn_param:
+                    conn_param['pkey_fp'] = str(self.project_root / 'config' / 'pkeys' / os.path.basename(conn_param['pkey_fp']))
+        
         self.devices = [Device(drecord) for drecord in data['devices']]
         logger.info(f"Loaded {len(self.devices)} devices")
 

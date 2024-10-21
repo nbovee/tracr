@@ -78,12 +78,7 @@ class OnionDataset(BaseDataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Image.Image, str]:
         """Retrieves the image and its filename at the specified index."""
         if idx < 0 or idx >= self.length:
-            logger.error(
-                f"Index {idx} out of range for dataset with length {self.length}."
-            )
-            raise IndexError(
-                f"Index {idx} out of range for dataset with length {self.length}."
-            )
+            raise IndexError(f"Index {idx} out of range for dataset with length {self.length}.")
 
         img_path = self.image_files[idx]
         try:

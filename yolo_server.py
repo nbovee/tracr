@@ -14,6 +14,7 @@ sys.path.append(str(project_root))
 from src.experiment_design.models.model_hooked import WrappedModel, NotDict
 from src.experiment_design.utils import DataUtils, DetectionUtils
 from src.utils.utilities import read_yaml_file
+from src.api.device_mgmt import DeviceMgr
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -42,60 +43,73 @@ def run_experiment(config: Dict[str, Any], experiment_config: Dict[str, Any]):
     model.to(experiment_config['device'])
     model.eval()
 
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    host, port = '0.0.0.0', 12345
-    server_socket.bind((host, port))
-    server_socket.listen(1)
-    logger.info(f"Server is listening on {host}:{port}...")
+    device_mgr = DeviceMgr()
+    server_devices = device_mgr.get_devices(available_only=True, device_type="SERVER")
+    if not server_devices:
+        logger.error("No available server devices found.")
+        return
 
-    conn, addr = server_socket.accept()
-    logger.info(f"Connected by {addr}")
-
-    data_utils = DataUtils()
-    detection_utils = DetectionUtils(experiment_config['CLASS_NAMES'], str(experiment_config['FONT_PATH']))
+    server_device = server_devices[0]
+    host = server_device.working_cparams.host
+    port = 12345
 
     try:
-        while True:
-            split_layer_index_bytes = conn.recv(4)
-            if not split_layer_index_bytes:
-                logger.info("Client disconnected")
-                break
-            split_layer_index = int.from_bytes(split_layer_index_bytes, 'big')
-
-            length_data = conn.recv(4)
-            expected_length = int.from_bytes(length_data, 'big')
-            logger.debug(f"Expected compressed data length: {expected_length}")
-
-            compressed_data = data_utils.receive_full_message(conn, expected_length)
-            logger.debug(f"Received compressed data of size: {len(compressed_data)}")
-
-            received_data = data_utils.decompress_data(compressed_data)
-            out, original_img_size = received_data
-
-            server_start_time = time.time()
-            with torch.no_grad():
-                if isinstance(out, NotDict):
-                    inner_dict = out.inner_dict
-                    for key, value in inner_dict.items():
-                        if isinstance(value, torch.Tensor):
-                            inner_dict[key] = value.to(model.device)
-                            logger.debug(f"Intermediate tensors of {key} moved to the correct device.")
-                else:
-                    logger.warning("out is not an instance of NotDict")
-                
-                res, layer_outputs = model(out, start=split_layer_index)
-                detections = detection_utils.postprocess(res, original_img_size)
-
-            server_processing_time = time.time() - server_start_time
-
-            response_data = pickle.dumps((detections, server_processing_time))
-            conn.sendall(response_data)
-            logger.debug(f"Sent response data of size: {len(response_data)} bytes")
-
+        server_socket = device_mgr.create_server_socket(host, port)
+        logger.info(f"Server is listening on {host}:{port}...")
     except Exception as e:
-        logger.error(f"Encountered exception: {e}", exc_info=True)
+        logger.error(f"Failed to create server socket: {e}")
+        return
+
+    try:
+        conn, addr = server_socket.accept()
+        logger.info(f"Connected by {addr}")
+
+        data_utils = DataUtils()
+        detection_utils = DetectionUtils(experiment_config['CLASS_NAMES'], str(experiment_config['FONT_PATH']))
+
+        try:
+            while True:
+                split_layer_index_bytes = conn.recv(4)
+                if not split_layer_index_bytes:
+                    logger.info("Client disconnected")
+                    break
+                split_layer_index = int.from_bytes(split_layer_index_bytes, 'big')
+
+                length_data = conn.recv(4)
+                expected_length = int.from_bytes(length_data, 'big')
+                logger.debug(f"Expected compressed data length: {expected_length}")
+
+                compressed_data = data_utils.receive_full_message(conn, expected_length)
+                logger.debug(f"Received compressed data of size: {len(compressed_data)}")
+
+                received_data = data_utils.decompress_data(compressed_data)
+                out, original_img_size = received_data
+
+                server_start_time = time.time()
+                with torch.no_grad():
+                    if isinstance(out, NotDict):
+                        inner_dict = out.inner_dict
+                        for key, value in inner_dict.items():
+                            if isinstance(value, torch.Tensor):
+                                inner_dict[key] = value.to(model.device)
+                                logger.debug(f"Intermediate tensors of {key} moved to the correct device.")
+                    else:
+                        logger.warning("out is not an instance of NotDict")
+                    
+                    res, layer_outputs = model(out, start=split_layer_index)
+                    detections = detection_utils.postprocess(res, original_img_size)
+
+                server_processing_time = time.time() - server_start_time
+
+                response_data = data_utils.compress_data((detections, server_processing_time))
+                conn.sendall(response_data[0])
+                logger.debug(f"Sent response data of size: {response_data[1]} bytes")
+
+        except Exception as e:
+            logger.error(f"Encountered exception: {e}", exc_info=True)
     finally:
-        conn.close()
+        if 'conn' in locals():
+            conn.close()
         server_socket.close()
         logger.info("Server socket closed.")
 

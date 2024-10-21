@@ -1,17 +1,15 @@
-import os
-import pickle
-import time
-import socket
 import logging
-import torch
+import socket
 import sys
+import time
 from pathlib import Path
-import torchvision.transforms as transforms # type: ignore
-from torch.utils.data import DataLoader # type: ignore
-from PIL import Image # type: ignore
-from tqdm import tqdm
-import pandas as pd
 from typing import Dict, Any, Tuple, List
+
+import torch
+import pandas as pd
+from tqdm import tqdm
+from torch.utils.data import DataLoader
+from PIL import Image
 
 # Add the project root to the Python path
 project_root = Path(__file__).resolve().parent
@@ -21,6 +19,7 @@ from src.experiment_design.models.model_hooked import WrappedModel
 from src.experiment_design.datasets.dataloader import DataManager
 from src.experiment_design.utils import DataUtils
 from src.utils.utilities import read_yaml_file
+from src.api.device_mgmt import DeviceMgr
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("yolo_host")
@@ -42,18 +41,17 @@ def get_experiment_configs() -> Dict[str, Any]:
     logger.info(f"Experiment configuration loaded. Using device: {experiment_config['device']}")
     return config, experiment_config
 
+def custom_collate_fn(batch: List[Tuple[torch.Tensor, Image.Image, str]]) -> Tuple[torch.Tensor, List[Image.Image], List[str]]:
+    """Custom collate function to handle batches with PIL Images."""
+    tensors, images, filenames = zip(*batch)
+    return torch.stack(tensors), list(images), list(filenames)
+
 def setup_dataloader(config: Dict[str, Any], experiment_config: Dict[str, Any]) -> DataLoader:
     """Set up and return the DataLoader."""
     dataset_config = config["dataset"][experiment_config["DATASET_NAME"]]
     dataloader_config = config["dataloader"]
 
-    transform = transforms.Compose([
-        transforms.Resize((640, 640)),
-        transforms.ToTensor()
-    ])
-
-    dataset_config["args"]["transform"] = transform
-    dataset_config["args"]["root"] = str(project_root / dataset_config["args"]["root"])
+    dataset_config["args"]["root"] = project_root / dataset_config["args"]["root"]
 
     final_config = {"dataset": dataset_config, "dataloader": dataloader_config}
     dataset = DataManager.get_dataset(final_config)
@@ -63,10 +61,10 @@ def setup_dataloader(config: Dict[str, Any], experiment_config: Dict[str, Any]) 
         batch_size=dataloader_config["batch_size"],
         shuffle=dataloader_config["shuffle"],
         num_workers=dataloader_config["num_workers"],
-        collate_fn=lambda batch: (torch.stack([item[0] for item in batch]), [item[1] for item in batch], [item[2] for item in batch])
+        collate_fn=custom_collate_fn
     )
 
-def test_split_performance(model: WrappedModel, data_loader: DataLoader, client_socket: socket.socket, split_layer_index: int) -> Tuple[float, float, float, float]:
+def test_split_performance(model: WrappedModel, data_loader, client_socket: socket.socket, split_layer_index: int) -> Tuple[float, float, float, float]:
     """Test the performance of a specific split layer."""
     host_times, travel_times, server_times = [], [], []
     data_utils = DataUtils()
@@ -87,7 +85,7 @@ def test_split_performance(model: WrappedModel, data_loader: DataLoader, client_
             client_socket.sendall(compressed_output)
 
             data = client_socket.recv(4096)
-            prediction, server_processing_time = pickle.loads(data)
+            prediction, server_processing_time = data_utils.decompress_data(data)
             travel_end_time = time.time()
             travel_times.append(travel_end_time - travel_start_time)
             server_times.append(server_processing_time)
@@ -108,10 +106,35 @@ def run_experiment(config: Dict[str, Any], experiment_config: Dict[str, Any]):
 
     data_loader = setup_dataloader(config, experiment_config)
 
-    server_address = ('10.0.0.245', 12345)  # Update with your server's address
+    device_mgr = DeviceMgr()
+    server_devices = device_mgr.get_devices(available_only=True, device_type="SERVER")
+    if not server_devices:
+        logger.error("No available server devices found.")
+        return
+
+    server_device = server_devices[0]
+    server_address = (server_device.working_cparams.host, 12345)  # Assuming port 12345
+    logger.info(f"Attempting to connect to server at {server_address}")
+
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect(server_address)
-    logger.info(f"Connected to server at {server_address}")
+    max_retries = 5
+    retry_delay = 5  # seconds
+
+    for attempt in range(max_retries):
+        try:
+            client_socket.connect(server_address)
+            logger.info(f"Connected to server at {server_address}")
+            break
+        except ConnectionRefusedError:
+            if attempt < max_retries - 1:
+                logger.warning(f"Connection refused. Retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+                time.sleep(retry_delay)
+            else:
+                logger.error(f"Failed to connect to server after {max_retries} attempts. Please check if the server is running and the address is correct.")
+                return
+        except Exception as e:
+            logger.error(f"Unexpected error while connecting to server: {e}")
+            return
 
     total_layers = 23  # Adjust this based on your model architecture
     time_taken = []
