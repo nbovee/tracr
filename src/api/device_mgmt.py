@@ -230,7 +230,6 @@ class DeviceMgr:
         return devices
 
     def create_server_socket(self, host, port):
-        import socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             sock.bind((host, port))

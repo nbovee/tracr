@@ -1,6 +1,5 @@
 import logging
 import pickle
-import socket
 import sys
 import time
 from pathlib import Path
@@ -11,11 +10,12 @@ import torch
 project_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(project_root))
 
+from src.api.device_mgmt import DeviceMgr
 from src.experiment_design.models.model_hooked import WrappedModel, NotDict
 from src.experiment_design.utils import DetectionUtils, DataUtils
 
 logging.basicConfig(level=logging.DEBUG)
-logging.getLogger("tracr_logger")
+logger = logging.getLogger("yolo_server")
 
 
 # ------------------ FIX THIS PART (START) ------------------
@@ -29,21 +29,20 @@ model = WrappedModel(config=yaml_file_path)
 
 # ------------------ FIX THIS PART (END) ------------------
 
+device_mgr = DeviceMgr()
+server_device = device_mgr.get_devices(available_only=True, device_type="SERVER")[0]
 
-
-
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-host = '0.0.0.0'
+# Use DeviceMgr to create the server socket
+host = '0.0.0.0'  # Listen on all available interfaces
 port = 12345
-server_socket.bind((host, port))
-server_socket.listen(1)
-print("Server is listening...")
+server_socket = device_mgr.create_server_socket(host, port)
+logger.info(f"Server is listening on {host}:{port}...")
 
 conn, addr = server_socket.accept()
-print(f"Connected by {addr}")
-print(device)
+logger.info(f"Connected by {addr}")
+logger.info(f"Using device: {device}")
 
- # Process data
+# Process data
 model.eval()
 
 # Server Code Snippet for Processing Each Image
@@ -78,9 +77,9 @@ try:
                 for key in inner_dict:
                     if isinstance(inner_dict[key], torch.Tensor):
                         inner_dict[key] = inner_dict[key].to(model.device)  # Move tensors to the correct device
-                        print(f"Intermediate tensors of {key} moved to the correct device.")
+                        logger.debug(f"Intermediate tensors of {key} moved to the correct device.")
             else:
-                print("out is not an instance of NotDict")
+                logger.warning("out is not an instance of NotDict")
             res, layer_outputs = model(out, start=split_layer_index)
             detection_utils = DetectionUtils(class_names=class_names, font_path=font_path)
             detections = detection_utils.postprocess(res, original_img_size)
@@ -93,11 +92,11 @@ try:
         conn.sendall(response_data)
 
 except Exception as e:
-    print(f"Encountered exception: {e}")
+    logger.error(f"Encountered exception: {e}")
 finally:
     conn.close()
     server_socket.close()
-    print("Server socket closed.")
+    logger.info("Server socket closed.")
 
 
 

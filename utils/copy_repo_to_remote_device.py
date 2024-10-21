@@ -31,7 +31,6 @@ EXCLUDES = [
     "data/imagenet50_tr",
     "data/imagenet100_tr",
     "results",
-    "src/experiment_design/models1/",
     "src/experiment_design/partitioners/",
     "tests/",
     "logs/",

@@ -5,11 +5,18 @@ import socket
 import os
 import logging
 import torch
+import sys
+from pathlib import Path
 import torchvision.transforms as transforms # type: ignore
 from torch.utils.data import DataLoader, Dataset # type: ignore
 from PIL import Image # type: ignore
 from tqdm import tqdm
 import pandas as pd
+
+# Add the project root to the Python path
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
+
 from src.experiment_design.models.model_hooked import WrappedModel
 from src.experiment_design.datasets.dataloader import DataManager
 from src.experiment_design.utils import DataUtils
