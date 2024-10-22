@@ -4,7 +4,7 @@
 # ------------------------------
 split_inference:
   enabled: true
-  participants: ["PARTICIPANT"]  # Only one participant (Jetson Orin)
+  participants: ["PARTICIPANT"]
   server: "SERVER"
 
 
