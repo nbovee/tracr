@@ -57,15 +57,23 @@ class Server:
     def handle_connection(self, conn: socket.socket):
         try:
             experiment_config = self.data_utils.receive_data(conn)
+            if experiment_config is None:
+                logger.error("Received None experiment_config")
+                return
+
             experiment = self.experiment_mgr.setup_experiment(experiment_config)
 
             while True:
                 data = self.data_utils.receive_data(conn)
                 if data is None:
-                    logger.info("Client disconnected")
+                    logger.info("Client disconnected or sent None data")
                     break
 
-                result = self.experiment_mgr.process_data(experiment, data)
+                result = experiment.process_data(data)
+                if result is None:
+                    logger.warning("process_data returned None result")
+                    result = {'error': 'Processing failed'}
+
                 self.data_utils.send_result(conn, result)
 
         except Exception as e:

@@ -37,6 +37,12 @@ def read_yaml_file(path: Any) -> Dict[str, Any]:
         raise
 
 
+def load_text_file(path: Any) -> str:
+    """Loads and returns the contents of a text file."""
+    with open(path, "r", encoding="utf-8") as file:
+        return file.read()
+
+
 def get_repo_root(markers: Optional[List[str]] = None) -> Path:
     """Returns the root directory of the repository as a pathlib.Path object."""
     if markers is None:

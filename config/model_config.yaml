@@ -3,7 +3,7 @@
 # EXPERIMENT CONFIGURATIONS
 # -------------------------
 experiment:
-  type: yolo
+  type: alexnet
   port: 12345
   host_script: experiment_host.py
 
@@ -25,12 +25,12 @@ default:
   depth: 2                     # Depth for recursive model exploration
   flush_buffer_size: 100       # Number of inferences before flushing results to storage
   warmup_iterations: 10        # Number of warmup iterations to stabilize model performance
-  default_model: yolo          # Default model to use (current options: alexnet, yolo, custom)
-  default_dataset: onion       # Default dataset to use (current options: onion, imagenet)
+  default_model: alexnet          # Default model to use (current options: alexnet, yolo, custom)
+  default_dataset: imagenet       # Default dataset to use (current options: onion, imagenet)
   run_on_edge: false           # Flag to determine if running on Edge device (true) or locally (false)
   log_level: INFO              # Default log level (INFO, DEBUG, ERROR)
   log_file: logs/app.log       # Default log file (null for no file logging)
-  font_path: fonts/DejaVuSans-Bold.ttf
+  font_path: "fonts/DejaVuSans-Bold.ttf"
 
 
 # All top-level keys must be singular, e.g., dataset, dataloader, model
@@ -49,7 +49,7 @@ model:
     save_layers: [2, 4, 6]     # Layer indices to save intermediate outputs
     log_file: logs/alexnet.log # Log file for the model
     num_classes: null          # This will be set dynamically in the script
-    total_layers: 10           # Total number of layers in the model
+    total_layers: 8            # Total number of layers in the model
 
   yolo:
     model_name: yolov8s        # YOLO model variant (e.g., yolov8s, yolov8m, yolov8l)
@@ -57,7 +57,7 @@ model:
     pretrained: false          # Whether to use pretrained weights
     weight_path: data/onion/weights/best.pt  # Path to custom weights file
     input_size: [3, 224, 224]  # Input tensor size [channels, height, width]
-    split_layer: 5             # Layer to split the model at
+    split_layer: 10            # Layer to split the model at
     hook_style: post           # Hook insertion style ('pre' or 'post')
     save_layers: [2, 4, 6]     # Layer indices to save intermediate outputs
     log_file: logs/yolo.log    # Log file for the model
@@ -88,9 +88,9 @@ dataset:
   imagenet:
     module: imagenet           # Python module name for the dataset
     class: ImagenetDataset     # Class name of the dataset
-    class_names: null          # Class names for the dataset
+    class_names: "data/imagenet/imagenet_classes.txt" # Class names for the dataset
     args:
-      root: data/imagenet      # Root directory of the dataset
+      root: data/imagenet # Root directory of the dataset
       transform: null          # Data transformations (null for default)
       max_samples: -1          # Maximum number of samples to load (-1 for all samples)
 

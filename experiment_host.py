@@ -5,7 +5,7 @@ import socket
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Optional
 
 import torch
 import pandas as pd
@@ -13,14 +13,14 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 from PIL import Image
 
-project_root = Path(__file__).resolve().parents[3]
+project_root = Path(__file__).resolve().parent
 sys.path.append(str(project_root))
 
-from src.api.device_mgmt import DeviceMgr
 from src.experiment_design.models.model_hooked import WrappedModel
 from src.experiment_design.datasets.dataloader import DataManager
 from src.utils.ml_utils import DataUtils
-from src.utils.system_utils import read_yaml_file
+from src.utils.system_utils import read_yaml_file, load_text_file
+from src.api.device_mgmt import DeviceMgr
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("experiment_host")
@@ -38,6 +38,9 @@ def get_experiment_configs() -> Dict[str, Any]:
         "SPLIT_LAYER": config["model"][config["default"]["default_model"]]["split_layer"],
         "device": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     }
+
+    if isinstance(experiment_config["CLASS_NAMES"], str):
+        experiment_config["CLASS_NAMES"] = load_text_file(experiment_config["CLASS_NAMES"])
 
     logger.info(f"Experiment configuration loaded. Using device: {experiment_config['device']}")
     return config, experiment_config
@@ -69,32 +72,56 @@ def test_split_performance(model: WrappedModel, data_loader: DataLoader, client_
 
     with torch.no_grad():
         for input_tensor, original_images, _ in tqdm(data_loader, desc=f"Testing split at layer {split_layer_index}"):
-            host_start_time = time.time()
-            input_tensor = input_tensor.to(model.device)
-            out = model(input_tensor, end=split_layer_index)
-            data_to_send = {
-                'input': (out, original_images[0].size),
-                'split_layer': split_layer_index
-            }
-            compressed_output, compressed_size = data_utils.compress_data(data_to_send)
-            host_end_time = time.time()
-            host_times.append(host_end_time - host_start_time)
+            try:
+                host_start_time = time.time()
+                input_tensor = input_tensor.to(model.device)
+                out = model(input_tensor, end=split_layer_index)
+                data_to_send = {
+                    'input': (out, input_tensor.shape[-2:]),
+                    'split_layer': split_layer_index
+                }
+                compressed_output, compressed_size = data_utils.compress_data(data_to_send)
+                host_end_time = time.time()
+                host_times.append(host_end_time - host_start_time)
 
-            travel_start_time = time.time()
-            data_utils.send_result(client_socket, data_to_send)
+                travel_start_time = time.time()
+                data_utils.send_result(client_socket, data_to_send)
 
-            result = data_utils.receive_data(client_socket)
-            travel_end_time = time.time()
-            travel_times.append(travel_end_time - travel_start_time)
-            server_times.append(result.get('server_processing_time', 0))
+                result = data_utils.receive_data(client_socket)
+                travel_end_time = time.time()
+                travel_times.append(travel_end_time - travel_start_time)
+                
+                if result is not None:
+                    server_times.append(result.get('server_processing_time', 0))
+                else:
+                    logger.warning(f"Received None result for split layer {split_layer_index}")
+                    server_times.append(0)
+            except (BrokenPipeError, ConnectionResetError) as e:
+                logger.error(f"Connection error: {e}. Attempting to reconnect...")
+                # client_socket = reconnect_to_server(server_address)
+                # if client_socket is None:
+                #     logger.error("Failed to reconnect. Aborting experiment.")
+                #     return sum(host_times), sum(travel_times), sum(server_times), sum(host_times) + sum(travel_times) + sum(server_times)
 
     total_host_time = sum(host_times)
-    total_travel_time = sum(travel_times) - sum(server_times)
+    total_travel_time = sum(travel_times)
     total_server_time = sum(server_times)
     total_processing_time = total_host_time + total_travel_time + total_server_time
 
     logger.info(f"Total Host Time: {total_host_time:.2f} s, Total Travel Time: {total_travel_time:.2f} s, Total Server Time: {total_server_time:.2f} s")
     return total_host_time, total_travel_time, total_server_time, total_processing_time
+
+def reconnect_to_server(server_address: Tuple[str, int], max_retries: int = 5, retry_delay: int = 5) -> Optional[socket.socket]:
+    for attempt in range(max_retries):
+        try:
+            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client_socket.connect(server_address)
+            logger.info(f"Reconnected to server at {server_address}")
+            return client_socket
+        except ConnectionRefusedError:
+            logger.warning(f"Reconnection attempt {attempt + 1}/{max_retries} failed. Retrying in {retry_delay} seconds...")
+            time.sleep(retry_delay)
+    return None
 
 def connect_to_server(server_address: Tuple[str, int], max_retries: int = 5, retry_delay: int = 5) -> socket.socket:
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -159,8 +186,8 @@ def run_experiment(config: Dict[str, Any], experiment_config: Dict[str, Any]):
     logger.info(f"Best split at layer {best_split} with time {min_time:.2f} seconds")
 
     df = pd.DataFrame(time_taken, columns=["Split Layer Index", "Host Time", "Travel Time", "Server Time", "Total Processing Time"])
-    df.to_excel("split_layer_times.xlsx", index=False)
-    logger.info("Data saved to split_layer_times.xlsx")
+    df.to_excel(f"{experiment_config['type']}_split_layer_times.xlsx", index=False)
+    logger.info(f"Data saved to {experiment_config['type']}_split_layer_times.xlsx")
 
     client_socket.close()
 
