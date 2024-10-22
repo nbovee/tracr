@@ -1,6 +1,4 @@
 import logging
-import pickle
-import socket
 import time
 from pathlib import Path
 import sys
@@ -12,13 +10,13 @@ project_root = Path(__file__).resolve().parent
 sys.path.append(str(project_root))
 
 from src.experiment_design.models.model_hooked import WrappedModel, NotDict
-from src.experiment_design.utils import DataUtils, DetectionUtils
-from src.utils.utilities import read_yaml_file
+from src.utils.ml_utils import DataUtils, DetectionUtils
+from src.utils.system_utils import read_yaml_file
 from src.api.device_mgmt import DeviceMgr
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger("yolo_server")
+logger = logging.getLogger("SERVER")
 
 def get_experiment_configs() -> Dict[str, Any]:
     """Load and return experiment configurations."""

@@ -2,7 +2,7 @@
 
 import logging
 from typing import Any, Dict
-from src.utils.utilities import read_yaml_file
+from src.utils.system_utils import read_yaml_file
 from src.api.device_mgmt import DeviceMgr
 from src.utils.logger import setup_logger, DeviceType
 

@@ -8,7 +8,7 @@ import threading
 import pathlib
 from typing import Union, Optional, Dict, Any
 
-from .utilities import get_repo_root
+from .system_utils import get_repo_root
 from pathlib import Path
 
 logger = logging.getLogger(__name__)

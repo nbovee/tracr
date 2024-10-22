@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 from pathlib import Path
-from src.utils.utilities import get_repo_root
+from src.utils.system_utils import get_repo_root
 
 logger = logging.getLogger(__name__)
 

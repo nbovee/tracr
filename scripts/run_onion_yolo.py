@@ -20,8 +20,8 @@ if str(parent_dir) not in sys.path:
 from src.api.master_dict import MasterDict
 from src.experiment_design.models.model_hooked import WrappedModel, NotDict
 from src.experiment_design.datasets.dataloader import DataManager
-from src.experiment_design.utils import DetectionUtils
-from src.utils.utilities import read_yaml_file
+from src.utils.ml_utils import DetectionUtils
+from src.utils.system_utils import read_yaml_file
 
 
 # ----------- CONSTANTS AND CONFIGURATION -----------#

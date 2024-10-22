@@ -62,42 +62,24 @@
 # # On Edge device
 # sudo -l -U <edge_device_username>
 
-
 devices:
-  localhost:
-    device_type: SERVER
+  - device_type: SERVER
     connection_params:
-      - host: <localhost_ip_address>
+      - host: <server_ip_address>
         user: <username>
         pkey_fp: <path_to_pkey>
         default: true
-        services:
-          - description: "RPyC Registry"
-            command: "sudo systemctl start rpyc.service" # system-wide service (or provide full path if necessary)
-          - description: "Remote Log Server"
-            command: "sudo systemctl start remote_log_server.service"
-    
-  <other_device>:
-    device_type: PARTICIPANT
+
+  - device_type: PARTICIPANT
     connection_params:
-      - host: <device_ip_address>
-        user: <device_username>
+      - host: <participant_ip_address>
+        user: <username>
         pkey_fp: <path_to_pkey>
         default: true
-        services:
-          - description: "RPyC Registry"
-            command: "sudo systemctl start rpyc.service" # system-wide service (or provide full path if necessary)
 
+# SPLIT INFERENCE NETWORK CONFIGURATIONS
+split_inference_network:
+  server: SERVER
+  participants:
+    - PARTICIPANT
 
-required_ports:
-  - host: <device_ip_address>
-    port: <port_number> # 18811 for RPyC Registry
-    description: "<service_description>" # RPyC Registry
-
-  - host: <localhost_ip_address>
-    port: <port_number> # 18812 for RPyC Registry
-    description: "<service_description>" # RPyC Registry
-
-  - host: <localhost_ip_address>
-    port: <port_number> # 9000 for Remote Log Server
-    description: "<service_description>" # Remote Log Server

@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Dict, Optional
 from .registry import ModelRegistry
-from src.utils.utilities import get_repo_root, read_yaml_file
+from src.utils.system_utils import get_repo_root, read_yaml_file
 
 import numpy as np
 from PIL import Image

@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Optional, Dict, Any
 from logging.handlers import RotatingFileHandler, SocketHandler
 from rich.logging import RichHandler
-from .utilities import get_server_ip, get_repo_root
+from .system_utils import get_server_ip, get_repo_root
 
 # Constants
 LOGS_DIR = os.path.join(get_repo_root(), "logs")

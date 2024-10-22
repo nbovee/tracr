@@ -14,10 +14,10 @@ sys.path.append(str(project_root))
 
 from src.experiment_design.datasets.imagenet import ImagenetDataset
 from src.experiment_design.models.model_hooked import WrappedModel
-from src.utils.utilities import read_yaml_file
+from src.utils.system_utils import read_yaml_file
 from torch.utils.data import DataLoader
 from src.api.master_dict import MasterDict
-from src.experiment_design.utils import ClassificationUtils
+from src.utils.ml_utils import ClassificationUtils
 
 # Load configuration
 config = read_yaml_file(project_root / "config/model_config.yaml")

@@ -17,8 +17,8 @@ sys.path.append(str(project_root))
 
 from src.experiment_design.models.model_hooked import WrappedModel
 from src.experiment_design.datasets.dataloader import DataManager
-from src.experiment_design.utils import DataUtils
-from src.utils.utilities import read_yaml_file
+from src.utils.ml_utils import DataUtils
+from src.utils.system_utils import read_yaml_file
 from src.api.device_mgmt import DeviceMgr
 
 logging.basicConfig(level=logging.DEBUG)

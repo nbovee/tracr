@@ -278,6 +278,9 @@ class DetectionUtils:
 
 
 class DataUtils:
+    def __init__(self):
+        pass
+
     def compress_data(self, data):
         """Compress data using Blosc2."""
         serialized_data = pickle.dumps(data)
