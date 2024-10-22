@@ -34,7 +34,7 @@ EXCLUDES=(
 )
 
 # Log file
-LOG_FILE="${LOCAL_REPO_PATH}/logs/copy_repo.log"
+LOG_FILE="${LOCAL_REPO_PATH}/logs/copy_repo_to_remote_device.log"
 
 # ----------------------------
 # Helper Functions

@@ -14,11 +14,10 @@ from plumbum import SshMachine
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 
-# Add parent module (src) to path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+# Add the project root to the Python path
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
 
 from src.utils.system_utils import get_repo_root
 from src.utils.ssh import (

@@ -1,7 +1,15 @@
 # src/api/experiment_mgmt.py
 
-import logging
+import sys
 from typing import Any, Dict
+from pathlib import Path
+
+# Add the project root to the Python path
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+
+
 from src.utils.system_utils import read_yaml_file
 from src.api.device_mgmt import DeviceMgr
 from src.utils.logger import setup_logger, DeviceType
@@ -17,10 +25,18 @@ class ExperimentManager:
             raise ValueError("No SERVER device found in the configuration")
         self.server_device = server_devices[0]
         self.host = self.server_device.working_cparams.host if self.server_device.working_cparams else None
-        self.port = self.config.get('experiment', {}).get('port', 12345)
+        self.port = self.config.get('split_inference', {}).get('port', 12345)
 
-    def setup_experiment(self, experiment_class):
-        return experiment_class(self.config, self.host, self.port)
+    def setup_experiment(self, experiment_config: Dict[str, Any]):
+        experiment_type = experiment_config.get('type', 'yolo')
+        if experiment_type == 'yolo':
+            from src.api.services.yolo_service import YOLOExperiment
+            return YOLOExperiment(self.config, self.host, self.port)
+        # elif experiment_type == 'classification':
+        #     from src.api.services.classification_service import ClassificationExperiment
+        #     return ClassificationExperiment(self.config, self.host, self.port)
+        else:
+            raise ValueError(f"Unsupported experiment type: {experiment_type}")
 
     def run_experiment(self, experiment):
         experiment.run()

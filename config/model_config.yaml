@@ -6,6 +6,7 @@ split_inference:
   enabled: true
   participants: ["PARTICIPANT"]
   server: "SERVER"
+  port: 12345  # Add this line to specify the port
 
 
 # DEFAULT CONFIGURATIONS

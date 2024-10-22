@@ -4,18 +4,19 @@ import os
 import sys
 import time
 import logging
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, Dict
+from pathlib import Path
 import numpy as np
 import blosc2 # type: ignore
 import pickle
 import torch
 from PIL import Image, ImageDraw, ImageFont
+import socket
 
-# Add parent module (src) to path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+# Add the project root to the Python path
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
 
 from src.experiment_design.models.model_hooked import WrappedModel, NotDict
 
@@ -308,23 +309,16 @@ class DataUtils:
             bytes_recd += len(chunk)
         return b''.join(data_chunks)
 
-    def receive_data(self, conn):
-        """Receive the split layer index and expected length from a socket connection."""
-        split_layer_index_bytes = conn.recv(4)
-        if not split_layer_index_bytes:
-            return None
-        split_layer_index = int.from_bytes(split_layer_index_bytes, 'big')
-
+    def receive_data(self, conn: socket.socket) -> Dict[str, Any]:
         length_data = conn.recv(4)
+        if not length_data:
+            return None
         expected_length = int.from_bytes(length_data, 'big')
-
+        
         compressed_data = self.receive_full_message(conn, expected_length)
-        received_data = self.decompress_data(compressed_data)
+        return self.decompress_data(compressed_data)
 
-        return (*received_data, split_layer_index)
-
-    def send_result(self, conn, result):
-        """Send the result and processing time to a socket connection."""
-        server_processing_time = time.time()
-        response_data = pickle.dumps((result, server_processing_time))
-        conn.sendall(response_data)
+    def send_result(self, conn: socket.socket, result: Dict[str, Any]):
+        compressed_data, size = self.compress_data(result)
+        conn.sendall(len(compressed_data).to_bytes(4, 'big'))
+        conn.sendall(compressed_data)

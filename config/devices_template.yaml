@@ -67,14 +67,14 @@ devices:
     connection_params:
       - host: <server_ip_address>
         user: <username>
-        pkey_fp: <path_to_pkey>
+        pkey_fp: <path_to_pkey> # put inside config/pkeys/
         default: true
 
   - device_type: PARTICIPANT
     connection_params:
       - host: <participant_ip_address>
         user: <username>
-        pkey_fp: <path_to_pkey>
+        pkey_fp: <path_to_pkey> # put inside config/pkeys/
         default: true
 
 # SPLIT INFERENCE NETWORK CONFIGURATIONS

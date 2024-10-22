@@ -74,21 +74,21 @@ def test_split_performance(model: WrappedModel, data_loader, client_socket: sock
             host_start_time = time.time()
             input_tensor = input_tensor.to(model.device)
             out = model(input_tensor, end=split_layer_index)
-            data_to_send = (out, original_images[0].size)
+            data_to_send = {
+                'input': (out, original_images[0].size),
+                'split_layer': split_layer_index
+            }
             compressed_output, compressed_size = data_utils.compress_data(data_to_send)
             host_end_time = time.time()
             host_times.append(host_end_time - host_start_time)
 
             travel_start_time = time.time()
-            client_socket.sendall(split_layer_index.to_bytes(4, 'big'))
-            client_socket.sendall(len(compressed_output).to_bytes(4, 'big'))
-            client_socket.sendall(compressed_output)
+            data_utils.send_result(client_socket, data_to_send)
 
-            data = client_socket.recv(4096)
-            prediction, server_processing_time = data_utils.decompress_data(data)
+            result = data_utils.receive_data(client_socket)
             travel_end_time = time.time()
             travel_times.append(travel_end_time - travel_start_time)
-            server_times.append(server_processing_time)
+            server_times.append(result.get('server_processing_time', 0))
 
     total_host_time = sum(host_times)
     total_travel_time = sum(travel_times) - sum(server_times)
@@ -135,6 +135,19 @@ def run_experiment(config: Dict[str, Any], experiment_config: Dict[str, Any]):
         except Exception as e:
             logger.error(f"Unexpected error while connecting to server: {e}")
             return
+
+    data_utils = DataUtils()
+
+    # Send experiment configuration to the server
+    experiment_config = {
+        'type': 'yolo',
+        'model_name': experiment_config['MODEL_NAME'],
+        'dataset_name': experiment_config['DATASET_NAME'],
+        'class_names': experiment_config['CLASS_NAMES'],
+        'font_path': str(experiment_config['FONT_PATH']),
+        'split_layer': experiment_config['SPLIT_LAYER'],
+    }
+    data_utils.send_result(client_socket, experiment_config)
 
     total_layers = 23  # Adjust this based on your model architecture
     time_taken = []

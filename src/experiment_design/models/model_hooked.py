@@ -8,17 +8,17 @@ import sys
 import time
 from contextlib import nullcontext
 from typing import Any, Optional, Union, Dict
+from pathlib import Path
 
 import numpy as np
 import torch
 from PIL import Image
 from torchinfo import summary  # type: ignore
 
-# Add parent module (src) to path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+# Add the project root to the Python path
+project_root = Path(__file__).resolve().parents[3]
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
 
 from src.api.master_dict import MasterDict
 from .base import BaseModel
