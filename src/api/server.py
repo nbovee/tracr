@@ -10,8 +10,6 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-print(f"sys.path: {sys.path}")
-
 from src.utils.system_utils import read_yaml_file
 from src.api.device_mgmt import DeviceMgr
 from src.api.experiment_mgmt import ExperimentManager
@@ -38,7 +36,7 @@ class Server:
 
         server_device = server_devices[0]
         host = server_device.working_cparams.host
-        port = self.config.get('split_inference', {}).get('port', 12345)
+        port = self.config['experiment']['port']
 
         try:
             server_socket = self.device_mgr.create_server_socket(host, port)
@@ -58,7 +56,6 @@ class Server:
 
     def handle_connection(self, conn: socket.socket):
         try:
-            # Receive experiment configuration from the client
             experiment_config = self.data_utils.receive_data(conn)
             experiment = self.experiment_mgr.setup_experiment(experiment_config)
 

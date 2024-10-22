@@ -13,6 +13,7 @@ if str(project_root) not in sys.path:
 from src.utils.system_utils import read_yaml_file
 from src.api.device_mgmt import DeviceMgr
 from src.utils.logger import setup_logger, DeviceType
+from src.api.experiments import EXPERIMENT_TYPES
 
 logger = setup_logger(device=DeviceType.SERVER)
 
@@ -25,18 +26,14 @@ class ExperimentManager:
             raise ValueError("No SERVER device found in the configuration")
         self.server_device = server_devices[0]
         self.host = self.server_device.working_cparams.host if self.server_device.working_cparams else None
-        self.port = self.config.get('split_inference', {}).get('port', 12345)
+        self.port = self.config.get('experiment', {}).get('port', 12345)
 
     def setup_experiment(self, experiment_config: Dict[str, Any]):
-        experiment_type = experiment_config.get('type', 'yolo')
-        if experiment_type == 'yolo':
-            from src.api.services.yolo_service import YOLOExperiment
-            return YOLOExperiment(self.config, self.host, self.port)
-        # elif experiment_type == 'classification':
-        #     from src.api.services.classification_service import ClassificationExperiment
-        #     return ClassificationExperiment(self.config, self.host, self.port)
-        else:
+        experiment_type = experiment_config.get('type', self.config['experiment']['type'])
+        experiment_class = EXPERIMENT_TYPES.get(experiment_type)
+        if experiment_class is None:
             raise ValueError(f"Unsupported experiment type: {experiment_type}")
+        return experiment_class(self.config, self.host, self.port)
 
     def run_experiment(self, experiment):
         experiment.run()

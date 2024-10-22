@@ -1,12 +1,19 @@
 # config/model_config.yaml
 
+# EXPERIMENT CONFIGURATIONS
+# -------------------------
+experiment:
+  type: yolo
+  port: 12345
+  host_script: experiment_host.py
+
+
 # SPLIT INFERENCE CONFIGURATIONS
 # ------------------------------
 split_inference:
   enabled: true
   participants: ["PARTICIPANT"]
   server: "SERVER"
-  port: 12345  # Add this line to specify the port
 
 
 # DEFAULT CONFIGURATIONS
@@ -42,6 +49,7 @@ model:
     save_layers: [2, 4, 6]     # Layer indices to save intermediate outputs
     log_file: logs/alexnet.log # Log file for the model
     num_classes: null          # This will be set dynamically in the script
+    total_layers: 10           # Total number of layers in the model
 
   yolo:
     model_name: yolov8s        # YOLO model variant (e.g., yolov8s, yolov8m, yolov8l)
@@ -53,6 +61,8 @@ model:
     hook_style: post           # Hook insertion style ('pre' or 'post')
     save_layers: [2, 4, 6]     # Layer indices to save intermediate outputs
     log_file: logs/yolo.log    # Log file for the model
+    num_classes: null          # This will be set dynamically in the script
+    total_layers: 23           # Total number of layers in the model
 
   # custom:
   #   model_name: custom_model   # Name for your custom model
