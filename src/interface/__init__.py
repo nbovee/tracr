@@ -1,3 +1,3 @@
-from .bridge import ModelInterface, ModelFactoryInterface
+from .bridge import *
 
-__all__ = ["ModelInterface", "ModelFactoryInterface"]
+__all__ = ["ModelInterface", "ModelFactoryInterface", "ExperimentInterface", "ExperimentManagerInterface", "DataUtilsInterface"]

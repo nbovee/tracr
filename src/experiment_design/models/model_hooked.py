@@ -20,7 +20,6 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api.master_dict import MasterDict
 from .base import BaseModel
 from .hooks import (
     create_forward_prehook,
@@ -29,7 +28,9 @@ from .hooks import (
     HookExitException,
 )
 from .templates import LAYER_TEMPLATE
+from src.api.master_dict import MasterDict
 from src.utils.power_meter import PowerMeter
+from src.interface.bridge import ModelInterface
 
 # Register atexit handler to clear CUDA cache
 atexit.register(torch.cuda.empty_cache)
@@ -38,7 +39,7 @@ atexit.register(torch.cuda.empty_cache)
 logger = logging.getLogger("tracr_logger")
 
 
-class WrappedModel(BaseModel):
+class WrappedModel(BaseModel, ModelInterface):
     """Wraps a pretrained model with features necessary for edge computing tests."""
 
     def __init__(
@@ -47,7 +48,8 @@ class WrappedModel(BaseModel):
         master_dict: Optional[MasterDict] = None,
         **kwargs,
     ):
-        super().__init__(config)
+        BaseModel.__init__(self, config)
+        ModelInterface.__init__(self, config)
         logger.info(f"Initializing WrappedModel with config: {config}")
 
         self.timer = time.perf_counter_ns
@@ -57,7 +59,6 @@ class WrappedModel(BaseModel):
         self.forward_info = {}
         self.forward_hooks = []
         self.forward_post_hooks = []
-        self.flush_buffer_size = self.flush_buffer_size
 
         # Load model using the BaseModel's load_model method
         self.model = self.load_model()
@@ -80,7 +81,7 @@ class WrappedModel(BaseModel):
             self.device
         )  # Implement a PowerMeter class to measure power usage
 
-        self.to_device(self.device)
+        self.to(self.device)
         self.warmup(iterations=self.warmup_iterations)
         logger.info("WrappedModel initialization complete")
 
@@ -218,3 +219,17 @@ class WrappedModel(BaseModel):
             self.io_buffer.clear()
         else:
             logger.info("MasterDict not updated: buffer empty or MasterDict is None.")
+
+    def to(self, device: str) -> 'WrappedModel':
+        """Moves the model to a specified device."""
+        BaseModel.to(self, device)
+        return self
+
+    def eval(self) -> 'WrappedModel':
+        """Switches the model to evaluation mode."""
+        BaseModel.set_mode(self, 'eval')
+        return self
+
+    def get_mode(self) -> str:
+        """Returns the current mode of the model (train or eval)."""
+        return 'eval' if self.mode == 'eval' else 'train'

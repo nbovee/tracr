@@ -4,7 +4,7 @@ import os
 import sys
 import time
 import logging
-from typing import Any, List, Tuple, Dict
+from typing import Any, List, Tuple, Dict, Optional
 from pathlib import Path
 import numpy as np
 import blosc2 # type: ignore
@@ -19,6 +19,7 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 from src.experiment_design.models.model_hooked import WrappedModel, NotDict
+from src.interface.bridge import DataUtilsInterface
 
 logger = logging.getLogger(__name__)
 
@@ -278,11 +279,8 @@ class DetectionUtils:
         return image
 
 
-class DataUtils:
-    def __init__(self):
-        pass
-
-    def compress_data(self, data):
+class DataUtils(DataUtilsInterface):
+    def compress_data(self, data: Any) -> Tuple[bytes, int]:
         """Compress data using Blosc2."""
         serialized_data = pickle.dumps(data)
         compressed_data = blosc2.compress(serialized_data, clevel=4, filter=blosc2.Filter.SHUFFLE, codec=blosc2.Codec.ZSTD)
@@ -290,35 +288,42 @@ class DataUtils:
         logger.debug(f"Compressed data size: {size_bytes} bytes")
         return compressed_data, size_bytes
 
-    def decompress_data(self, compressed_data):
+    def decompress_data(self, compressed_data: bytes) -> Any:
         """Decompress data using Blosc2."""
         decompressed_data = blosc2.decompress(compressed_data)
         data = pickle.loads(decompressed_data)
         logger.debug(f"Decompressed data size: {len(decompressed_data)} bytes")
         return data
 
-    def receive_full_message(self, conn, expected_length):
+    def receive_data(self, conn: socket.socket) -> Optional[Dict[str, Any]]:
         """Receive a full message from a socket connection."""
-        data_chunks = []
-        bytes_recd = 0
-        while bytes_recd < expected_length:
-            chunk = conn.recv(min(expected_length - bytes_recd, 4096))
-            if chunk == b'':
-                raise RuntimeError("Socket connection broken")
-            data_chunks.append(chunk)
-            bytes_recd += len(chunk)
-        return b''.join(data_chunks)
+        try:
+            # Receive the length of the data first
+            length_data = conn.recv(4)
+            if not length_data:
+                logger.info("Connection closed by the client.")
+                return None
+            
+            expected_length = int.from_bytes(length_data, 'big')
+            logger.debug(f"Expected data length: {expected_length} bytes")
 
-    def receive_data(self, conn: socket.socket) -> Dict[str, Any]:
-        length_data = conn.recv(4)
-        if not length_data:
+            # Now receive the actual data
+            data_chunks = []
+            bytes_recd = 0
+            while bytes_recd < expected_length:
+                chunk = conn.recv(min(expected_length - bytes_recd, 4096))
+                if not chunk:
+                    raise RuntimeError("Socket connection broken")
+                data_chunks.append(chunk)
+                bytes_recd += len(chunk)
+
+            compressed_data = b''.join(data_chunks)
+            return self.decompress_data(compressed_data)
+        except Exception as e:
+            logger.error(f"Error receiving data: {e}")
             return None
-        expected_length = int.from_bytes(length_data, 'big')
-        
-        compressed_data = self.receive_full_message(conn, expected_length)
-        return self.decompress_data(compressed_data)
 
-    def send_result(self, conn: socket.socket, result: Dict[str, Any]):
+    def send_result(self, conn: socket.socket, result: Dict[str, Any]) -> None:
         compressed_data, size = self.compress_data(result)
         conn.sendall(len(compressed_data).to_bytes(4, 'big'))
         conn.sendall(compressed_data)

@@ -14,6 +14,7 @@ from src.utils.system_utils import read_yaml_file
 from src.api.device_mgmt import DeviceMgr
 from src.api.experiment_mgmt import ExperimentManager
 from src.utils.ml_utils import DataUtils
+from src.interface.bridge import ExperimentManagerInterface, DataUtilsInterface
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -25,8 +26,8 @@ class Server:
         self.config_path = self.project_root / "config" / "model_config.yaml"
         self.config = read_yaml_file(self.config_path)
         self.device_mgr = DeviceMgr()
-        self.experiment_mgr = ExperimentManager(self.config_path)
-        self.data_utils = DataUtils()
+        self.experiment_mgr: ExperimentManagerInterface = ExperimentManager(self.config_path)
+        self.data_utils: DataUtilsInterface = DataUtils()
 
     def start(self):
         server_devices = self.device_mgr.get_devices(available_only=True, device_type="SERVER")

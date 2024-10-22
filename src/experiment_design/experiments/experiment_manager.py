@@ -1,14 +1,11 @@
-# src/api/experiment_mgmt.py
-
 import sys
 from typing import Any, Dict
 from pathlib import Path
 
 # Add the project root to the Python path
-project_root = Path(__file__).resolve().parents[2]
+project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
-
 
 from src.utils.system_utils import read_yaml_file
 from src.api.device_mgmt import DeviceMgr
@@ -19,7 +16,6 @@ logger = setup_logger(device=DeviceType.SERVER)
 
 class ExperimentManager(ExperimentManagerInterface):
     def __init__(self, config_path: str):
-        super().__init__(config_path)
         self.config = read_yaml_file(config_path)
         self.device_mgr = DeviceMgr()
         server_devices = self.device_mgr.get_devices(device_type="SERVER")
@@ -34,8 +30,24 @@ class ExperimentManager(ExperimentManagerInterface):
         if experiment_type == 'yolo':
             from src.experiment_design.experiments.yolo_experiment import YOLOExperiment
             return YOLOExperiment(self.config, self.host, self.port)
+        # Add more experiment types here as needed
+        # elif experiment_type == 'classification':
+        #     from src.experiment_design.experiments.classification_experiment import ClassificationExperiment
+        #     return ClassificationExperiment(self.config, self.host, self.port)
         else:
             raise ValueError(f"Unsupported experiment type: {experiment_type}")
 
-    def run_experiment(self, experiment):
+    def run_experiment(self, experiment: ExperimentInterface):
         experiment.run()
+
+# You can add more utility methods here if needed for experiment management
+
+if __name__ == "__main__":
+    # This block can be used for testing the ExperimentManager
+    config_path = project_root / "config" / "model_config.yaml"
+    experiment_manager = ExperimentManager(str(config_path))
+    
+    # Example usage:
+    # experiment_config = {"type": "yolo"}
+    # experiment = experiment_manager.setup_experiment(experiment_config)
+    # experiment_manager.run_experiment(experiment)

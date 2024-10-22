@@ -3,18 +3,20 @@ import torch
 
 from src.experiment_design.models.model_hooked import WrappedModel
 from src.utils.ml_utils import DetectionUtils
-from .base_experiment import BaseExperiment
+from src.interface.bridge import ExperimentInterface, ModelInterface
 
-class YOLOExperiment(BaseExperiment):
+class YOLOExperiment(ExperimentInterface):
     def __init__(self, config: Dict[str, Any], host: str, port: int):
-        super().__init__(config, host, port)
+        self.config = config
+        self.host = host
+        self.port = port
         self.model = self.initialize_model()
         self.detection_utils = DetectionUtils(
             self.config["dataset"][self.config["default"]["default_dataset"]]["class_names"],
             str(self.config["default"]["font_path"])
         )
 
-    def initialize_model(self) -> WrappedModel:
+    def initialize_model(self) -> ModelInterface:
         model = WrappedModel(config=self.config)
         model.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
         model.eval()
@@ -34,3 +36,19 @@ class YOLOExperiment(BaseExperiment):
             detections = self.detection_utils.postprocess(res, original_img_size)
 
         return {'detections': detections}
+
+    def run(self):
+        # Implement the run method if needed
+        pass
+
+    def setup_socket(self):
+        # Implement the setup_socket method if needed
+        pass
+
+    def receive_data(self, conn: Any) -> Any:
+        # Implement the receive_data method if needed
+        pass
+
+    def send_result(self, conn: Any, result: Any):
+        # Implement the send_result method if needed
+        pass
