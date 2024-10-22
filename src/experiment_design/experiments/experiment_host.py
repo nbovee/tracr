@@ -13,14 +13,14 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 from PIL import Image
 
-project_root = Path(__file__).resolve().parent
+project_root = Path(__file__).resolve().parents[3]
 sys.path.append(str(project_root))
 
+from src.api.device_mgmt import DeviceMgr
 from src.experiment_design.models.model_hooked import WrappedModel
 from src.experiment_design.datasets.dataloader import DataManager
 from src.utils.ml_utils import DataUtils
 from src.utils.system_utils import read_yaml_file
-from src.api.device_mgmt import DeviceMgr
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("experiment_host")

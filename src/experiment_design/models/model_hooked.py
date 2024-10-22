@@ -3,7 +3,6 @@
 import atexit
 import copy
 import logging
-import os
 import sys
 import time
 from contextlib import nullcontext
@@ -77,9 +76,7 @@ class WrappedModel(BaseModel, ModelInterface):
         self.model_stop_i: Optional[int] = None
         self.banked_input: Optional[Any] = None
         self.log = False
-        self.power_meter = PowerMeter(
-            self.device
-        )  # Implement a PowerMeter class to measure power usage
+        self.power_meter = PowerMeter(self.device)
 
         self.to(self.device)
         self.warmup(iterations=self.warmup_iterations)
@@ -220,16 +217,10 @@ class WrappedModel(BaseModel, ModelInterface):
         else:
             logger.info("MasterDict not updated: buffer empty or MasterDict is None.")
 
-    def to(self, device: str) -> 'WrappedModel':
-        """Moves the model to a specified device."""
-        BaseModel.to(self, device)
-        return self
+    def get_state_dict(self) -> Dict[str, Any]:
+        """Returns the model's state dictionary."""
+        return self.model.state_dict()
 
-    def eval(self) -> 'WrappedModel':
-        """Switches the model to evaluation mode."""
-        BaseModel.set_mode(self, 'eval')
-        return self
-
-    def get_mode(self) -> str:
-        """Returns the current mode of the model (train or eval)."""
-        return 'eval' if self.mode == 'eval' else 'train'
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """Loads a state dictionary into the model."""
+        self.model.load_state_dict(state_dict)

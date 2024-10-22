@@ -7,14 +7,14 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.utils.system_utils import read_yaml_file
 from src.api.device_mgmt import DeviceMgr
+from src.interface.bridge import ExperimentInterface
 from src.utils.logger import setup_logger, DeviceType
-from src.interface.bridge import ExperimentManagerInterface, ExperimentInterface
+from src.utils.system_utils import read_yaml_file
 
 logger = setup_logger(device=DeviceType.SERVER)
 
-class ExperimentManager(ExperimentManagerInterface):
+class ExperimentManager:
     def __init__(self, config_path: str):
         self.config = read_yaml_file(config_path)
         self.device_mgr = DeviceMgr()
@@ -31,14 +31,20 @@ class ExperimentManager(ExperimentManagerInterface):
             from src.experiment_design.experiments.yolo_experiment import YOLOExperiment
             return YOLOExperiment(self.config, self.host, self.port)
         # Add more experiment types here as needed
-        # elif experiment_type == 'classification':
-        #     from src.experiment_design.experiments.classification_experiment import ClassificationExperiment
-        #     return ClassificationExperiment(self.config, self.host, self.port)
         else:
             raise ValueError(f"Unsupported experiment type: {experiment_type}")
 
     def run_experiment(self, experiment: ExperimentInterface):
         experiment.run()
+
+    def process_data(self, experiment: ExperimentInterface, data: Dict[str, Any]) -> Dict[str, Any]:
+        return experiment.process_data(data)
+
+    def save_results(self, experiment: ExperimentInterface, results: Dict[str, Any]):
+        experiment.save_results(results)
+
+    def load_data(self, experiment: ExperimentInterface) -> Any:
+        return experiment.load_data()
 
 # You can add more utility methods here if needed for experiment management
 

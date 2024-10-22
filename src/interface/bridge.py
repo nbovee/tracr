@@ -1,8 +1,8 @@
 # src/interface/bridge.py
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Union, Tuple
-
+from typing import Any, Dict, Union
+import numpy as np
 
 class ModelInterface(ABC):
     """Abstract base class defining the interface for model implementations."""
@@ -13,18 +13,18 @@ class ModelInterface(ABC):
         pass
 
     @abstractmethod
-    def forward(self, x: Any, start: int = 0, end: Union[int, float] = float('inf')) -> Any:
+    def forward(self, x: Any, start: int = 0, end: Union[int, float] = np.inf) -> Any:
         """Performs a forward pass through the model from start to end layer."""
         pass
 
     @abstractmethod
-    def to(self, device: str) -> 'ModelInterface':
-        """Moves the model to a specified device."""
+    def get_state_dict(self) -> Dict[str, Any]:
+        """Returns the model's state dictionary."""
         pass
 
     @abstractmethod
-    def eval(self) -> 'ModelInterface':
-        """Switches the model to evaluation mode."""
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """Loads a state dictionary into the model."""
         pass
 
 
@@ -46,40 +46,17 @@ class ExperimentInterface(ABC):
         """Processes the input data for the experiment."""
         pass
 
-
-class ExperimentManagerInterface(ABC):
-    """Abstract base class defining the interface for experiment manager implementations."""
-
     @abstractmethod
-    def __init__(self, config_path: str):
-        """Initializes the experiment manager with configuration path."""
+    def run(self) -> None:
+        """Runs the experiment."""
         pass
 
     @abstractmethod
-    def setup_experiment(self, experiment_config: Dict[str, Any]) -> ExperimentInterface:
-        """Sets up the experiment with the provided configuration."""
-        pass
-
-
-class DataUtilsInterface(ABC):
-    """Abstract base class defining the interface for data utilities."""
-
-    @abstractmethod
-    def compress_data(self, data: Any) -> Tuple[bytes, int]:
-        """Compresses the input data."""
+    def save_results(self, results: Dict[str, Any]) -> None:
+        """Saves the results of the experiment."""
         pass
 
     @abstractmethod
-    def decompress_data(self, compressed_data: bytes) -> Any:
-        """Decompresses the compressed data."""
-        pass
-
-    @abstractmethod
-    def receive_data(self, conn: Any) -> Optional[Dict[str, Any]]:
-        """Receives data from a connection."""
-        pass
-
-    @abstractmethod
-    def send_result(self, conn: Any, result: Dict[str, Any]) -> None:
-        """Sends the result to a connection."""
+    def load_data(self) -> Any:
+        """Loads data for the experiment."""
         pass

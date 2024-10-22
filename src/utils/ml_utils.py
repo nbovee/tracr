@@ -1,6 +1,5 @@
 # src/experiment_design/utils.py
 
-import os
 import sys
 import time
 import logging
@@ -19,7 +18,6 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 from src.experiment_design.models.model_hooked import WrappedModel, NotDict
-from src.interface.bridge import DataUtilsInterface
 
 logger = logging.getLogger(__name__)
 
@@ -279,7 +277,10 @@ class DetectionUtils:
         return image
 
 
-class DataUtils(DataUtilsInterface):
+class DataUtils:
+    def __init__(self):
+        pass
+
     def compress_data(self, data: Any) -> Tuple[bytes, int]:
         """Compress data using Blosc2."""
         serialized_data = pickle.dumps(data)
