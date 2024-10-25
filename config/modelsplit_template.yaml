@@ -1,0 +1,58 @@
+# config/modelsplit_template.yaml
+
+# Update this template with the appropriate configurations for your model split inference experiment
+
+# SPLIT INFERENCE CONFIGURATIONS
+# ----------------------------
+split_inference:
+  enabled: true                   # Enable split inference; i.e. run on edge device
+  participants: ["<PARTICIPANT>"] # List of participants (e.g., ["Edge1", "Edge2"])
+  server: "<SERVER>"              # Server name or address (e.g., "Server1")
+
+# DEFAULT CONFIGURATIONS
+# ----------------------
+default:
+  device: cuda                  # Computation device (cuda for GPU, cpu for CPU)
+  log_level: INFO               # Default log level (INFO, DEBUG, ERROR)
+  log_file: logs/app.log        # Default log file path
+  font_path: "fonts/DejaVuSans-Bold.ttf" # Path to the font file used in visualizations
+
+# MODEL CONFIGURATIONS
+# --------------------
+model:
+  custom_model:
+    model_name: <custom_model_name> # Name of the custom model
+    version: null                   # Version of the model (if applicable)
+    pretrained: false               # Whether to use pretrained weights (true or false)
+    weight_path: null               # Path to custom weights file (null for no custom weights)
+    input_size: [3, 256, 256]       # Input tensor size [channels, height, width]
+    hook_style: pre                 # Hook insertion style ('pre' or 'post')
+    split_layer: 5                  # Layer to split the model at
+    save_layers: [3, 5, 7]          # Layer indices to save intermediate outputs
+    total_layers: 10                # Total number of layers in the model
+    num_classes: null               # Number of classes for classification tasks (e.g., 1000 for ImageNet)
+    mode: eval                      # Model operation mode ('train' for training, 'eval' for evaluation)
+    depth: 2                        # Depth for recursive model exploration
+    flush_buffer_size: 100          # Number of inferences before flushing results to storage
+    warmup_iterations: 10           # Number of warmup iterations to stabilize model performance
+    log_file: logs/custom_model.log # Log file for the model
+
+# DATASET CONFIGURATIONS
+# ----------------------
+dataset:
+  custom_dataset:
+    module: <custom_module>         # Python module name for the dataset (without .py extension)
+    class: <CustomDataset>          # Class name of the dataset (e.g., CustomDataset)
+    class_names: null               # Class names for the dataset or path to txt file containing class names
+    args:
+      root: data/custom             # Root directory of the dataset
+      transform: null               # Data transformations (null for default transformations)
+      max_samples: -1               # Maximum number of samples to load (-1 for all samples)
+
+# DATALOADER CONFIGURATIONS
+# -------------------------
+dataloader:
+  batch_size: 1                     # Number of samples per batch
+  shuffle: false                    # Whether to shuffle the data
+  num_workers: 4                    # Number of subprocesses for data loading (adjust based on CPU cores)
+  collate_fn: null                  # Custom collate function (set dynamically in run_dataset.py)
