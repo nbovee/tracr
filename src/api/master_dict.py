@@ -124,7 +124,7 @@ class MasterDict:
         return latency_ns
 
     def get_total_inference_time(
-        self, inference_id: str, nodes: List[str] = ["SERVER1", "PARTICIPANT1"]
+        self, inference_id: str, nodes: List[str] = ["SERVER", "PARTICIPANT"]
     ) -> Tuple[int, int]:
         """Calculates the total inference time for client and edge nodes."""
         inf_data = self.inner_dict.get(inference_id)
@@ -149,7 +149,7 @@ class MasterDict:
         return inf_time_client, inf_time_edge
 
     def get_split_layer(
-        self, inference_id: str, nodes: List[str] = ["SERVER1", "PARTICIPANT1"]
+        self, inference_id: str, nodes: List[str] = ["SERVER", "PARTICIPANT"]
     ) -> int:
         """Determines the split layer where the model transitions from one node to another."""
         inf_data = self.inner_dict.get(inference_id)

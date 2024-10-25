@@ -3,7 +3,7 @@
 # EXPERIMENT CONFIGURATIONS
 # -------------------------
 experiment:
-  type: alexnet
+  type: yolo
   port: 12345
   host_script: experiment_host.py
 
@@ -25,8 +25,8 @@ default:
   depth: 2                     # Depth for recursive model exploration
   flush_buffer_size: 100       # Number of inferences before flushing results to storage
   warmup_iterations: 10        # Number of warmup iterations to stabilize model performance
-  default_model: alexnet          # Default model to use (current options: alexnet, yolo, custom)
-  default_dataset: imagenet       # Default dataset to use (current options: onion, imagenet)
+  default_model: yolo          # Default model to use (current options: alexnet, yolo, custom)
+  default_dataset: onion       # Default dataset to use (current options: onion, imagenet)
   run_on_edge: false           # Flag to determine if running on Edge device (true) or locally (false)
   log_level: INFO              # Default log level (INFO, DEBUG, ERROR)
   log_file: logs/app.log       # Default log file (null for no file logging)

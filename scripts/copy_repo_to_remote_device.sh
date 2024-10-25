@@ -26,7 +26,7 @@ EXCLUDES=(
     "data/imagenet10_tr"
     "data/imagenet50_tr"
     "data/imagenet100_tr"
-    "data/onion"
+    # "data/onion"
     "data/runs"
     "logs/"
     "results/"

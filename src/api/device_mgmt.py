@@ -218,12 +218,15 @@ class DeviceMgr:
     """Manages a collection of Device objects."""
 
     DATAFILE_PATH: pathlib.Path = get_repo_root() / "config" / "devices_config.yaml"
+    PKEYS_PATH: pathlib.Path = get_repo_root() / "config" / "pkeys"
+    
     if not DATAFILE_PATH.exists():
         raise FileNotFoundError(f"Devices config file not found at {DATAFILE_PATH}")
+    if not PKEYS_PATH.exists():
+        raise FileNotFoundError(f"PKeys directory not found at {PKEYS_PATH}")
 
     def __init__(self, dfile_path: Union[pathlib.Path, None] = None) -> None:
-        self.project_root = Path(__file__).resolve().parents[2]  # Go up 3 levels to reach project root
-        self.datafile_path = dfile_path or (self.project_root / "config" / "devices_config.yaml")
+        self.datafile_path = dfile_path or self.DATAFILE_PATH
         self._load()
         logger.info(f"DeviceMgr initialized with {len(self.devices)} devices")
 
@@ -256,7 +259,7 @@ class DeviceMgr:
         for device in data['devices']:
             for conn_param in device['connection_params']:
                 if 'pkey_fp' in conn_param:
-                    conn_param['pkey_fp'] = str(self.project_root / 'config' / 'pkeys' / os.path.basename(conn_param['pkey_fp']))
+                    conn_param['pkey_fp'] = str(self.PKEYS_PATH / os.path.basename(conn_param['pkey_fp']))
         
         self.devices = [Device(drecord) for drecord in data['devices']]
         logger.info(f"Loaded {len(self.devices)} devices")
