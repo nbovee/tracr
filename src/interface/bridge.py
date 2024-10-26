@@ -1,7 +1,7 @@
 # src/interface/bridge.py
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Union
+from typing import Any, Dict, Union, Optional
 import numpy as np
 
 class ModelInterface(ABC):
@@ -28,6 +28,24 @@ class ModelInterface(ABC):
         pass
 
 
+class DataUtilsInterface(ABC):
+    """Abstract base class for data processing utilities."""
+    
+    @abstractmethod
+    def postprocess(self, data: Any, *args, **kwargs) -> Any:
+        """Process the model output data."""
+        pass
+
+
+class DataLoaderInterface(ABC):
+    """Abstract base class for data loaders."""
+    
+    @abstractmethod
+    def get_dataloader(self, config: Dict[str, Any]) -> Any:
+        """Returns a configured data loader."""
+        pass
+
+
 class ExperimentInterface(ABC):
     """Abstract base class defining the interface for experiment implementations."""
 
@@ -42,6 +60,16 @@ class ExperimentInterface(ABC):
         pass
 
     @abstractmethod
+    def initialize_data_utils(self) -> DataUtilsInterface:
+        """Initializes data processing utilities."""
+        pass
+
+    @abstractmethod
+    def setup_dataloader(self) -> Any:
+        """Sets up the data loader for the experiment."""
+        pass
+
+    @abstractmethod
     def process_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Processes the input data for the experiment."""
         pass
@@ -49,6 +77,11 @@ class ExperimentInterface(ABC):
     @abstractmethod
     def run(self) -> None:
         """Runs the experiment."""
+        pass
+
+    @abstractmethod
+    def test_split_performance(self, split_layer_index: int) -> tuple:
+        """Tests the performance of a specific layer split."""
         pass
 
     @abstractmethod

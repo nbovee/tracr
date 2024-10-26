@@ -1,196 +1,213 @@
-# experiment_host.py
-
-import logging
-import socket
 import sys
-import time
 from pathlib import Path
-from typing import Dict, Any, Tuple, List, Optional
-
 import torch
-import pandas as pd
 from tqdm import tqdm
-from torch.utils.data import DataLoader
+import socket
+import time
+import pandas as pd
+from typing import Dict, Any, Tuple, List
+import os
 from PIL import Image
+from PIL import ImageDraw
+from PIL import ImageFont
 
+# Add the project root to the Python path
 project_root = Path(__file__).resolve().parent
-sys.path.append(str(project_root))
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
 
-from src.experiment_design.models.model_hooked import WrappedModel
+from src.utils.logger import setup_logger, DeviceType
+from src.utils.system_utils import read_yaml_file
+from src.utils.ssh import NetworkUtils
 from src.experiment_design.datasets.dataloader import DataManager
-from src.utils.ml_utils import DataUtils
-from src.utils.system_utils import read_yaml_file, load_text_file
-from src.api.device_mgmt import DeviceMgr
+from src.experiment_design.models.model_hooked import WrappedModel
 
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger("experiment_host")
+logger = setup_logger(device=DeviceType.PARTICIPANT)
 
-def get_experiment_configs() -> Dict[str, Any]:
-    CONFIG_YAML_PATH = project_root / "config" / "model_config.yaml"
-    config = read_yaml_file(CONFIG_YAML_PATH)
+def custom_collate_fn(batch):
+    """Custom collate function to avoid batching the PIL Image."""
+    images, original_images, image_files = zip(*batch)
+    return torch.stack(images, 0), original_images, image_files
 
-    experiment_config = {
-        "type": config["experiment"]["type"],
-        "MODEL_NAME": config["default"]["default_model"],
-        "DATASET_NAME": config["default"]["default_dataset"],
-        "CLASS_NAMES": config["dataset"][config["default"]["default_dataset"]]["class_names"],
-        "FONT_PATH": project_root / config["default"]["font_path"],
-        "SPLIT_LAYER": config["model"][config["default"]["default_model"]]["split_layer"],
-        "device": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-    }
+class ExperimentHost:
+    def __init__(self, config_path: str):
+        self.config = read_yaml_file(config_path)
+        self.setup_model()
+        self.setup_dataloader()
+        self.setup_network()
+        
+        # Create results directory
+        self.results_dir = Path("results")
+        self.results_dir.mkdir(exist_ok=True)
+        self.images_dir = self.results_dir / "images"
+        self.images_dir.mkdir(exist_ok=True)
+        logger.info(f"Created results directories at {self.results_dir}")
 
-    if isinstance(experiment_config["CLASS_NAMES"], str):
-        experiment_config["CLASS_NAMES"] = load_text_file(experiment_config["CLASS_NAMES"])
+    def setup_model(self):
+        logger.info("Initializing model...")
+        self.model = WrappedModel(config=self.config)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
+        self.model.eval()
+        logger.info(f"Model initialized on device: {self.device}")
 
-    logger.info(f"Experiment configuration loaded. Using device: {experiment_config['device']}")
-    return config, experiment_config
+    def setup_dataloader(self):
+        logger.info("Setting up data loader...")
+        dataset_config = self.config["dataset"][self.config["default"]["default_dataset"]]
+        dataloader_config = self.config["dataloader"]
+        dataset = DataManager.get_dataset({
+            "dataset": dataset_config,
+            "dataloader": dataloader_config
+        })
+        self.data_loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=dataloader_config["batch_size"],
+            shuffle=dataloader_config["shuffle"],
+            num_workers=dataloader_config["num_workers"],
+            collate_fn=custom_collate_fn
+        )
+        logger.info("Data loader setup complete")
 
-def custom_collate_fn(batch: List[Tuple[torch.Tensor, Image.Image, str]]) -> Tuple[torch.Tensor, List[Image.Image], List[str]]:
-    tensors, images, filenames = zip(*batch)
-    return torch.stack(tensors), list(images), list(filenames)
+    def setup_network(self):
+        logger.info("Setting up network connection...")
+        server_host = self.config.get('experiment', {}).get('server_host')
+        if not server_host:
+            raise ValueError("server_host not specified in configuration")
+        
+        server_port = self.config.get('experiment', {}).get('port', 12345)
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client_socket.connect((server_host, server_port))
+        logger.info(f"Connected to server at {server_host}:{server_port}")
 
-def setup_dataloader(config: Dict[str, Any], experiment_config: Dict[str, Any]) -> DataLoader:
-    dataset_config = config["dataset"][experiment_config["DATASET_NAME"]]
-    dataloader_config = config["dataloader"]
+    def test_split_performance(self, split_layer_index: int) -> Tuple[float, float, float, float]:
+        host_times, travel_times, server_times = [], [], []
+        
+        # Create directory for this split layer
+        split_dir = self.images_dir / f"split_{split_layer_index}"
+        split_dir.mkdir(exist_ok=True)
 
-    dataset_config["args"]["root"] = project_root / dataset_config["args"]["root"]
-
-    final_config = {"dataset": dataset_config, "dataloader": dataloader_config}
-    dataset = DataManager.get_dataset(final_config)
-    
-    return DataLoader(
-        dataset,
-        batch_size=dataloader_config["batch_size"],
-        shuffle=dataloader_config["shuffle"],
-        num_workers=dataloader_config["num_workers"],
-        collate_fn=custom_collate_fn
-    )
-
-def test_split_performance(model: WrappedModel, data_loader: DataLoader, client_socket: socket.socket, split_layer_index: int) -> Tuple[float, float, float, float]:
-    host_times, travel_times, server_times = [], [], []
-    data_utils = DataUtils()
-
-    with torch.no_grad():
-        for input_tensor, original_images, _ in tqdm(data_loader, desc=f"Testing split at layer {split_layer_index}"):
-            try:
+        with torch.no_grad():
+            for input_tensor, original_image, image_files in tqdm(self.data_loader, 
+                                                    desc=f"Testing split at layer {split_layer_index}"):
+                image_name = Path(image_files[0]).stem  # Get filename without extension
+                
+                # Host processing
                 host_start_time = time.time()
-                input_tensor = input_tensor.to(model.device)
-                out = model(input_tensor, end=split_layer_index)
-                data_to_send = {
-                    'input': (out, input_tensor.shape[-2:]),
-                    'split_layer': split_layer_index
-                }
-                compressed_output, compressed_size = data_utils.compress_data(data_to_send)
+                input_tensor = input_tensor.to(self.device)
+                out = self.model(input_tensor, end=split_layer_index)
+                data_to_send = (out, original_image[0].size)
+                compressed_output, _ = NetworkUtils.compress_data(data_to_send)
                 host_end_time = time.time()
                 host_times.append(host_end_time - host_start_time)
 
+                # Network transfer and server processing
                 travel_start_time = time.time()
-                data_utils.send_result(client_socket, data_to_send)
-
-                result = data_utils.receive_data(client_socket)
-                travel_end_time = time.time()
-                travel_times.append(travel_end_time - travel_start_time)
                 
-                if result is not None:
-                    server_times.append(result.get('server_processing_time', 0))
-                else:
-                    logger.warning(f"Received None result for split layer {split_layer_index}")
-                    server_times.append(0)
-            except (BrokenPipeError, ConnectionResetError) as e:
-                logger.error(f"Connection error: {e}. Attempting to reconnect...")
-                # client_socket = reconnect_to_server(server_address)
-                # if client_socket is None:
-                #     logger.error("Failed to reconnect. Aborting experiment.")
-                #     return sum(host_times), sum(travel_times), sum(server_times), sum(host_times) + sum(travel_times) + sum(server_times)
+                # Send data to server
+                self.client_socket.sendall(split_layer_index.to_bytes(4, 'big'))
+                self.client_socket.sendall(len(compressed_output).to_bytes(4, 'big'))
+                self.client_socket.sendall(compressed_output)
 
-    total_host_time = sum(host_times)
-    total_travel_time = sum(travel_times)
-    total_server_time = sum(server_times)
-    total_processing_time = total_host_time + total_travel_time + total_server_time
+                # Receive server response
+                response_length = int.from_bytes(self.client_socket.recv(4), 'big')
+                response_data = NetworkUtils.receive_full_message(self.client_socket, response_length)
+                detections, server_processing_time = NetworkUtils.decompress_data(response_data)
+                
+                travel_end_time = time.time()
+                travel_times.append(travel_end_time - travel_start_time - server_processing_time)
+                server_times.append(server_processing_time)
 
-    logger.info(f"Total Host Time: {total_host_time:.2f} s, Total Travel Time: {total_travel_time:.2f} s, Total Server Time: {total_server_time:.2f} s")
-    return total_host_time, total_travel_time, total_server_time, total_processing_time
+                logger.debug(f"Received prediction: {detections}")
 
-def reconnect_to_server(server_address: Tuple[str, int], max_retries: int = 5, retry_delay: int = 5) -> Optional[socket.socket]:
-    for attempt in range(max_retries):
+                # Save image with detections
+                if detections:  # Only save if there are detections
+                    img = original_image[0].copy()
+                    img_with_detections = self.draw_detections(img, detections)
+                    output_path = split_dir / f"{image_name}_detections.jpg"
+                    img_with_detections.save(output_path)
+                    logger.debug(f"Saved detection image to {output_path}")
+
+        total_host_time = sum(host_times)
+        total_travel_time = sum(travel_times)
+        total_server_time = sum(server_times)
+        total_time = total_host_time + total_travel_time + total_server_time
+
+        logger.info(f"Split {split_layer_index} performance:"
+                   f"\n\tHost time: {total_host_time:.2f}s"
+                   f"\n\tTravel time: {total_travel_time:.2f}s"
+                   f"\n\tServer time: {total_server_time:.2f}s"
+                   f"\n\tTotal time: {total_time:.2f}s")
+
+        return total_host_time, total_travel_time, total_server_time, total_time
+
+    def draw_detections(self, image: Image.Image, detections: List[Tuple[List[int], float, int]]) -> Image.Image:
+        """Draw detections on the image using the same format as DetectionUtils."""
+        draw = ImageDraw.Draw(image)
         try:
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.connect(server_address)
-            logger.info(f"Reconnected to server at {server_address}")
-            return client_socket
-        except ConnectionRefusedError:
-            logger.warning(f"Reconnection attempt {attempt + 1}/{max_retries} failed. Retrying in {retry_delay} seconds...")
-            time.sleep(retry_delay)
-    return None
+            font = ImageFont.truetype(self.config["default"]["font_path"], 12)
+        except IOError:
+            font = ImageFont.load_default()
+            logger.warning("Failed to load font. Using default font.")
 
-def connect_to_server(server_address: Tuple[str, int], max_retries: int = 5, retry_delay: int = 5) -> socket.socket:
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    
-    for attempt in range(max_retries):
-        try:
-            client_socket.connect(server_address)
-            logger.info(f"Connected to server at {server_address}")
-            return client_socket
-        except ConnectionRefusedError:
-            if attempt < max_retries - 1:
-                logger.warning(f"Connection refused. Retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{max_retries})")
-                time.sleep(retry_delay)
-            else:
-                logger.error(f"Failed to connect to server after {max_retries} attempts. Please check if the server is running and the address is correct.")
-                raise
-        except Exception as e:
-            logger.error(f"Unexpected error while connecting to server: {e}")
-            raise
+        class_names = self.config["dataset"][self.config["default"]["default_dataset"]]["class_names"]
+        
+        for box, score, class_id in detections:
+            if isinstance(box, (list, tuple)) and len(box) == 4:
+                x1, y1, w, h = box
+                x2, y2 = x1 + w, y1 + h
 
-def run_experiment(config: Dict[str, Any], experiment_config: Dict[str, Any]):
-    model = WrappedModel(config=config)
-    model.to(experiment_config['device'])
-    model.eval()
+                # Draw bounding box
+                draw.rectangle([x1, y1, x2, y2], outline="red", width=2)
+                
+                # Draw label
+                label = f"{class_names[class_id]}: {score:.2f}"
+                label_size = draw.textbbox((0, 0), label, font=font)
+                text_width = label_size[2] - label_size[0]
+                text_height = label_size[3] - label_size[1]
 
-    data_loader = setup_dataloader(config, experiment_config)
+                # Draw label background
+                draw.rectangle(
+                    [x1, y1 - text_height - 4, x1 + text_width + 4, y1],
+                    fill=(0, 0, 0, 128)
+                )
+                draw.text((x1 + 2, y1 - text_height - 2), label, fill="white", font=font)
 
-    device_mgr = DeviceMgr()
-    server_devices = device_mgr.get_devices(available_only=True, device_type="SERVER")
-    if not server_devices:
-        logger.error("No available server devices found.")
-        return
+        return image
 
-    server_device = server_devices[0]
-    server_address = (server_device.working_cparams.host, config['experiment']['port'])
-    logger.info(f"Attempting to connect to server at {server_address}")
+    def run_experiment(self):
+        logger.info("Starting experiment...")
+        total_layers = self.config['model'][self.config['default']['default_model']]['total_layers']
+        time_taken = []
 
-    client_socket = connect_to_server(server_address)
+        # Test each split point
+        for split_layer_index in range(1, total_layers):
+            times = self.test_split_performance(split_layer_index)
+            time_taken.append((split_layer_index, *times))
 
-    data_utils = DataUtils()
+        # Find best split point
+        best_split, *_, min_time = min(time_taken, key=lambda x: x[4])
+        logger.info(f"Best split at layer {best_split} with time {min_time:.2f} seconds")
 
-    # Send experiment configuration to the server
-    experiment_config_to_send = {
-        'type': experiment_config['type'],
-        'model_name': experiment_config['MODEL_NAME'],
-        'dataset_name': experiment_config['DATASET_NAME'],
-        'class_names': experiment_config['CLASS_NAMES'],
-        'font_path': str(experiment_config['FONT_PATH']),
-        'split_layer': experiment_config['SPLIT_LAYER'],
-    }
-    data_utils.send_result(client_socket, experiment_config_to_send)
+        # Save results
+        self.save_results(time_taken)
 
-    total_layers = config['model'][experiment_config['MODEL_NAME']]['total_layers']
-    time_taken = []
+    def save_results(self, results: list):
+        df = pd.DataFrame(results, columns=["Split Layer Index", "Host Time", 
+                                          "Travel Time", "Server Time", 
+                                          "Total Processing Time"])
+        output_file = self.results_dir / "split_layer_times.xlsx"
+        df.to_excel(output_file, index=False)
+        logger.info(f"Results saved to {output_file}")
 
-    for split_layer_index in range(1, total_layers):
-        host_time, travel_time, server_time, processing_time = test_split_performance(model, data_loader, client_socket, split_layer_index)
-        logger.info(f"Split at layer {split_layer_index}, Processing Time: {processing_time:.2f} seconds")
-        time_taken.append((split_layer_index, host_time, travel_time, server_time, processing_time))
-
-    best_split, host_time, travel_time, server_time, min_time = min(time_taken, key=lambda x: x[4])
-    logger.info(f"Best split at layer {best_split} with time {min_time:.2f} seconds")
-
-    df = pd.DataFrame(time_taken, columns=["Split Layer Index", "Host Time", "Travel Time", "Server Time", "Total Processing Time"])
-    df.to_excel(f"{experiment_config['type']}_split_layer_times.xlsx", index=False)
-    logger.info(f"Data saved to {experiment_config['type']}_split_layer_times.xlsx")
-
-    client_socket.close()
+    def cleanup(self):
+        logger.info("Cleaning up...")
+        self.client_socket.close()
+        logger.info("Cleanup complete")
 
 if __name__ == "__main__":
-    config, experiment_config = get_experiment_configs()
-    run_experiment(config, experiment_config)
+    config_path = Path(__file__).parent / "config" / "model_config.yaml"
+    host = ExperimentHost(config_path)
+    try:
+        host.run_experiment()
+    finally:
+        host.cleanup()

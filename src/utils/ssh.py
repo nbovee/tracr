@@ -6,7 +6,10 @@ import paramiko  # type: ignore
 import select
 import threading
 import pathlib
-from typing import Union, Optional, Dict, Any
+import blosc2 # type: ignore
+import pickle
+import socket
+from typing import Union, Optional, Dict, Any, Tuple
 
 from .system_utils import get_repo_root
 from pathlib import Path
@@ -386,3 +389,57 @@ class SSHSession(paramiko.SSHClient):
                 )
 
         return success
+
+
+class NetworkUtils:
+    """Handles network data compression and communication."""
+    
+    @staticmethod
+    def compress_data(data: Any) -> Tuple[bytes, int]:
+        """Compress data using Blosc2."""
+        serialized_data = pickle.dumps(data)
+        compressed_data = blosc2.compress(serialized_data, clevel=4, 
+                                        filter=blosc2.Filter.SHUFFLE, 
+                                        codec=blosc2.Codec.ZSTD)
+        size_bytes = len(compressed_data)
+        return compressed_data, size_bytes
+
+    @staticmethod
+    def decompress_data(compressed_data: bytes) -> Any:
+        """Decompress data using Blosc2."""
+        decompressed_data = blosc2.decompress(compressed_data)
+        return pickle.loads(decompressed_data)
+
+    @staticmethod
+    def receive_full_message(conn: socket.socket, expected_length: int) -> bytes:
+        """Receive a full message of known length from a socket."""
+        data_chunks = []
+        bytes_recd = 0
+        while bytes_recd < expected_length:
+            chunk = conn.recv(min(expected_length - bytes_recd, 4096))
+            if not chunk:
+                raise RuntimeError("Socket connection broken")
+            data_chunks.append(chunk)
+            bytes_recd += len(chunk)
+        return b''.join(data_chunks)
+
+    @staticmethod
+    def receive_data(conn: socket.socket) -> Optional[Dict[str, Any]]:
+        """Receive length-prefixed data from a socket."""
+        try:
+            length_data = conn.recv(4)
+            if not length_data:
+                return None
+            expected_length = int.from_bytes(length_data, 'big')
+            compressed_data = NetworkUtils.receive_full_message(conn, expected_length)
+            return NetworkUtils.decompress_data(compressed_data)
+        except Exception as e:
+            logger.error(f"Error receiving data: {e}")
+            return None
+
+    @staticmethod
+    def send_result(conn: socket.socket, result: Any) -> None:
+        """Send length-prefixed data over a socket."""
+        compressed_data, _ = NetworkUtils.compress_data(result)
+        conn.sendall(len(compressed_data).to_bytes(4, 'big'))
+        conn.sendall(compressed_data)
