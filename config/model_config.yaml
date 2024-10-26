@@ -7,6 +7,10 @@ experiment:
   port: 12345
   server_host: "10.0.0.245"  # Add server host IP
   host_script: experiment_host.py
+  split_inference:
+    enabled: true
+    participants: ["PARTICIPANT"]
+    server: "SERVER"
 
 
 # SPLIT INFERENCE CONFIGURATIONS

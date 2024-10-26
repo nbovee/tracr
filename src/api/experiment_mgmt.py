@@ -11,22 +11,20 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 from src.api.device_mgmt import DeviceMgr
-from src.interface.bridge import (
-    ExperimentInterface, ModelInterface, 
-    DataUtilsInterface, DataLoaderInterface
-)
+from src.interface.bridge import ExperimentInterface, ModelInterface
+from src.experiment_design.models.model_hooked import WrappedModel
+from src.experiment_design.datasets.dataloader import DataManager
 from src.utils.logger import setup_logger, DeviceType
 from src.utils.system_utils import read_yaml_file
-from src.utils.ml_utils import get_utils_class
+from src.utils.ml_utils import get_utils_class, DetectionUtils, ClassificationUtils
 
 logger = setup_logger(device=DeviceType.SERVER)
 
 def get_model_class() -> Type[ModelInterface]:
     """Returns the appropriate model class implementation."""
-    from src.experiment_design.models.model_hooked import WrappedModel
     return WrappedModel
 
-def get_dataloader_class() -> Type[DataLoaderInterface]:
+def get_dataloader_class() -> Type[DataManager]:
     """Returns the appropriate dataloader class implementation."""
     from src.experiment_design.datasets.dataloader import DataManager
     return DataManager
@@ -41,19 +39,25 @@ class BaseExperiment(ExperimentInterface):
         self.data_loader = self.setup_dataloader()
 
     def initialize_model(self) -> ModelInterface:
-        model_class = get_model_class()
-        model = model_class(config=self.config)
+        model = WrappedModel(config=self.config)
         model.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
         model.eval()
         return model
 
-    def initialize_data_utils(self) -> DataUtilsInterface:
+    def initialize_data_utils(self):
         experiment_type = self.config['experiment']['type']
-        utils_class = get_utils_class(experiment_type)
-        return utils_class(
-            self.config["dataset"][self.config["default"]["default_dataset"]]["class_names"],
-            str(self.config["default"]["font_path"])
-        )
+        if experiment_type == 'yolo':
+            return DetectionUtils(
+                self.config["dataset"][self.config["default"]["default_dataset"]]["class_names"],
+                str(self.config["default"]["font_path"])
+            )
+        elif experiment_type in ['imagenet', 'alexnet']:
+            return ClassificationUtils(
+                self.config["dataset"][self.config["default"]["default_dataset"]]["class_names"],
+                str(self.config["default"]["font_path"])
+            )
+        else:
+            raise ValueError(f"Unsupported experiment type: {experiment_type}")
 
     def setup_dataloader(self) -> Any:
         dataset_config = self.config["dataset"][self.config["default"]["default_dataset"]]

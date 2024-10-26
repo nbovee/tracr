@@ -2,16 +2,14 @@
 
 import sys
 import logging
-from typing import Any, List, Tuple, Dict, Optional, Type
+from typing import Any, List, Tuple, Dict, Type, Optional
 import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
-from src.interface.bridge import DataUtilsInterface
-
 logger = logging.getLogger(__name__)
 
-class ClassificationUtils(DataUtilsInterface):
+class ClassificationUtils:
     def __init__(self, class_names_path: str, font_path: str):
         self.class_names = self.load_imagenet_classes(class_names_path)
         self.font_path = font_path
@@ -70,7 +68,7 @@ class ClassificationUtils(DataUtilsInterface):
         return image
 
 
-class DetectionUtils(DataUtilsInterface):
+class DetectionUtils:
     def __init__(self, class_names: List[str], font_path: str,
                  conf_threshold: float = 0.25, iou_threshold: float = 0.45,
                  input_size: Tuple[int, int] = (224, 224)):
@@ -168,7 +166,7 @@ class DetectionUtils(DataUtilsInterface):
         return image
 
 
-def get_utils_class(experiment_type: str) -> Type[DataUtilsInterface]:
+def get_utils_class(experiment_type: str) -> Type[Any]:
     """Returns the appropriate utility class based on experiment type."""
     if experiment_type == 'yolo':
         return DetectionUtils
