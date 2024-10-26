@@ -1,25 +1,29 @@
-# src/experiment_design/experiments/alexnet_experiment.py
+# src/experiment_design/experiments/template_experiment.py
 
-from typing import Dict, Any
+import sys
+from pathlib import Path
+from typing import Dict, Any, Optional
 import torch
 import time
 from tqdm import tqdm
 
+# Add the project root to the Python path
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+
 from src.experiment_design.models.model_hooked import WrappedModel
-from src.utils.ml_utils import ClassificationUtils
+from src.utils.ml_utils import DataUtils  # Import appropriate utility classes
 from src.interface.bridge import ExperimentInterface, ModelInterface
 from src.experiment_design.datasets.dataloader import DataManager
 
-class AlexNetExperiment(ExperimentInterface):
+class TemplateExperiment(ExperimentInterface):
     def __init__(self, config: Dict[str, Any], host: str, port: int):
         self.config = config
         self.host = host
         self.port = port
         self.model = self.initialize_model()
-        self.classification_utils = ClassificationUtils(
-            self.config["dataset"][self.config["default"]["default_dataset"]]["class_names"],
-            str(self.config["default"]["font_path"])  # Make sure this is in your config
-        )
+        self.data_utils = self.initialize_data_utils()
         self.data_loader = self.setup_dataloader()
 
     def initialize_model(self) -> ModelInterface:
@@ -27,6 +31,10 @@ class AlexNetExperiment(ExperimentInterface):
         model.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
         model.eval()
         return model
+
+    def initialize_data_utils(self):
+        # Initialize any data utility classes you need
+        return DataUtils()
 
     def setup_dataloader(self):
         dataset_config = self.config["dataset"][self.config["default"]["default_dataset"]]
@@ -40,7 +48,7 @@ class AlexNetExperiment(ExperimentInterface):
         )
 
     def process_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        out, original_img_size = data['input']
+        out, original_size = data['input']
         split_layer_index = data['split_layer']
 
         with torch.no_grad():
@@ -50,10 +58,10 @@ class AlexNetExperiment(ExperimentInterface):
                         out[key] = value.to(self.model.device)
             
             res = self.model(out, start=split_layer_index)
-            # Assuming res is the final output, we don't need layer_outputs for classification
-            classifications = self.classification_utils.postprocess_imagenet(res)
+            # Process the results as needed for your specific experiment
+            processed_results = self.data_utils.postprocess(res, original_size)
 
-        return {'classifications': classifications}
+        return {'results': processed_results}
 
     def run(self):
         total_layers = self.config['model'][self.config['default']['default_model']]['total_layers']
@@ -79,10 +87,8 @@ class AlexNetExperiment(ExperimentInterface):
             host_end_time = time.time()
             host_times.append(host_end_time - host_start_time)
 
-            # Simulate network transfer
+            # Simulate network transfer (replace with actual network transfer in a real setup)
             travel_start_time = time.time()
-            # Here you would normally send the data to the server and receive results
-            # For this example, we'll just add a small delay
             time.sleep(0.01)
             travel_end_time = time.time()
             travel_times.append(travel_end_time - travel_start_time)
@@ -102,9 +108,21 @@ class AlexNetExperiment(ExperimentInterface):
     def save_results(self, results: Dict[str, Any]):
         import pandas as pd
         df = pd.DataFrame(results, columns=["Split Layer Index", "Host Time", "Travel Time", "Server Time", "Total Processing Time"])
-        df.to_excel("imagenet_split_layer_times.xlsx", index=False)
-        print("Results saved to imagenet_split_layer_times.xlsx")
+        df.to_excel(f"{self.__class__.__name__}_split_layer_times.xlsx", index=False)
+        print(f"Results saved to {self.__class__.__name__}_split_layer_times.xlsx")
 
     def load_data(self) -> Any:
-        # This method is not used in this experiment, but we need to implement it to satisfy the interface
+        # Implement if needed for your experiment
+        pass
+
+    def setup_socket(self):
+        # Implement if needed for your experiment
+        pass
+
+    def receive_data(self, conn: Any) -> Optional[Dict[str, Any]]:
+        # Implement if needed for your experiment
+        pass
+
+    def send_result(self, conn: Any, result: Dict[str, Any]):
+        # Implement if needed for your experiment
         pass

@@ -28,10 +28,10 @@ class ExperimentManager:
     def setup_experiment(self, experiment_config: Dict[str, Any]) -> ExperimentInterface:
         experiment_type = experiment_config.get('type', self.config['experiment']['type'])
         if experiment_type == 'yolo':
-            from src.experiment_design.experiments.yolo_experiment import YOLOExperiment
+            from experiments.yolo_experiment import YOLOExperiment
             return YOLOExperiment(self.config, self.host, self.port)
         elif experiment_type in ['imagenet', 'alexnet']:  # Handle both 'imagenet' and 'alexnet'
-            from src.experiment_design.experiments.alexnet_experiment import AlexNetExperiment
+            from experiments.alexnet_experiment import AlexNetExperiment
             return AlexNetExperiment(self.config, self.host, self.port)
         else:
             raise ValueError(f"Unsupported experiment type: {experiment_type}")
