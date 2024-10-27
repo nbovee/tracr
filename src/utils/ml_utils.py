@@ -2,7 +2,7 @@
 
 import sys
 import logging
-from typing import Any, List, Tuple, Dict, Type, Optional
+from typing import Any, List, Tuple, Type, Optional
 import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
@@ -80,13 +80,12 @@ class DetectionUtils:
 
     def postprocess(self, outputs: Any, original_img_size: Optional[Tuple[int, int]] = None, 
                    *args, **kwargs) -> List[Tuple[List[int], float, int]]:
-        """Implementation of DataUtilsInterface.postprocess for object detection."""
         if original_img_size is None:
             raise ValueError("original_img_size is required for detection postprocessing")
             
         import cv2 # type: ignore
 
-        logger.info("Starting postprocessing of detection model outputs")
+        logger.info(f"Starting postprocessing with original_img_size={original_img_size}")
 
         if isinstance(outputs, tuple):
             outputs = outputs[0]
@@ -119,15 +118,18 @@ class DetectionUtils:
                 scores.append(max_score)
                 boxes.append([left, top, width, height])
 
-        indices = cv2.dnn.NMSBoxes(boxes, scores, self.conf_threshold, self.iou_threshold)
-        detections = []
+        if boxes:  # Only perform NMS if we have boxes
+            indices = cv2.dnn.NMSBoxes(boxes, scores, self.conf_threshold, self.iou_threshold)
+            detections = []
 
-        if indices is not None and len(indices) > 0:
-            indices = indices.flatten()
-            for i in indices:
-                detections.append((boxes[i], scores[i], class_ids[i]))
+            if indices is not None and len(indices) > 0:
+                indices = indices.flatten()
+                for i in indices:
+                    detections.append((boxes[i], scores[i], class_ids[i]))
 
-        return detections
+            return detections
+        else:
+            return []
 
     def draw_detections(self, image: Image.Image, detections: List[Tuple[List[int], float, int]],
                        padding: int = 2, font_size: int = 12, box_color: str = "red",
@@ -164,13 +166,3 @@ class DetectionUtils:
                 draw.text((label_x, label_y), label, fill=text_color, font=font)
 
         return image
-
-
-def get_utils_class(experiment_type: str) -> Type[Any]:
-    """Returns the appropriate utility class based on experiment type."""
-    if experiment_type == 'yolo':
-        return DetectionUtils
-    elif experiment_type in ['imagenet', 'alexnet']:
-        return ClassificationUtils
-    else:
-        raise ValueError(f"Unsupported experiment type: {experiment_type}")

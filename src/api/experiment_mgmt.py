@@ -1,5 +1,5 @@
 import sys
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Type
 from pathlib import Path
 import torch
 import time
@@ -16,7 +16,7 @@ from src.experiment_design.models.model_hooked import WrappedModel
 from src.experiment_design.datasets.dataloader import DataManager
 from src.utils.logger import setup_logger, DeviceType
 from src.utils.system_utils import read_yaml_file
-from src.utils.ml_utils import get_utils_class, DetectionUtils, ClassificationUtils
+from src.utils.ml_utils import DetectionUtils, ClassificationUtils
 
 logger = setup_logger(device=DeviceType.SERVER)
 
@@ -31,7 +31,7 @@ def get_dataloader_class() -> Type[DataManager]:
 
 class BaseExperiment(ExperimentInterface):
     def __init__(self, config: Dict[str, Any], host: str, port: int):
-        self.config = config
+        self.config = read_yaml_file(config)
         self.host = host
         self.port = port
         self.model = self.initialize_model()
@@ -40,27 +40,24 @@ class BaseExperiment(ExperimentInterface):
 
     def initialize_model(self) -> ModelInterface:
         model = WrappedModel(config=self.config)
-        model.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+        model.to(torch.device(self.config["default"]["device"]))
         model.eval()
         return model
 
     def initialize_data_utils(self):
-        experiment_type = self.config['experiment']['type']
-        if experiment_type == 'yolo':
-            return DetectionUtils(
-                self.config["dataset"][self.config["default"]["default_dataset"]]["class_names"],
-                str(self.config["default"]["font_path"])
-            )
-        elif experiment_type in ['imagenet', 'alexnet']:
-            return ClassificationUtils(
-                self.config["dataset"][self.config["default"]["default_dataset"]]["class_names"],
-                str(self.config["default"]["font_path"])
-            )
+        model_type = self.config["model"]["model_name"]
+        class_names = self.config["dataset"]["args"]["class_names"]
+        font_path = self.config["default"]["font_path"]
+
+        if model_type == 'yolov8s':
+            return DetectionUtils(class_names=class_names, font_path=font_path)
+        elif model_type == 'alexnet':
+            return ClassificationUtils(class_names=class_names, font_path=font_path)
         else:
-            raise ValueError(f"Unsupported experiment type: {experiment_type}")
+            raise ValueError(f"Unsupported model type: {model_type}")
 
     def setup_dataloader(self) -> Any:
-        dataset_config = self.config["dataset"][self.config["default"]["default_dataset"]]
+        dataset_config = self.config["dataset"]
         dataloader_config = self.config["dataloader"]
         dataloader_class = get_dataloader_class()
         dataset = dataloader_class.get_dataset({
@@ -95,7 +92,7 @@ class BaseExperiment(ExperimentInterface):
         return {f'{self.config["experiment"]["type"]}_results': processed_results}
 
     def run(self):
-        total_layers = self.config['model'][self.config['default']['default_model']]['total_layers']
+        total_layers = self.config['model']['total_layers']
         time_taken = []
 
         for split_layer_index in range(1, total_layers):
@@ -133,8 +130,8 @@ class BaseExperiment(ExperimentInterface):
         import pandas as pd
         df = pd.DataFrame(results, columns=["Split Layer Index", "Host Time", "Travel Time", 
                                           "Server Time", "Total Processing Time"])
-        experiment_type = self.config['experiment']['type']
-        filename = f"{experiment_type}_split_layer_times.xlsx"
+        model_type = self.config["model"]["model_name"] 
+        filename = f"{model_type}_split_layer_times.xlsx"
         df.to_excel(filename, index=False)
         print(f"Results saved to {filename}")
 
@@ -155,8 +152,6 @@ class ExperimentManager:
         self.port = self.config.get('experiment', {}).get('port', 12345)
 
     def setup_experiment(self, experiment_config: Dict[str, Any]) -> ExperimentInterface:
-        # Update experiment type in config
-        self.config['experiment']['type'] = experiment_config.get('type', self.config['experiment']['type'])
         return BaseExperiment(self.config, self.host, self.port)
 
     def run_experiment(self, experiment: ExperimentInterface):

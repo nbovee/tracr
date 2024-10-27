@@ -20,21 +20,38 @@ class OnionDataset(BaseDataset):
         transform: Optional[Callable] = None,
         target_transform: Optional[Callable] = None,
         max_samples: int = -1,
+        class_names: Optional[List[str]] = None,
+        img_directory: Optional[Path] = None,
     ):
         """Initializes the OnionDataset."""
         super().__init__()
-        self.IMG_DIRECTORY = root or self.DATA_SOURCE_DIRECTORY / "onion" / "testing"
+        if root is None:
+            raise ValueError("Root directory is required")
 
-        logger.info(
-            f"Initializing OnionDataset with root={root}, max_samples={max_samples}"
-        )
-
-        if not isinstance(self.IMG_DIRECTORY, Path):
-            self.IMG_DIRECTORY = Path(self.IMG_DIRECTORY)
+        self.root = Path(root)
+        self.IMG_DIRECTORY = Path(img_directory)
 
         if not self.IMG_DIRECTORY.exists():
             logger.error(f"Image directory not found: {self.IMG_DIRECTORY}")
             raise FileNotFoundError(f"Image directory not found: {self.IMG_DIRECTORY}")
+        
+        if isinstance(class_names, str):
+            self.CLASS_NAMES = Path(class_names)
+            if not self.CLASS_NAMES.exists():
+                logger.warning(f"Class names file not found: {self.CLASS_NAMES}")
+                self.CLASS_NAMES = None
+        else:
+            self.CLASS_NAMES = class_names # provided as list
+
+        if not self.CLASS_NAMES:
+            raise ValueError("Class names not provided in config")
+
+        logger.info(
+            f"Initializing OnionDataset with root={root}, "
+            f"class_names={self.CLASS_NAMES}, "
+            f"img_directory={self.IMG_DIRECTORY}, "
+            f"max_samples={max_samples}"
+        )
 
         self.transform = transform or transforms.Compose(
             [transforms.Resize((224, 224)), transforms.ToTensor()]
@@ -49,12 +66,6 @@ class OnionDataset(BaseDataset):
     def _load_image_files(self) -> List[Path]:
         """Loads image file paths from the IMG_DIRECTORY."""
         logger.debug(f"Loading image files from {self.IMG_DIRECTORY}")
-        if not self.IMG_DIRECTORY.exists():
-            logger.error(f"Image directory does not exist: {self.IMG_DIRECTORY}")
-            raise FileNotFoundError(
-                f"Image directory does not exist: {self.IMG_DIRECTORY}"
-            )
-
         image_files = sorted(
             [
                 f

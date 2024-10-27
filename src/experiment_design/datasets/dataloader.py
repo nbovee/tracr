@@ -6,6 +6,7 @@ import logging
 from importlib import import_module
 from typing import Any, Dict
 from torch.utils.data import DataLoader, Dataset
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -16,18 +17,23 @@ class DatasetFactory:
         """Creates a dataset instance based on the provided configuration."""
         logger.info(f"Creating dataset with config: {dataset_config}")
 
+        # Validate required config keys
         required_keys = ["module", "class"]
         for key in required_keys:
             if key not in dataset_config:
                 logger.error(f"Missing required key in dataset config: {key}")
                 raise ValueError(f"Missing required key: {key}")
 
-        dataset_module = dataset_config.get("module")
-        dataset_class = dataset_config.get("class")
         dataset_args = dataset_config.get("args", {})
-        if dataset_args is not None and not isinstance(dataset_args, dict):
-            logger.error(f"Invalid dataset arguments: {dataset_args}")
-            raise ValueError("Dataset arguments must be a dictionary")
+        
+        # Validate paths if they exist in args
+        path_keys = ["root", "class_names", "img_directory"]
+        for key in path_keys:
+            if key in dataset_args:
+                path = Path(dataset_args[key])
+                if not path.parent.exists():
+                    logger.warning(f"Creating directory: {path.parent}")
+                    path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
             # Add parent module (src) to path
@@ -37,24 +43,24 @@ class DatasetFactory:
                 sys.path.insert(0, parent_dir)
 
             # Import the module
-            module = import_module(f"experiment_design.datasets.{dataset_module}")
+            module = import_module(f"experiment_design.datasets.{dataset_config['module']}")
 
             # Check if there's a factory function available
-            factory_function = getattr(module, f"{dataset_module}_dataset", None)
+            factory_function = getattr(module, f"{dataset_config['module']}_{dataset_config['class']}", None)
             if factory_function and callable(factory_function):
                 dataset = factory_function(**dataset_args)
             else:
-                dataset_cls = getattr(module, dataset_class)
+                dataset_cls = getattr(module, dataset_config['class'])
                 dataset = dataset_cls(**dataset_args)
 
-            logger.info(f"Successfully created dataset: {dataset_class}")
+            logger.info(f"Successfully created dataset: {dataset_config['class']}")
             return dataset
         except ImportError as e:
-            logger.exception(f"Failed to import dataset module '{dataset_module}': {e}")
+            logger.exception(f"Failed to import dataset module '{dataset_config['module']}': {e}")
             raise
         except AttributeError as e:
             logger.exception(
-                f"Failed to find dataset class '{dataset_class}' in module '{dataset_module}': {e}"
+                f"Failed to find dataset class '{dataset_config['class']}' in module '{dataset_config['module']}': {e}"
             )
             raise
         except Exception as e:

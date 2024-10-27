@@ -1,50 +1,40 @@
 # config/yolosplit.yaml
 
-type: yolo
-port: 12345
-
-# SPLIT INFERENCE CONFIGURATIONS
-split_inference:
-  enabled: true
-  participants: ["PARTICIPANT"]
-  server: "SERVER"
-
 # DEFAULT CONFIGURATIONS
 default:
   device: cuda
+  font_path: "fonts/DejaVuSans-Bold.ttf"
   log_level: INFO
   log_file: logs/app.log
-  font_path: "fonts/DejaVuSans-Bold.ttf"
 
 # MODEL CONFIGURATIONS
 model:
-  yolo:
-    model_name: yolov8s
-    version: null
-    pretrained: false
-    weight_path: data/onion/weights/best.pt
-    input_size: [3, 224, 224]
-    hook_style: pre
-    split_layer: 10
-    save_layers: [2, 4, 6]
-    total_layers: 23
-    num_classes: null
-    mode: eval
-    depth: 2
-    flush_buffer_size: 100
-    warmup_iterations: 10
-    log_file: logs/yolo.log
+  model_name: yolov8s
+  version: null
+  pretrained: false
+  weight_path: data/onion/weights/best.pt
+  input_size: [3, 224, 224]
+  hook_style: post
+  split_layer: 10
+  save_layers: [2, 4, 6]
+  total_layers: 23
+  num_classes: null
+  mode: eval
+  depth: 2
+  flush_buffer_size: 100
+  warmup_iterations: 10
+  log_file: logs/yolo.log
 
 # DATASET CONFIGURATIONS
 dataset:
-  onion:
-    module: onion
-    class: OnionDataset
+  module: onion
+  class: OnionDataset
+  args:
+    root: data/onion
     class_names: ["with_weeds", "without_weeds"]
-    args:
-      root: data/onion/testing
-      transform: null
-      max_samples: -1
+    img_directory: data/onion/testing
+    transform: null
+    max_samples: -1
 
 # DATALOADER CONFIGURATIONS
 dataloader:

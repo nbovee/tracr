@@ -32,10 +32,8 @@ def custom_collate_fn(batch):
     return torch.stack(images, 0), original_images, image_files
 
 class ExperimentHost:
-    def __init__(self, config_path: str, experiment_type: str):
+    def __init__(self, config_path: str):
         self.config = read_yaml_file(config_path)
-        # Update experiment type in config
-        self.config['experiment']['type'] = experiment_type
         self.setup_model()
         self.setup_dataloader()
         self.setup_network()
@@ -50,15 +48,15 @@ class ExperimentHost:
     def setup_model(self):
         logger.info("Initializing model...")
         self.model = WrappedModel(config=self.config)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(self.config["default"]["device"])
         self.model.to(self.device)
         self.model.eval()
         logger.info(f"Model initialized on device: {self.device}")
 
     def setup_dataloader(self):
         logger.info("Setting up data loader...")
-        dataset_config = self.config["dataset"][self.config["default"]["default_dataset"]]
-        dataloader_config = self.config["dataloader"]
+        dataset_config = self.config.get("dataset")
+        dataloader_config = self.config.get("dataloader")
         dataset = DataManager.get_dataset({
             "dataset": dataset_config,
             "dataloader": dataloader_config
@@ -74,10 +72,7 @@ class ExperimentHost:
 
     def setup_network(self):
         logger.info("Setting up network connection...")
-        server_host = self.config.get('experiment', {}).get('server_host')
-        if not server_host:
-            raise ValueError("server_host not specified in configuration")
-        
+        server_host = self.config.get('experiment', {}).get('server_host', "10.0.0.245")
         server_port = self.config.get('experiment', {}).get('port', 12345)
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_socket.connect((server_host, server_port))
@@ -110,6 +105,7 @@ class ExperimentHost:
                 host_start_time = time.time()
                 input_tensor = input_tensor.to(self.device)
                 out = self.model(input_tensor, end=split_layer_index)
+                
                 data_to_send = (out, original_image[0].size)
                 compressed_output, _ = NetworkUtils.compress_data(data_to_send)
                 host_end_time = time.time()
@@ -159,12 +155,12 @@ class ExperimentHost:
         """Draw detections on the image using the same format as DetectionUtils."""
         draw = ImageDraw.Draw(image)
         try:
-            font = ImageFont.truetype(self.config["default"]["font_path"], 12)
+            font = ImageFont.truetype(self.config["default"].get("font_path"), 12)
         except IOError:
             font = ImageFont.load_default()
             logger.warning("Failed to load font. Using default font.")
 
-        class_names = self.config["dataset"][self.config["default"]["default_dataset"]]["class_names"]
+        class_names = self.config["dataset"]["args"]["class_names"]
         
         for box, score, class_id in detections:
             if isinstance(box, (list, tuple)) and len(box) == 4:
@@ -191,7 +187,7 @@ class ExperimentHost:
 
     def run_experiment(self):
         logger.info("Starting experiment...")
-        total_layers = self.config['model'][self.config['default']['default_model']]['total_layers']
+        total_layers = self.config['model'].get("total_layers")
         time_taken = []
 
         # Test each split point
@@ -221,15 +217,12 @@ class ExperimentHost:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run split inference experiment')
-    parser.add_argument('--config', type=str, default='config/model_config.yaml',
-                      help='Path to configuration file')
-    parser.add_argument('--experiment', type=str, choices=['yolo', 'alexnet'],
-                      required=True, help='Type of experiment to run')
+    parser.add_argument('--config', type=str, required=True, help='Path to configuration file')
     
     args = parser.parse_args()
     config_path = Path(args.config)
     
-    host = ExperimentHost(config_path, args.experiment)
+    host = ExperimentHost(config_path)
     try:
         host.run_experiment()
     finally:

@@ -29,8 +29,7 @@ class ModelRegistry:
     def get_model(
         cls,
         name: str,
-        config: Dict[str, Any],
-        weights_path: Optional[str] = None,
+        model_config: Dict[str, Any],
         *args: Any,
         **kwargs: Any,
     ) -> nn.Module:
@@ -42,9 +41,7 @@ class ModelRegistry:
         if name_lower in cls._registry:
             model_loader = cls._registry[name_lower]
             logger.debug(f"Model {name} found in registry")
-            return model_loader(
-                config=config, weights_path=weights_path, *args, **kwargs
-            )
+            return model_loader(model_config=model_config, *args, **kwargs)
 
         # If not in registry, try to dynamically import
         try:
@@ -52,15 +49,15 @@ class ModelRegistry:
                 from ultralytics import YOLO  # type: ignore
 
                 logger.debug(f"Loading YOLO model: {name}")
-                model = YOLO(weights_path if weights_path else f"{name}.pt")
+                model = YOLO(model_config.get("weight_path", f"{name}.pt"))
                 return model.model
             elif name_lower in dir(importlib.import_module("torchvision.models")):
                 logger.debug(f"Loading torchvision model: {name}")
                 torchvision_models = importlib.import_module("torchvision.models")
                 model_class = getattr(torchvision_models, name)
-                model = model_class(pretrained=(weights_path is None))
-                if weights_path:
-                    model.load_state_dict(torch.load(weights_path))
+                model = model_class(pretrained=model_config.get("pretrained", True))
+                if model_config.get("weight_path"):
+                    model.load_state_dict(torch.load(model_config.get("weight_path")))
                 return model
             else:
                 logger.error(

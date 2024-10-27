@@ -1,50 +1,40 @@
 # config/alexnetsplit.yaml
 
-type: alexnet
-port: 12345
-
-# SPLIT INFERENCE CONFIGURATIONS
-split_inference:
-  enabled: true
-  participants: ["PARTICIPANT"]
-  server: "SERVER"
-
 # DEFAULT CONFIGURATIONS
 default:
   device: cuda
+  font_path: "fonts/DejaVuSans-Bold.ttf"
   log_level: INFO
   log_file: logs/app.log
-  font_path: "fonts/DejaVuSans-Bold.ttf"
 
 # MODEL CONFIGURATIONS
 model:
-  alexnet:
-    model_name: alexnet
-    version: null
-    pretrained: true
-    weight_path: null
-    input_size: [3, 224, 224]
-    hook_style: pre
-    split_layer: 5
-    save_layers: [2, 4, 6]
-    total_layers: 8
-    num_classes: null
-    mode: eval
-    depth: 2
-    flush_buffer_size: 100
-    warmup_iterations: 10
-    log_file: logs/alexnet.log
+  model_name: alexnet
+  version: null
+  pretrained: true
+  weight_path: null
+  input_size: [3, 224, 224]
+  hook_style: pre
+  split_layer: 5
+  save_layers: [2, 4, 6]
+  total_layers: 8
+  num_classes: null
+  mode: eval
+  depth: 2
+  flush_buffer_size: 100
+  warmup_iterations: 10
+  log_file: logs/alexnet.log
 
 # DATASET CONFIGURATIONS
 dataset:
-  imagenet:
-    module: imagenet
-    class: ImagenetDataset
-    class_names: "data/imagenet/imagenet_classes.txt"
-    args:
-      root: data/imagenet
-      transform: null
-      max_samples: -1
+  module: imagenet
+  class: ImagenetDataset
+  args:
+    root: data/imagenet
+    class_names: data/imagenet/imagenet_classes.txt
+    img_directory: data/imagenet/sample_images
+    transform: null
+    max_samples: -1
 
 # DATALOADER CONFIGURATIONS
 dataloader:

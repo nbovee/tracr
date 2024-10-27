@@ -6,7 +6,7 @@ import os
 import shutil
 import logging
 from pathlib import Path
-from typing import Optional, Callable, Tuple, Dict, List, Union
+from typing import Optional, Callable, Tuple, List, Union
 from PIL import Image
 import torch
 import torchvision.transforms as transforms  # type: ignore
@@ -28,20 +28,17 @@ class ImagenetDataset(BaseDataset):
         target_transform: Optional[Callable] = None,
         max_samples: int = -1,
         create_dirs: bool = False,
+        class_names: Optional[str] = None,
+        img_directory: Optional[str] = None,
     ):
         """Initializes the ImagenetDataset."""
         super().__init__()
-        self.root = Path(root) if root else self.DATA_SOURCE_DIRECTORY / "imagenet"
-        self.CLASS_TEXTFILE = self.root / "imagenet_classes.txt"
-        self.IMG_DIRECTORY = self.root / "sample_images"
-
-        logger.info(
-            f"Initializing ImagenetDataset with root={root}, max_samples={max_samples}"
-        )
-
-        if create_dirs:
-            os.makedirs(self.root, exist_ok=True)
-            os.makedirs(self.IMG_DIRECTORY, exist_ok=True)
+        if root is None:
+            raise ValueError("Root directory is required")
+        
+        self.root = Path(root)
+        self.CLASS_TEXTFILE = Path(class_names)
+        self.IMG_DIRECTORY = Path(img_directory)
 
         if not self.IMG_DIRECTORY.exists():
             logger.error(f"Image directory not found: {self.IMG_DIRECTORY}")
@@ -52,6 +49,17 @@ class ImagenetDataset(BaseDataset):
             self.classes = []
         else:
             self.classes = self._load_classes()
+
+        if create_dirs:
+            os.makedirs(self.root, exist_ok=True)
+            os.makedirs(self.IMG_DIRECTORY, exist_ok=True)
+
+        logger.info(
+            f"Initializing ImagenetDataset with root={root}, "
+            f"class_file={self.CLASS_TEXTFILE}, "
+            f"img_directory={self.IMG_DIRECTORY}, "
+            f"max_samples={max_samples}"
+        )
 
         self.transform = transform or transforms.Compose(
             [
@@ -214,11 +222,7 @@ class ImagenetDataset(BaseDataset):
         subset_name: str = "imagenet10_tr",
     ):
         """Load a previously saved subset of the ImageNet dataset."""
-        subset_dir = (
-            Path(root) / subset_name
-            if root
-            else cls.DATA_SOURCE_DIRECTORY / "imagenet" / subset_name
-        )
+        subset_dir = Path(root) / subset_name
 
         if not subset_dir.exists():
             raise FileNotFoundError(f"Subset directory not found: {subset_dir}")

@@ -53,41 +53,18 @@ class BaseModel(nn.Module):
         logger.debug(f"Using device: {self.device}")
 
         # Extract model-specific configurations
-        default_model_name = self.default_configs.get("default_model")
-        if not default_model_name:
-            logger.error("Default model name not specified in configuration")
-            raise ValueError(
-                "Default model name must be specified in the configuration."
-            )
-
-        self.model_config = self.config["model"].get(default_model_name)
-        if not self.model_config:
-            logger.error(f"Model configuration for '{default_model_name}' not found")
-            raise ValueError(
-                f"Model configuration for '{default_model_name}' not found."
-            )
-
-        # Extract other configurations
+        self.model_config = self.config.get("model")
         self.model_name = self.model_config.get("model_name")
         self.weight_path = self.model_config.get("weight_path")
         self.input_size = tuple(self.model_config.get("input_size", (3, 224, 224)))
         self.hook_style = self.model_config.get("hook_style")
         self.save_layers = self.model_config.get("save_layers", [])
-
-        # Set other configurations with defaults if not specified
-        self.depth = self.model_config.get(
-            "depth", self.default_configs.get("depth", 2)
-        )
-        self.mode = self.model_config.get(
-            "mode", self.default_configs.get("mode", "eval")
-        )
-        self.flush_buffer_size = self.model_config.get(
-            "flush_buffer_size", self.default_configs.get("flush_buffer_size", 100)
-        )
-        self.warmup_iterations = self.model_config.get(
-            "warmup_iterations", self.default_configs.get("warmup_iterations", 2)
-        )
-        self.node_name = self.model_config.get("node_name", self.default_configs.get("node_name", "UNKNOWN"))
+        self.depth = self.model_config.get("depth", 2)
+        self.mode = self.model_config.get("mode", "eval")
+        self.flush_buffer_size = self.model_config.get("flush_buffer_size", 100)
+        self.warmup_iterations = self.model_config.get("warmup_iterations", 2)
+        self.node_name = self.model_config.get("node_name", "UNKNOWN")
+        
         logger.debug(
             f"Model configurations: name={self.model_name}, mode={self.mode}, input_size={self.input_size}"
         )
@@ -99,28 +76,14 @@ class BaseModel(nn.Module):
         self._extract_dataloader_configurations()
 
     def _extract_dataset_configurations(self):
-        default_dataset_name = self.default_configs.get("default_dataset")
-        if not default_dataset_name:
-            logger.error("Default dataset name not specified in configuration")
-            raise ValueError(
-                "Default dataset name must be specified in the configuration."
-            )
-
-        self.dataset_config = self.config["dataset"].get(default_dataset_name)
+        self.dataset_config = self.config.get("dataset")
         if not self.dataset_config:
-            logger.error(
-                f"Dataset configuration for '{default_dataset_name}' not found"
-            )
-            raise ValueError(
-                f"Dataset configuration for '{default_dataset_name}' not found."
-            )
+            logger.error(f"Dataset configuration for '{self.model_name}' not found")
+            raise ValueError(f"Dataset configuration for '{self.model_name}' not found.")
 
         self.dataset_module = self.dataset_config.get("module")
         self.dataset_class = self.dataset_config.get("class")
         self.dataset_args = self.dataset_config.get("args", {})
-        if not isinstance(self.dataset_args, dict):
-            logger.error(f"Invalid dataset arguments: {self.dataset_args}")
-            raise ValueError("Dataset arguments must be a dictionary")
         logger.debug(
             f"Dataset configurations: module={self.dataset_module}, class={self.dataset_class}"
         )
@@ -140,9 +103,7 @@ class BaseModel(nn.Module):
         try:
             model = ModelRegistry.get_model(
                 self.model_name,
-                config=self.config,
-                weights_path=self.weight_path,
-                input_size=self.input_size,
+                model_config=self.model_config,
             )
             logger.info(f"Successfully loaded model: {self.model_name}")
             return model
