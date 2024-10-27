@@ -6,6 +6,7 @@ import sys
 import time
 from pathlib import Path
 import torch
+import pickle
 
 # Add the project root to the Python path
 project_root = Path(__file__).resolve().parents[2]
@@ -14,9 +15,7 @@ if str(project_root) not in sys.path:
 
 from src.api.device_mgmt import DeviceMgr
 from src.api.experiment_mgmt import ExperimentManager
-from src.utils.system_utils import read_yaml_file
 from src.utils.ssh import NetworkUtils
-from src.experiment_design.models.model_hooked import NotDict
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -24,11 +23,8 @@ logger = logging.getLogger("SERVER")
 
 class Server:
     def __init__(self):
-        self.project_root = Path(__file__).resolve().parents[2]
-        self.config_path = self.project_root / "config" / "model_config.yaml"
-        self.config = read_yaml_file(self.config_path)
         self.device_mgr = DeviceMgr()
-        self.experiment_mgr = ExperimentManager(self.config_path)
+        self.experiment_mgr = None  # Will be initialized per connection
 
     def start(self):
         server_devices = self.device_mgr.get_devices(available_only=True, device_type="SERVER")
@@ -38,7 +34,7 @@ class Server:
 
         server_device = server_devices[0]
         host = server_device.working_cparams.host
-        port = self.config['experiment']['port']
+        port = 12345  # Default port
 
         try:
             server_socket = self.device_mgr.create_server_socket(host, port)
@@ -58,9 +54,19 @@ class Server:
 
     def handle_connection(self, conn: socket.socket):
         try:
-            experiment = self.experiment_mgr.setup_experiment({"type": "yolo"})
+            # First receive the configuration
+            config_length = int.from_bytes(conn.recv(4), 'big')
+            config_data = NetworkUtils.receive_full_message(conn, config_length)
+            config = pickle.loads(config_data)
+            
+            # Initialize experiment manager with received config
+            self.experiment_mgr = ExperimentManager(config)
+            experiment = self.experiment_mgr.setup_experiment({"type": config['experiment']['type']})
             model = experiment.model
             model.eval()
+
+            # Send acknowledgment
+            conn.sendall(b'OK')
 
             while True:
                 # Receive split layer index
@@ -82,12 +88,13 @@ class Server:
                 out, original_img_size = received_data
 
                 with torch.no_grad():
-                    if isinstance(out, NotDict):
+                    if hasattr(out, 'inner_dict'):  # Handle NotDict case
                         inner_dict = out.inner_dict
                         for key, value in inner_dict.items():
                             if isinstance(value, torch.Tensor):
                                 inner_dict[key] = inner_dict[key].to(model.device)
-                                logger.debug(f"Intermediate tensors of {key} moved to the correct device")
+                    elif isinstance(out, torch.Tensor):
+                        out = out.to(model.device)
                     
                     res, layer_outputs = model(out, start=split_layer_index)
                     detections = experiment.data_utils.postprocess(res, original_img_size)

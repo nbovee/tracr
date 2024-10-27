@@ -10,6 +10,8 @@ import os
 from PIL import Image
 from PIL import ImageDraw
 from PIL import ImageFont
+import argparse
+import pickle
 
 # Add the project root to the Python path
 project_root = Path(__file__).resolve().parent
@@ -30,8 +32,10 @@ def custom_collate_fn(batch):
     return torch.stack(images, 0), original_images, image_files
 
 class ExperimentHost:
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str, experiment_type: str):
         self.config = read_yaml_file(config_path)
+        # Update experiment type in config
+        self.config['experiment']['type'] = experiment_type
         self.setup_model()
         self.setup_dataloader()
         self.setup_network()
@@ -77,6 +81,17 @@ class ExperimentHost:
         server_port = self.config.get('experiment', {}).get('port', 12345)
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_socket.connect((server_host, server_port))
+        
+        # Send configuration to server
+        config_bytes = pickle.dumps(self.config)
+        self.client_socket.sendall(len(config_bytes).to_bytes(4, 'big'))
+        self.client_socket.sendall(config_bytes)
+        
+        # Wait for acknowledgment
+        ack = self.client_socket.recv(2)
+        if ack != b'OK':
+            raise ConnectionError("Failed to initialize server with configuration")
+            
         logger.info(f"Connected to server at {server_host}:{server_port}")
 
     def test_split_performance(self, split_layer_index: int) -> Tuple[float, float, float, float]:
@@ -205,8 +220,16 @@ class ExperimentHost:
         logger.info("Cleanup complete")
 
 if __name__ == "__main__":
-    config_path = Path(__file__).parent / "config" / "model_config.yaml"
-    host = ExperimentHost(config_path)
+    parser = argparse.ArgumentParser(description='Run split inference experiment')
+    parser.add_argument('--config', type=str, default='config/model_config.yaml',
+                      help='Path to configuration file')
+    parser.add_argument('--experiment', type=str, choices=['yolo', 'alexnet'],
+                      required=True, help='Type of experiment to run')
+    
+    args = parser.parse_args()
+    config_path = Path(args.config)
+    
+    host = ExperimentHost(config_path, args.experiment)
     try:
         host.run_experiment()
     finally:
