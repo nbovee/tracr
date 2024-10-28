@@ -54,6 +54,12 @@ dataloader:
   num_workers: 4                # Number of parallel data loading workers. Adjust based on CPU cores available.
   collate_fn: null              # Custom batch collation function. null: Use default collation.
 
+# EXPERIMENT CONFIGURATIONS
+# ------------------------
+compression:
+  clevel: 3                     # Compression level [0 - 9] with 9 being maximum compression as default from blosc2.
+  filter: SHUFFLE               # Compression filter. Options: SHUFFLE, BITSHUFFLE, DELTA, ZSTD.
+  codec: ZSTD                   # Compression codec. Options: ZSTD, BLOSCLZ, LZ4, etc.
 
 # # EXAMPLE CONFIGURATION
 # # ----------------------

@@ -42,3 +42,9 @@ dataloader:
   shuffle: false
   num_workers: 4
   collate_fn: null
+
+# EXPERIMENT CONFIGURATIONS
+compression:
+  clevel: 3
+  filter: SHUFFLE
+  codec: ZSTD
