@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 from .system_utils import get_repo_root
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("split_computing_logger")
 
 
 # -------------------- Exceptions --------------------

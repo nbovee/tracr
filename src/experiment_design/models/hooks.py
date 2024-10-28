@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 import torch
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("split_computing_logger")
 
 
 class NotDict:

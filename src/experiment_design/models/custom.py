@@ -10,7 +10,7 @@ from torchvision import models  # type: ignore
 
 from .registry import ModelRegistry
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("split_computing_logger")
 
 
 @ModelRegistry.register("alexnet")

@@ -6,7 +6,7 @@ from typing import Any
 
 from src.utils.system_utils import get_repo_root
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("split_computing_logger")
 
 
 class BaseDataset:

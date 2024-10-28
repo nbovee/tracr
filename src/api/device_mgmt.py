@@ -25,7 +25,7 @@ from src.utils.ssh import (
 )
 from src.utils.system_utils import get_repo_root
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("split_computing_logger")
 
 
 # -------------------- Networking Utilities --------------------

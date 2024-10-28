@@ -9,7 +9,7 @@ import torch
 from PIL import Image, ImageDraw, ImageFont
 import cv2  # type: ignore
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("split_computing_logger")
 
 
 class ClassificationUtils:

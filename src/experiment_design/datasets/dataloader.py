@@ -8,7 +8,7 @@ from typing import Any, Dict, Type
 
 from torch.utils.data import DataLoader, Dataset
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("split_computing_logger")
 
 
 class DatasetFactory:

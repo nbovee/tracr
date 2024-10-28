@@ -20,7 +20,6 @@ from .system_utils import get_repo_root
 LOGS_DIR = Path(get_repo_root()) / "logs"
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-DEFAULT_LOG_FILE = LOGS_DIR / "app.log"
 DEFAULT_PORT = 9020
 BUFFER_SIZE = 100
 
@@ -242,69 +241,67 @@ def setup_logger(
         logger.setLevel(logging.DEBUG)
 
         if not logger.hasHandlers():
-            # Get log file path and level from config
-            log_file = DEFAULT_LOG_FILE
+            # Get log level and file paths from config
             log_level = logging.INFO
-            if config and "default" in config:
-                log_file = config["default"].get("log_file", DEFAULT_LOG_FILE)
-                log_level_str = config["default"].get("log_level", "INFO")
-                log_level = getattr(logging, log_level_str.upper())
+            default_log_file = LOGS_DIR / "app.log"
+            model_log_file = None
+            
+            if config:
+                if "default" in config:
+                    log_level_str = config["default"].get("log_level", "INFO")
+                    log_level = getattr(logging, log_level_str.upper())
+                    default_log_file = Path(config["default"].get("log_file", default_log_file))
+                
+                if "model" in config and config["model"].get("log_file"):
+                    model_log_file = Path(config["model"]["log_file"])
 
-            # Ensure log directory exists
-            log_dir = Path(log_file).parent
-            log_dir.mkdir(parents=True, exist_ok=True)
-
-            # File Handler
-            file_handler = RotatingFileHandler(
-                log_file, maxBytes=10**6, backupCount=5
-            )
+            # Create consistent formatters
             file_formatter = logging.Formatter(
-                "%(asctime)s - %(module)s - %(levelname)s: %(message)s"
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S"
             )
-            file_handler.setFormatter(file_formatter)
-            file_handler.setLevel(log_level)
-            logger.addHandler(file_handler)
-            logger.debug(f"File handler added, logging to {log_file}")
+            
+            # Default file handler
+            default_handler = RotatingFileHandler(
+                default_log_file, maxBytes=10**6, backupCount=5
+            )
+            default_handler.setFormatter(file_formatter)
+            default_handler.setLevel(log_level)
+            logger.addHandler(default_handler)
+
+            # Model-specific file handler (if configured)
+            if model_log_file:
+                model_handler = RotatingFileHandler(
+                    model_log_file, maxBytes=10**6, backupCount=5
+                )
+                model_handler.setFormatter(file_formatter)
+                model_handler.setLevel(log_level)
+                logger.addHandler(model_handler)
 
             # Console Handler with Rich
             rich_handler = RichHandler(
-                rich_tracebacks=True, show_time=True, show_level=True, markup=True
+                rich_tracebacks=True,
+                show_time=True,
+                show_level=True,
+                markup=True,
+                log_time_format="[%Y-%m-%d %H:%M:%S]"
             )
             rich_handler.setLevel(log_level)
             rich_formatter = ColorByDeviceFormatter(
-                "%(asctime)s - %(levelname)s - %(message)s"
+                "%(message)s"  # Rich handler adds its own timestamps
             )
             rich_handler.setFormatter(rich_formatter)
             logger.addHandler(rich_handler)
-            logger.debug("Rich console handler added")
 
-            # Prevent propagation to root logger
-            logger.propagate = False
+            logger.info(f"Logger initialized with level {log_level}")
+            logger.info(f"Logging to file: {default_log_file}")
+            if model_log_file:
+                logger.info(f"Model-specific logging to: {model_log_file}")
 
+        # Set device type
         if device:
             LoggingContext.set_device(device)
             logger.info(f"Device type set to {device.value}")
-
-            if config:
-                try:
-                    # For PARTICIPANT type, connect to SERVER's IP from config
-                    if device == DeviceType.PARTICIPANT:
-                        server_devices = [d for d in config.get("devices", []) 
-                                        if d["device_type"] == "SERVER"]
-                        if server_devices and server_devices[0]["connection_params"]:
-                            server_ip = server_devices[0]["connection_params"][0]["host"]
-                            logger.info(f"Server IP obtained: {server_ip}")
-                            socket_handler = BufferedSocketHandler(server_ip, DEFAULT_PORT)
-                            socket_handler.setLevel(logging.DEBUG)
-                            socket_formatter = logging.Formatter(
-                                "%(asctime)s - %(module)s - %(levelname)s: %(message)s"
-                            )
-                            socket_handler.setFormatter(socket_formatter)
-                            logger.addHandler(socket_handler)
-                            logger.debug(f"Socket handler added for {server_ip}:{DEFAULT_PORT}")
-                except Exception as e:
-                    logger.error(f"Error setting up socket handler: {e}")
-                    logger.warning("Continuing without socket handler")
         elif is_server:
             LoggingContext.set_device(DeviceType.SERVER)
             logger.info("Device type set to SERVER")

@@ -9,7 +9,7 @@ import yaml
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("split_computing_logger")
 
 # Constants
 BUFFER_SIZE = 100

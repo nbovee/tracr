@@ -13,7 +13,7 @@ from PIL import Image
 
 from .custom import BaseDataset
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("split_computing_logger")
 
 
 class ImageNetDataset(BaseDataset):

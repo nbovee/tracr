@@ -35,7 +35,7 @@ from src.interface.bridge import ModelInterface
 atexit.register(torch.cuda.empty_cache)
 
 # Configure logger
-logger = logging.getLogger("tracr_logger")
+logger = logging.getLogger("split_computing_logger")
 
 
 class WrappedModel(BaseModel, ModelInterface):

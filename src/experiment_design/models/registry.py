@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict
 import torch
 import torch.nn as nn
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("split_computing_logger")
 
 
 class ModelRegistry:

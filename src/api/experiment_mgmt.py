@@ -1,9 +1,10 @@
 # src/api/experiment_mgmt.py
 
+import logging
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Type
+from typing import Any, Dict, List
 
 import pandas as pd
 import torch
@@ -16,47 +17,42 @@ if str(project_root) not in sys.path:
 
 from src.api.device_mgmt import DeviceManager
 from src.interface.bridge import ExperimentInterface, ModelInterface
-from src.experiment_design.models.model_hooked import WrappedModel
-from src.experiment_design.datasets.dataloader import DataManager
-from src.utils.logger import setup_logger, DeviceType
 from src.utils.system_utils import read_yaml_file
 from src.utils.ml_utils import ClassificationUtils, DetectionUtils
 
-logger = setup_logger(device=DeviceType.SERVER)
-
-
-def get_model_class() -> Type[ModelInterface]:
-    """Retrieve the model class implementation."""
-    return WrappedModel
-
-
-def get_dataloader_class() -> Type[DataManager]:
-    """Retrieve the dataloader class implementation."""
-    return DataManager
+logger = logging.getLogger("split_computing_logger")
 
 
 class BaseExperiment(ExperimentInterface):
     """Base class for running experiments."""
 
-    def __init__(self, config_path: Dict[str, Any], host: str, port: int):
-        self.config = read_yaml_file(config_path)
+    def __init__(self, config: Dict[str, Any], host: str, port: int):
+        self.config = config
         self.host = host
         self.port = port
         self.model = self.initialize_model()
         self.data_utils = self.initialize_data_utils()
-        self.data_loader = self.setup_dataloader()
+        logger.info("BaseExperiment initialized")
 
     def initialize_model(self) -> ModelInterface:
         """Initialize and configure the model."""
-        model = WrappedModel(config=self.config)
+        logger.info("Initializing model...")
+        # Import model class dynamically to avoid direct dependency
+        model_module = __import__(
+            "src.experiment_design.models.model_hooked", 
+            fromlist=["WrappedModel"]
+        )
+        model_class = getattr(model_module, "WrappedModel")
+        
+        model = model_class(config=self.config)
         device = torch.device(self.config["default"]["device"])
         model.to(device)
         model.eval()
+        logger.info(f"Model initialized on device: {device}")
         return model
 
     def initialize_data_utils(self) -> Any:
-        """Initialize data utilities based on the model type.
-        Supported utilities are for classification and detection tasks."""
+        """Initialize data utilities based on the model type."""
         model_type = self.config["model"]["model_name"]
         class_names = self.config["dataset"]["args"]["class_names"]
         font_path = self.config["default"]["font_path"]
@@ -67,21 +63,6 @@ class BaseExperiment(ExperimentInterface):
             return ClassificationUtils(class_names=class_names, font_path=font_path)
 
         raise ValueError(f"Unsupported model type: {model_type}")
-
-    def setup_dataloader(self) -> Any:
-        """Set up the data loader with the provided configuration."""
-        dataset_config = self.config["dataset"]
-        dataloader_config = self.config["dataloader"]
-        dataloader_class = get_dataloader_class()
-        dataset = dataloader_class.get_dataset(
-            {"dataset": dataset_config, "dataloader": dataloader_config}
-        )
-        return torch.utils.data.DataLoader(
-            dataset,
-            batch_size=dataloader_config["batch_size"],
-            shuffle=dataloader_config["shuffle"],
-            num_workers=dataloader_config["num_workers"],
-        )
 
     def process_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Process the input data and return the results."""
@@ -103,8 +84,9 @@ class BaseExperiment(ExperimentInterface):
 
         return {f"{self.config['model']['model_name']}_results": processed}
 
-    def run(self):
-        """Execute the experiment by testing split performance across layers."""
+    def run(self) -> None:
+        """Execute the experiment."""
+        logger.info("Running experiment...")
         total_layers = self.config["model"]["total_layers"]
         timing_records = []
 
@@ -125,8 +107,28 @@ class BaseExperiment(ExperimentInterface):
         """Test the performance of a specific split layer."""
         host_times, travel_times, server_times = [], [], []
 
+        # Import dataloader dynamically
+        dataloader_module = __import__(
+            "src.experiment_design.datasets.dataloader",
+            fromlist=["DataManager"]
+        )
+        DataManager = getattr(dataloader_module, "DataManager")
+        
+        dataset = DataManager.get_dataset(
+            {
+                "dataset": self.config["dataset"],
+                "dataloader": self.config["dataloader"]
+            }
+        )
+        data_loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=self.config["dataloader"]["batch_size"],
+            shuffle=self.config["dataloader"]["shuffle"],
+            num_workers=self.config["dataloader"]["num_workers"],
+        )
+
         for input_tensor, _ in tqdm(
-            self.data_loader, desc=f"Testing split at layer {split_layer}"
+            data_loader, desc=f"Testing split at layer {split_layer}"
         ):
             # Host processing
             host_start = time.time()
@@ -147,8 +149,8 @@ class BaseExperiment(ExperimentInterface):
         total_time = sum(host_times) + sum(travel_times) + sum(server_times)
         return sum(host_times), sum(travel_times), sum(server_times), total_time
 
-    def save_results(self, results: List[tuple]):
-        """Save the experiment results to an Excel file."""
+    def save_results(self, results: List[tuple]) -> None:
+        """Save the experiment results."""
         df = pd.DataFrame(
             results,
             columns=[
@@ -163,10 +165,6 @@ class BaseExperiment(ExperimentInterface):
         filename = f"{model_type}_split_layer_times.xlsx"
         df.to_excel(filename, index=False)
         logger.info(f"Results saved to {filename}")
-
-    def load_data(self) -> Any:
-        """Load data if needed."""
-        pass
 
 
 class ExperimentManager:
@@ -187,25 +185,15 @@ class ExperimentManager:
             else None
         )
         self.port = self.config.get("experiment", {}).get("port", 12345)
+        logger.info("ExperimentManager initialized")
 
     def setup_experiment(self) -> ExperimentInterface:
-        """Initialize the experiment with the given configuration."""
+        """Set up and return an experiment instance."""
+        logger.info("Setting up experiment...")
         return BaseExperiment(self.config, self.host, self.port)
-
-    def run_experiment(self, experiment: ExperimentInterface):
-        """Run the specified experiment."""
-        experiment.run()
 
     def process_data(
         self, experiment: ExperimentInterface, data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Process data using the experiment."""
         return experiment.process_data(data)
-
-    def save_results(self, experiment: ExperimentInterface, results: Dict[str, Any]):
-        """Save the results of the experiment."""
-        experiment.save_results(results)
-
-    def load_data(self, experiment: ExperimentInterface) -> Any:
-        """Load data for the experiment."""
-        return experiment.load_data()

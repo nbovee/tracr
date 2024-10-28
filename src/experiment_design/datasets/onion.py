@@ -10,7 +10,7 @@ from torchvision import transforms  # type: ignore
 
 from .custom import BaseDataset
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("split_computing_logger")
 
 
 class OnionDataset(BaseDataset):

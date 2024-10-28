@@ -13,7 +13,7 @@ from torchvision.transforms import ToTensor  # type: ignore
 from .registry import ModelRegistry
 from src.utils.system_utils import get_repo_root, read_yaml_file
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("split_computing_logger")
 
 
 class BaseModel(nn.Module):
