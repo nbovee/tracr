@@ -1,4 +1,4 @@
-# src/utils/utilities.py
+# src/utils/system_utils.py
 
 import json
 import logging
@@ -7,86 +7,77 @@ import time
 import yaml
 
 from pathlib import Path
-from typing import List, Callable, Optional, Dict, Any
-from contextlib import contextmanager
+from typing import Any, Callable, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
 # Constants
 BUFFER_SIZE = 100
-REMOTE_LOG_SVR_PORT = 9000
+REMOTE_LOG_SERVER_PORT = 9000
 
 
-def read_yaml_file(path: Any) -> Dict[str, Any]:
-    """Reads and returns YAML data from a file."""
+def read_yaml_file(path: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """Load YAML data from a file or return the dictionary if already provided."""
+    if isinstance(path, dict):
+        logger.debug("Config already loaded as dictionary")
+        return path
+
     try:
-        # if config was already loaded as a dictionary, return it
-        if isinstance(path, dict):
-            logger.debug("Config already loaded as dictionary")
-            return path
-
-        # if config was provided as a path to a file, load it
         logger.info(f"Reading YAML file: {path}")
         with open(path, "r", encoding="utf-8") as file:
             config = yaml.safe_load(file) or {}
         logger.debug(f"YAML file loaded successfully: {path}")
         return config
-
     except Exception as e:
         logger.error(f"Error reading YAML file {path}: {e}")
         raise
 
 
-def load_text_file(path: Any) -> str:
-    """Loads and returns the contents of a text file."""
-    with open(path, "r", encoding="utf-8") as file:
-        return file.read()
+def load_text_file(path: Union[str, Path]) -> str:
+    """Read and return the contents of a text file."""
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            content = file.read()
+        logger.debug(f"Loaded text file: {path}")
+        return content
+    except Exception as e:
+        logger.error(f"Error loading text file {path}: {e}")
+        raise
 
 
 def get_repo_root(markers: Optional[List[str]] = None) -> Path:
-    """Returns the root directory of the repository as a pathlib.Path object."""
-    if markers is None:
-        markers = [".git", "requirements.txt"]
-    current_path = Path.cwd().absolute()
+    """Find and return the repository root directory based on marker files."""
+    markers = markers or [".git", "requirements.txt"]
+    current_path = Path.cwd().resolve()
     logger.debug(f"Searching for repo root from: {current_path}")
+
     while not any((current_path / marker).exists() for marker in markers):
         if current_path.parent == current_path:
-            logger.error(
-                f"None of the markers {markers} were found in any parent directory."
-            )
-            raise RuntimeError(
-                f"None of the markers {markers} were found in any parent directory."
-            )
+            logger.error(f"Markers {markers} not found in any parent directory.")
+            raise RuntimeError(f"Markers {markers} not found in any parent directory.")
         current_path = current_path.parent
+
     logger.info(f"Repository root found: {current_path}")
     return current_path
 
 
-@contextmanager
-def experiment_context(cleanup_func: Callable[[], None]):
-    """Context manager for experiment setup and cleanup."""
-    try:
-        yield
-    finally:
-        logger.debug("Exiting experiment context. Performing cleanup.")
-        cleanup_func()
-
-
 def serialize_playbook(playbook: Dict[str, List[Any]]) -> str:
-    """Serializes the playbook dictionary to a JSON string."""
-    serialized = json.dumps(
-        {k: [task.__class__.__name__ for task in v] for k, v in playbook.items()}
-    )
-    # Escape the double quotes to prevent syntax errors when passing as a string
-    serialized_escaped = serialized.replace('"', '\\"')
-    logger.debug(f"Playbook serialized: {serialized_escaped}")
-    return serialized_escaped
+    """Convert the playbook dictionary to a JSON string with escaped quotes."""
+    try:
+        serialized = json.dumps(
+            {k: [task.__class__.__name__ for task in v] for k, v in playbook.items()}
+        ).replace('"', '\\"')
+        logger.debug(f"Playbook serialized: {serialized}")
+        return serialized
+    except Exception as e:
+        logger.error(f"Error serializing playbook: {e}")
+        raise
 
 
 def wait_for_condition(
     condition: Callable[[], bool], timeout: float, interval: float = 0.1
 ) -> bool:
-    """Waits for a condition to be true, returning True if the condition is met, False otherwise."""
+    """Wait until a condition is met or timeout is reached."""
     end_time = time.time() + timeout
     logger.debug(f"Waiting for condition with timeout {timeout} seconds.")
     while time.time() < end_time:
@@ -99,58 +90,49 @@ def wait_for_condition(
 
 
 def get_hostname() -> str:
-    """Returns the hostname of the current machine."""
+    """Retrieve the current machine's hostname."""
     hostname = socket.gethostname()
     logger.debug(f"Hostname obtained: {hostname}")
     return hostname
 
 
 def get_local_ip() -> str:
-    """Gets the local IP address by connecting to an external host."""
+    """Determine the local IP address by connecting to an external host."""
     try:
-        with socket.create_connection(("8.8.8.8", 80), timeout=2) as s:
-            local_ip = s.getsockname()[0]
-            logger.debug(f"Local IP obtained: {local_ip}")
-            return local_ip
+        with socket.create_connection(("8.8.8.8", 80), timeout=2) as sock:
+            local_ip = sock.getsockname()[0]
+        logger.debug(f"Local IP obtained: {local_ip}")
+        return local_ip
     except OSError:
         logger.warning("Failed to get local IP, defaulting to 127.0.0.1")
-        return "127.0.0.1"  # Fallback to localhost if connection fails
+        return "127.0.0.1"
 
 
 def get_server_ip(device_name: str, config: Dict[str, Any]) -> str:
-    """Retrieves the server IP from the configuration based on device name."""
+    """Extract the server IP for a device from the configuration."""
     devices = config.get("devices", {})
     device = devices.get(device_name)
     if not device:
         logger.error(f"Device '{device_name}' not found in configuration.")
         raise ValueError(f"Device '{device_name}' not found in configuration.")
 
-    connection_params = device.get("connection_params", [])
-    for param in connection_params:
+    for param in device.get("connection_params", []):
         if param.get("default", False):
             server_ip = param.get("host")
             if server_ip:
                 logger.debug(f"Server IP for '{device_name}' obtained: {server_ip}")
                 return server_ip
+
     logger.error(f"No default connection parameters found for device '{device_name}'.")
     raise ValueError(
         f"No default connection parameters found for device '{device_name}'."
     )
 
 
-def get_required_ports(host: str, config: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Retrieves the list of required ports for a given host from the configuration."""
-    required_ports = config.get("required_ports", [])
-    ports = [port for port in required_ports if port.get("host") == host]
-    logger.debug(f"Required ports for host '{host}': {ports}")
-    return ports
-
-
 def get_connection_params(device_name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-    """Retrieves the default connection parameters for a given device."""
+    """Retrieve default connection parameters for a device."""
     device = get_device_info(device_name, config)
-    connection_params = device.get("connection_params", [])
-    for param in connection_params:
+    for param in device.get("connection_params", []):
         if param.get("default", False):
             logger.debug(f"Default connection params for '{device_name}': {param}")
             return param
@@ -161,18 +143,17 @@ def get_connection_params(device_name: str, config: Dict[str, Any]) -> Dict[str,
 
 
 def get_services(device_name: str, config: Dict[str, Any]) -> List[Dict[str, str]]:
-    """Retrieves the list of services for a given device."""
+    """Get the list of services for a specific device."""
     device = get_device_info(device_name, config)
     services = []
-    connection_params = device.get("connection_params", [])
-    for param in connection_params:
+    for param in device.get("connection_params", []):
         services.extend(param.get("services", []))
     logger.debug(f"Services for '{device_name}': {services}")
     return services
 
 
 def get_device_type(device_name: str, config: Dict[str, Any]) -> str:
-    """Retrieves the device type for a given device."""
+    """Fetch the device type for a given device."""
     device = get_device_info(device_name, config)
     device_type = device.get("device_type")
     if not device_type:
@@ -183,7 +164,7 @@ def get_device_type(device_name: str, config: Dict[str, Any]) -> str:
 
 
 def get_device_info(device_name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-    """Retrieves the device information from the configuration."""
+    """Retrieve detailed information for a specific device."""
     devices = config.get("devices", {})
     device = devices.get(device_name)
     if not device:
@@ -194,30 +175,19 @@ def get_device_info(device_name: str, config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def get_all_devices(config: Dict[str, Any]) -> List[str]:
-    """Retrieves a list of all device names from the configuration."""
+    """List all device names available in the configuration."""
     devices = config.get("devices", {})
     device_names = list(devices.keys())
     logger.debug(f"All devices: {device_names}")
     return device_names
 
 
-def get_port_description(host: str, port: int, config: Dict[str, Any]) -> str:
-    """Retrieve the description of a port from the configuration."""
-    required_ports = config.get("required_ports", [])
-    for port_info in required_ports:
-        if port_info["host"] == host and port_info["port"] == port:
-            return port_info.get("description", "")
-    return ""
-
-
 def is_port_open(host: str, port: int, timeout: float = 2.0) -> bool:
-    """Checks if a specific port on a host is open."""
+    """Check if a specific port on a host is open."""
     logger.debug(f"Checking if port {port} is open on host '{host}'")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(timeout)
         result = sock.connect_ex((host, port))
         is_open = result == 0
-        logger.info(
-            f"Port {port} on host '{host}' is {'open' if is_open else 'closed'}."
-        )
-        return is_open
+    logger.info(f"Port {port} on host '{host}' is {'open' if is_open else 'closed'}.")
+    return is_open

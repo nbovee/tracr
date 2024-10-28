@@ -3,7 +3,7 @@
 # DEFAULT CONFIGURATIONS
 default:
   device: cuda
-  font_path: "fonts/DejaVuSans-Bold.ttf"
+  font_path: config/fonts/DejaVuSans-Bold.ttf
   log_level: INFO
   log_file: logs/app.log
 
@@ -23,12 +23,12 @@ model:
   depth: 2
   flush_buffer_size: 100
   warmup_iterations: 10
-  log_file: logs/alexnet.log
+  log_file: logs/alexnetsplit.log
 
 # DATASET CONFIGURATIONS
 dataset:
   module: imagenet
-  class: ImagenetDataset
+  class: ImageNetDataset
   args:
     root: data/imagenet
     class_names: data/imagenet/imagenet_classes.txt

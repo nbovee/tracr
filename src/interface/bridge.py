@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Union
 import numpy as np
 
+
 class ModelInterface(ABC):
     """Abstract base class defining the interface for model implementations."""
 
@@ -26,6 +27,7 @@ class ModelInterface(ABC):
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
         """Loads a state dictionary into the model."""
         pass
+
 
 class ExperimentInterface(ABC):
     """Abstract base class defining the interface for experiment implementations."""

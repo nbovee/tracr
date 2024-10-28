@@ -3,7 +3,7 @@
 # DEFAULT CONFIGURATIONS
 default:
   device: cuda
-  font_path: "fonts/DejaVuSans-Bold.ttf"
+  font_path: config/fonts/DejaVuSans-Bold.ttf
   log_level: INFO
   log_file: logs/app.log
 
@@ -23,7 +23,7 @@ model:
   depth: 2
   flush_buffer_size: 100
   warmup_iterations: 10
-  log_file: logs/yolo.log
+  log_file: logs/yolosplit.log
 
 # DATASET CONFIGURATIONS
 dataset:

@@ -1,60 +1,68 @@
 # src/experiment_design/datasets/onion.py
 
 import logging
-from typing import Callable, List, Optional, Tuple
 from pathlib import Path
+from typing import Callable, List, Optional, Tuple, Union
+
 from PIL import Image
 import torch
 from torchvision import transforms  # type: ignore
+
 from .custom import BaseDataset
 
 logger = logging.getLogger(__name__)
 
 
 class OnionDataset(BaseDataset):
-    """A dataset class for loading and processing onion images."""
+    """Dataset class for loading and processing onion images."""
 
     def __init__(
         self,
-        root: Optional[Path] = None,
+        root: Optional[Union[str, Path]] = None,
         transform: Optional[Callable] = None,
         target_transform: Optional[Callable] = None,
         max_samples: int = -1,
-        class_names: Optional[List[str]] = None,
-        img_directory: Optional[Path] = None,
-    ):
-        """Initializes the OnionDataset."""
+        class_names: Optional[Union[List[str], str]] = None,
+        img_directory: Optional[Union[str, Path]] = None,
+    ) -> None:
+        """Initialize OnionDataset with paths and transformations."""
         super().__init__()
-        if root is None:
-            raise ValueError("Root directory is required")
+        if not root:
+            raise ValueError("Root directory is required.")
 
         self.root = Path(root)
-        self.IMG_DIRECTORY = Path(img_directory)
+        self.img_dir = Path(img_directory) if img_directory else None
 
-        if not self.IMG_DIRECTORY.exists():
-            logger.error(f"Image directory not found: {self.IMG_DIRECTORY}")
-            raise FileNotFoundError(f"Image directory not found: {self.IMG_DIRECTORY}")
-        
+        if not self.img_dir or not self.img_dir.exists():
+            logger.error(f"Image directory not found: {self.img_dir}")
+            raise FileNotFoundError(f"Image directory not found: {self.img_dir}")
+
         if isinstance(class_names, str):
-            self.CLASS_NAMES = Path(class_names)
-            if not self.CLASS_NAMES.exists():
-                logger.warning(f"Class names file not found: {self.CLASS_NAMES}")
-                self.CLASS_NAMES = None
+            self.class_file = Path(class_names)
+            if not self.class_file.exists():
+                logger.warning(f"Class names file not found: {self.class_file}")
+                self.classes = []
+            else:
+                self.classes = self._load_classes()
         else:
-            self.CLASS_NAMES = class_names # provided as list
+            self.classes = class_names or []
 
-        if not self.CLASS_NAMES:
-            raise ValueError("Class names not provided in config")
+        if not self.classes:
+            raise ValueError(
+                "Class names must be provided either as a list or a valid file path."
+            )
 
         logger.info(
-            f"Initializing OnionDataset with root={root}, "
-            f"class_names={self.CLASS_NAMES}, "
-            f"img_directory={self.IMG_DIRECTORY}, "
-            f"max_samples={max_samples}"
+            f"Initializing OnionDataset with root={self.root}, "
+            f"class_file={self.class_file if isinstance(class_names, str) else 'Provided as list'}, "
+            f"img_dir={self.img_dir}, max_samples={max_samples}"
         )
 
         self.transform = transform or transforms.Compose(
-            [transforms.Resize((224, 224)), transforms.ToTensor()]
+            [
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+            ]
         )
         self.target_transform = target_transform
         self.max_samples = max_samples
@@ -63,35 +71,41 @@ class OnionDataset(BaseDataset):
         self.length = len(self.image_files)
         logger.info(f"Initialized OnionDataset with {self.length} images.")
 
+    def _load_classes(self) -> List[str]:
+        """Load class names from the class file."""
+        with self.class_file.open("r") as file:
+            classes = [line.strip() for line in file]
+        logger.debug(f"Loaded classes: {classes}")
+        return classes
+
     def _load_image_files(self) -> List[Path]:
-        """Loads image file paths from the IMG_DIRECTORY."""
-        logger.debug(f"Loading image files from {self.IMG_DIRECTORY}")
-        image_files = sorted(
+        """Load image file paths from the image directory."""
+        logger.debug(f"Loading images from {self.img_dir}")
+        image_extensions = {".jpg", ".jpeg", ".png"}
+        images = sorted(
             [
-                f
-                for f in self.IMG_DIRECTORY.iterdir()
-                if f.suffix.lower() in [".jpg", ".jpeg", ".png"]
+                file
+                for file in self.img_dir.iterdir()
+                if file.suffix.lower() in image_extensions
             ]
         )
-
         if self.max_samples > 0:
-            image_files = image_files[: self.max_samples]
-
-        logger.debug(
-            f"Loaded {len(image_files)} image files from {self.IMG_DIRECTORY}."
-        )
-        return image_files
+            images = images[: self.max_samples]
+        logger.debug(f"Loaded {len(images)} images from {self.img_dir}")
+        return images
 
     def __len__(self) -> int:
-        """Returns the number of images in the dataset."""
+        """Return the number of images in the dataset."""
         return self.length
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Image.Image, str]:
-        """Retrieves the image and its filename at the specified index."""
-        if idx < 0 or idx >= self.length:
-            raise IndexError(f"Index {idx} out of range for dataset with length {self.length}.")
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, Image.Image, str]:
+        """Retrieve an image, its original version, and filename by index."""
+        if not 0 <= index < self.length:
+            raise IndexError(
+                f"Index {index} out of range for dataset of size {self.length}."
+            )
 
-        img_path = self.image_files[idx]
+        img_path = self.image_files[index]
         try:
             image = Image.open(img_path).convert("RGB")
             original_image = image.copy()
@@ -100,8 +114,7 @@ class OnionDataset(BaseDataset):
                 image = self.transform(image)
 
             filename = img_path.name
-
-            logger.debug(f"Retrieved image {filename} at index {idx}.")
+            logger.debug(f"Loaded image: {filename} at index {index}")
             return image, original_image, filename
         except Exception as e:
             logger.error(f"Error loading image {img_path}: {e}")

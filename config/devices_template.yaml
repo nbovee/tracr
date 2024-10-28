@@ -1,85 +1,59 @@
-# This file is used to store information about the devices that have been configured for use with experiments. Each device has:
-#   1. a unique nickname (the top-level keys in this file)
-#   2. one of the supported device types
-#   3. a list of connection parameters, each of which has:
-#       a. a hostname or IP address (host)
-#       b. a username (user)
-#       c. a path to a private key file (pkey_fp)
-#       d. a boolean indicating whether this is the default connection parameter for this device (default)
-#
-#
-# STEPS TO CONNECT TO DEVICES:
-# 1. Find IP address of current device (localhost):
-#    hostname -I | awk '{print $1}'
-# 2. Connect Edge device (Jetson) via USB serial:
-#    - Connect Edge device to Laptop via USB cable
-#    - On Laptop, Device Manager / Ports (COM & LPT) / COM#
-#    - PuTTy connect via Serial -> Speed = 115200
-#    - Authenticate and connect to Edge device
-# 3. Find IP address of Edge device:
-#    - hostname -I | awk '{print $1}'
-# 4. Turn on WiFi on Edge device:
-#    - nmcli r wifi on
-# 5. List WiFi networks:
-#    - nmcli d wifi list     # SSID is the WiFi name
-# 6. Connect to Edge device WiFi:
-#    - sudo nmcli dev wifi con "SSID" password "WiFiPassword"
-# 7. SSH into Edge device:
-#    - ssh <edge_device_username>@<edge_device_ip_address>
-#
-# Once you are connected to the Edge device via usb serial, you can create a ssh-keypair on your laptop
-# and the Edge device and share the public key with the other party (inside ~/.ssh/authorized_keys)
-#
-# The top-level names (localhost, <edge_device_username>) need to match exactly as defined in alexnetsplit.yaml
-#
-# The rpyc service is a system-wide service that is used to control the RPyC server.
-# It is located at /usr/local/bin/rpyc_service.py
-# To create a system-wide service, run the following command:
-#   - sudo cp rpyc_service.py /usr/local/bin/rpyc.service
-#   - sudo systemctl enable rpyc.service
-#   - sudo systemctl start rpyc.service
-#
-# To check the status of the rpyc service, run the following command:
-#   - sudo systemctl status rpyc.service
-#
-# If it is not already running, start the rpyc service with the following command:
-#   - sudo systemctl start rpyc.service
-# Notice you that you've to configure ssh for passwordless `sudo` execution as root.
-#
-# To configure ssh for passwordless `sudo` execution as root, run the following command:
-# Open the sudoers file in a text editor:
-#   - sudo visudo
-# Add the following line to the end of the file:
-# # Allow '<localhost_username>' to run specific systemctl commands without a password on WSL
-# <localhost_username> ALL=(ALL) NOPASSWD: /bin/systemctl start rpyc_wsl.service
-# # Allow '<edge_device_username>' to run specific systemctl commands without a password on Edge device
-# <edge_device_username> ALL=(ALL) NOPASSWD: /bin/systemctl start rpyc.service
-#
-# Verify sudoers configuration:
-# # On WSL
-# sudo -l -U <localhost_username>
-#
-# # On Edge device
-# sudo -l -U <edge_device_username>
+# DEVICE CONFIGURATION TEMPLATE
+
+# Rename this file to devices_config.yaml after you have set up the SSH keys and tested connectivity.
+
+# This file defines the network configuration for split inference experiments.
+# It requires proper setup of SSH keys and network connectivity between devices.
+
+# NETWORK SETUP CHECKLIST:
+# 1. Ensure all devices are on the same network
+# 2. Configure SSH keys between devices
+# 3. Test connectivity before running experiments
+
+# DEVICE TYPES:
+# - SERVER: The main device that coordinates the split inference (typically more powerful)
+# - PARTICIPANT: Edge devices that participate in the split inference (e.g., NVIDIA Jetson, Raspberry Pi)
+
+# FINDING DEVICE IP ADDRESSES:
+# Linux/WSL: hostname -I | awk '{print $1}'
+# Windows: ipconfig
+# Note: IP addresses must be on the same subnet for devices to communicate
+
+# SSH KEY SETUP:
+# 1. Generate SSH key pair on source device:
+#    ssh-keygen -t rsa -b 4096 -f ~/.ssh/device_name_key
+# 2. Copy public key to destination device:
+#    ssh-copy-id -i ~/.ssh/device_name_key.pub user@device_ip
+# 3. Place private keys in config/pkeys/ directory
+# 4. Test connection: ssh -i ~/.ssh/device_name_key user@device_ip
+
+# TROUBLESHOOTING:
+# 1. Connection issues:
+#    - Verify IP addresses are correct and devices are on same network
+#    - Check SSH key permissions (should be 600)
+#    - Ensure private keys are in config/pkeys/ directory
+#    - Test SSH connection manually first
 
 devices:
-  - device_type: SERVER
+  - device_type: SERVER                 # Main computing device
     connection_params:
-      - host: <server_ip_address>
-        user: <username>
-        pkey_fp: <remote_to_server_pkey> # put inside config/pkeys/
-        default: true
+      - host: <server_ip_address>       # e.g., 192.168.1.100
+        user: <username>                # SSH username
+        pkey_fp: <server_key.rsa>       # Private key filename in config/pkeys/
+        default: true                   # Primary connection parameters
 
-  - device_type: PARTICIPANT
+  - device_type: PARTICIPANT            # Edge device
     connection_params:
-      - host: <participant_ip_address>
-        user: <username>
-        pkey_fp: <local_to_remote_pkey> # put inside config/pkeys/
-        default: true
+      - host: <participant_ip_address>  # e.g., 192.168.1.101
+        user: <username>                # SSH username
+        pkey_fp: <participant_key.rsa>  # Private key filename in config/pkeys/
+        default: true                   # Primary connection parameters
+
 
 # SPLIT INFERENCE NETWORK CONFIGURATIONS
+# Defines the roles of devices in the split inference setup
 split_inference_network:
-  server: SERVER
+  server: SERVER           # Must match device_type above
   participants:
-    - PARTICIPANT
+    - PARTICIPANT          # Must match device_type above
 

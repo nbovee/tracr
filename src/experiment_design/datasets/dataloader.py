@@ -1,23 +1,24 @@
 # src/experiment_design/datasets/dataloader.py
 
-import os
-import sys
 import logging
+import sys
 from importlib import import_module
-from typing import Any, Dict
-from torch.utils.data import DataLoader, Dataset
 from pathlib import Path
+from typing import Any, Dict, Type
+
+from torch.utils.data import DataLoader, Dataset
 
 logger = logging.getLogger(__name__)
 
 
 class DatasetFactory:
+    """Factory to create Dataset instances based on configuration."""
+
     @staticmethod
     def create_dataset(dataset_config: Dict[str, Any]) -> Dataset:
-        """Creates a dataset instance based on the provided configuration."""
+        """Instantiate a Dataset using the provided configuration."""
         logger.info(f"Creating dataset with config: {dataset_config}")
 
-        # Validate required config keys
         required_keys = ["module", "class"]
         for key in required_keys:
             if key not in dataset_config:
@@ -25,8 +26,7 @@ class DatasetFactory:
                 raise ValueError(f"Missing required key: {key}")
 
         dataset_args = dataset_config.get("args", {})
-        
-        # Validate paths if they exist in args
+
         path_keys = ["root", "class_names", "img_directory"]
         for key in path_keys:
             if key in dataset_args:
@@ -36,31 +36,32 @@ class DatasetFactory:
                     path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            # Add parent module (src) to path
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            parent_dir = os.path.dirname(os.path.dirname(current_dir))
-            if parent_dir not in sys.path:
-                sys.path.insert(0, parent_dir)
+            parent_dir = Path(__file__).resolve().parents[3]
+            if str(parent_dir) not in sys.path:
+                sys.path.insert(0, str(parent_dir))
 
-            # Import the module
-            module = import_module(f"experiment_design.datasets.{dataset_config['module']}")
+            module_path = f"src.experiment_design.datasets.{dataset_config['module']}"
+            module = import_module(module_path)
 
-            # Check if there's a factory function available
-            factory_function = getattr(module, f"{dataset_config['module']}_{dataset_config['class']}", None)
-            if factory_function and callable(factory_function):
+            factory_func_name = f"{dataset_config['module']}_{dataset_config['class']}"
+            factory_function = getattr(module, factory_func_name, None)
+
+            if callable(factory_function):
                 dataset = factory_function(**dataset_args)
             else:
-                dataset_cls = getattr(module, dataset_config['class'])
+                dataset_cls = getattr(module, dataset_config["class"])
                 dataset = dataset_cls(**dataset_args)
 
             logger.info(f"Successfully created dataset: {dataset_config['class']}")
             return dataset
         except ImportError as e:
-            logger.exception(f"Failed to import dataset module '{dataset_config['module']}': {e}")
+            logger.exception(
+                f"Failed to import module '{dataset_config['module']}': {e}"
+            )
             raise
         except AttributeError as e:
             logger.exception(
-                f"Failed to find dataset class '{dataset_config['class']}' in module '{dataset_config['module']}': {e}"
+                f"Class '{dataset_config['class']}' not found in module '{dataset_config['module']}': {e}"
             )
             raise
         except Exception as e:
@@ -69,11 +70,13 @@ class DatasetFactory:
 
 
 class DataLoaderFactory:
+    """Factory to create DataLoader instances based on configuration."""
+
     @staticmethod
     def create_dataloader(
         dataset: Dataset, dataloader_config: Dict[str, Any]
     ) -> DataLoader:
-        """Creates a DataLoader instance for the given dataset based on the provided configuration."""
+        """Instantiate a DataLoader using the provided configuration."""
         logger.info(f"Creating DataLoader with config: {dataloader_config}")
 
         try:
@@ -87,9 +90,11 @@ class DataLoaderFactory:
 
 
 class DataManager:
+    """Manages the creation of datasets and dataloaders based on configuration."""
+
     @staticmethod
     def get_data(config: Dict[str, Any]) -> DataLoader:
-        """Creates a dataset and wraps it in a DataLoader based on the provided configuration."""
+        """Create a DataLoader based on the provided configuration."""
         logger.info("Initializing data pipeline")
 
         required_keys = ["dataset", "dataloader"]
@@ -98,8 +103,8 @@ class DataManager:
                 logger.error(f"Missing required key in config: {key}")
                 raise ValueError(f"Missing required key: {key}")
 
-        dataset_config = config.get("dataset", {})
-        dataloader_config = config.get("dataloader", {})
+        dataset_config = config["dataset"]
+        dataloader_config = config["dataloader"]
 
         dataset = DatasetFactory.create_dataset(dataset_config)
         dataloader = DataLoaderFactory.create_dataloader(dataset, dataloader_config)
@@ -108,14 +113,40 @@ class DataManager:
 
     @staticmethod
     def get_dataset(config: Dict[str, Any]) -> Dataset:
+        """Create a Dataset instance from the provided configuration."""
         dataset_config = config.get("dataset", {})
-        dataset_class = getattr(import_module(f"src.experiment_design.datasets.{dataset_config['module']}"), dataset_config['class'])
-        return dataset_class(**dataset_config['args'])
+        module_name = dataset_config.get("module")
+        class_name = dataset_config.get("class")
+
+        if not module_name or not class_name:
+            logger.error("Dataset config must include 'module' and 'class' keys.")
+            raise ValueError("Dataset config must include 'module' and 'class' keys.")
+
+        try:
+            module_path = f"src.experiment_design.datasets.{module_name}"
+            module = import_module(module_path)
+            dataset_cls: Type[Dataset] = getattr(module, class_name)
+            dataset = dataset_cls(**dataset_config.get("args", {}))
+            logger.info(f"Successfully created dataset: {class_name}")
+            return dataset
+        except ImportError as e:
+            logger.exception(f"Failed to import module '{module_name}': {e}")
+            raise
+        except AttributeError as e:
+            logger.exception(
+                f"Class '{class_name}' not found in module '{module_name}': {e}"
+            )
+            raise
+        except Exception as e:
+            logger.exception(f"Unexpected error creating dataset: {e}")
+            raise
 
 
 class DataLoaderIterator:
-    def __init__(self, dataloader: DataLoader):
-        """Initializes an iterator over the DataLoader."""
+    """Iterator for traversing through a DataLoader."""
+
+    def __init__(self, dataloader: DataLoader) -> None:
+        """Initialize the iterator with a DataLoader."""
         self.dataloader = dataloader
         self.iterator = iter(dataloader)
         logger.debug(
@@ -123,7 +154,7 @@ class DataLoaderIterator:
         )
 
     def __next__(self) -> Any:
-        """Returns the next batch from the DataLoader."""
+        """Retrieve the next batch from the DataLoader."""
         try:
             batch = next(self.iterator)
             if isinstance(batch, (list, tuple)):
@@ -133,19 +164,21 @@ class DataLoaderIterator:
             return batch
         except StopIteration:
             logger.debug("DataLoader iteration complete")
-            self.reset()  # Reset the iterator for potential reuse
+            self.reset()
             raise StopIteration
         except Exception as e:
             logger.exception(f"Unexpected error during DataLoader iteration: {e}")
             raise
 
     def __len__(self) -> int:
+        """Return the number of batches in the DataLoader."""
         return len(self.dataloader)
 
     def __iter__(self):
+        """Return the iterator itself."""
         return self
 
     def reset(self) -> None:
-        """Resets the iterator to the beginning of the DataLoader."""
+        """Reset the iterator to the beginning of the DataLoader."""
         self.iterator = iter(self.dataloader)
         logger.debug("DataLoaderIterator reset")

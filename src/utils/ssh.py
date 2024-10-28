@@ -5,28 +5,25 @@ import os
 import paramiko  # type: ignore
 import select
 import threading
-import pathlib
-import blosc2 # type: ignore
-import pickle
-import socket
-from typing import Union, Optional, Dict, Any, Tuple
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from .system_utils import get_repo_root
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
 
 # -------------------- Exceptions --------------------
 
 
 class SSHAuthenticationException(Exception):
-    """Raised if an authentication error occurs while attempting to connect to a device over SSH."""
+    """Raised when SSH authentication fails."""
 
     pass
 
 
 class DeviceUnavailableException(Exception):
-    """Raised if an attempt is made to connect to a device that is either unavailable or not listening on the specified port."""
+    """Raised when the target device is unavailable or not listening on the specified port."""
 
     pass
 
@@ -34,33 +31,38 @@ class DeviceUnavailableException(Exception):
 # -------------------- Utility Functions --------------------
 
 
-def load_private_key(pkey_fp: str) -> Union[paramiko.RSAKey, paramiko.Ed25519Key]:
-    """Load a private key from a file."""
+def load_private_key(
+    private_key_path: str,
+) -> Union[paramiko.RSAKey, paramiko.Ed25519Key]:
+    """Load a private SSH key from a file."""
     try:
-        if pkey_fp.endswith((".rsa", ".pem")):
-            return paramiko.RSAKey.from_private_key_file(pkey_fp)
-        elif pkey_fp.endswith((".ed25519", ".key")):
-            return paramiko.Ed25519Key.from_private_key_file(pkey_fp)
+        if private_key_path.endswith((".rsa", ".pem")):
+            return paramiko.RSAKey.from_private_key_file(private_key_path)
+        elif private_key_path.endswith((".ed25519", ".key")):
+            return paramiko.Ed25519Key.from_private_key_file(private_key_path)
         else:
-            # Attempt to detect key type based on file content
-            with open(pkey_fp, "r") as f:
-                first_line = f.readline()
+            with open(private_key_path, "r") as key_file:
+                first_line = key_file.readline()
                 if "RSA" in first_line:
-                    return paramiko.RSAKey.from_private_key_file(pkey_fp)
+                    return paramiko.RSAKey.from_private_key_file(private_key_path)
                 elif "OPENSSH PRIVATE KEY" in first_line:
-                    return paramiko.Ed25519Key.from_private_key_file(pkey_fp)
+                    return paramiko.Ed25519Key.from_private_key_file(private_key_path)
                 else:
-                    raise ValueError(f"Unsupported key type for file: {pkey_fp}")
+                    raise ValueError(
+                        f"Unsupported key type for file: {private_key_path}"
+                    )
     except paramiko.PasswordRequiredException:
         raise Exception(
-            f"Private key at {pkey_fp} is encrypted with a passphrase. Unable to use for passwordless SSH."
+            f"Private key at {private_key_path} is encrypted with a passphrase."
         )
     except paramiko.SSHException as e:
         raise Exception(f"Error loading private key: {e}")
 
 
-def read_and_log(channel, log_func, unique_lines: set):
-    """Read from a channel and log the output without duplications."""
+def read_and_log(
+    channel: paramiko.Channel, log_func: Callable[[str], None], unique_lines: set
+) -> None:
+    """Read from an SSH channel and log unique output lines."""
     while not channel.closed:
         readable, _, _ = select.select([channel], [], [], 0.1)
         if readable:
@@ -72,24 +74,23 @@ def read_and_log(channel, log_func, unique_lines: set):
                         unique_lines.add(stripped_line)
                         formatted_line = f"PARTICIPANT: {stripped_line}"
                         log_func(formatted_line)
-                        print(formatted_line)  # Print to console as well
+                        print(formatted_line)
 
 
 # -------------------- SSH Utility Functions --------------------
 
 
 def ssh_connect(
-    host: str, user: str, pkey_fp: str, port: int = 22, timeout: float = 10.0
+    host: str, user: str, private_key_path: str, port: int = 22, timeout: float = 10.0
 ) -> Optional[paramiko.SSHClient]:
     """Establish an SSH connection to a remote host."""
-
-    if not os.path.isfile(pkey_fp):
-        logger.error(f"Private key file not found: {pkey_fp}")
+    if not os.path.isfile(private_key_path):
+        logger.error(f"Private key file not found: {private_key_path}")
         return None
 
     try:
-        key = load_private_key(pkey_fp)
-        logger.debug(f"Private key loaded from {pkey_fp}")
+        key = load_private_key(private_key_path)
+        logger.debug(f"Private key loaded from {private_key_path}")
     except Exception as e:
         logger.error(f"Failed to load private key: {e}")
         return None
@@ -117,7 +118,7 @@ def ssh_connect(
 def execute_remote_command(
     host: str,
     user: str,
-    pkey_fp: str,
+    private_key_path: str,
     command: str,
     port: int = 22,
     timeout: float = 10.0,
@@ -126,19 +127,19 @@ def execute_remote_command(
     Execute a command on a remote host via SSH.
 
     Args:
-        host (str): Hostname or IP address of the remote host.
-        user (str): Username for SSH.
-        pkey_fp (str): File path to the private key.
+        host (str): Remote host address.
+        user (str): SSH username.
+        private_key_path (str): Path to the SSH private key.
         command (str): Command to execute.
         port (int, optional): SSH port. Defaults to 22.
         timeout (float, optional): Connection timeout in seconds. Defaults to 10.0.
 
     Returns:
-        Dict[str, Any]: Dictionary containing 'success', 'stdout', and 'stderr'.
+        Dict[str, Any]: Execution result with 'success', 'stdout', and 'stderr'.
     """
     result = {"success": False, "stdout": "", "stderr": ""}
 
-    client = ssh_connect(host, user, pkey_fp, port, timeout)
+    client = ssh_connect(host, user, private_key_path, port, timeout)
     if not client:
         logger.error(
             f"SSH connection to {user}@{host}:{port} could not be established."
@@ -170,7 +171,7 @@ def scp_file(
     remote_path: str,
     host: str,
     user: str,
-    pkey_fp: str,
+    private_key_path: str,
     port: int = 22,
     timeout: float = 10.0,
 ) -> bool:
@@ -180,20 +181,20 @@ def scp_file(
     Args:
         local_path (str): Path to the local file.
         remote_path (str): Destination path on the remote host.
-        host (str): Hostname or IP address of the remote host.
-        user (str): Username for SSH.
-        pkey_fp (str): File path to the private key.
+        host (str): Remote host address.
+        user (str): SSH username.
+        private_key_path (str): Path to the SSH private key.
         port (int, optional): SSH port. Defaults to 22.
         timeout (float, optional): Connection timeout in seconds. Defaults to 10.0.
 
     Returns:
-        bool: True if file transfer is successful, False otherwise.
+        bool: True if the file was copied successfully, False otherwise.
     """
     if not os.path.isfile(local_path):
         logger.error(f"Local file not found: {local_path}")
         return False
 
-    client = ssh_connect(host, user, pkey_fp, port, timeout)
+    client = ssh_connect(host, user, private_key_path, port, timeout)
     if not client:
         logger.error(
             f"SSH connection to {user}@{host}:{port} could not be established for SCP."
@@ -203,9 +204,7 @@ def scp_file(
     try:
         sftp = client.open_sftp()
         sftp.put(local_path, remote_path)
-        logger.info(
-            f"File '{local_path}' successfully copied to '{remote_path}' on {host}."
-        )
+        logger.info(f"File '{local_path}' copied to '{remote_path}' on {host}.")
         sftp.close()
         return True
     except Exception as e:
@@ -221,41 +220,42 @@ def scp_file(
 
 
 class SSHSession(paramiko.SSHClient):
-    """Manages SSH connections and operations."""
+    """Manages SSH connections and remote operations."""
 
     def __init__(
         self,
         host: str,
         user: str,
-        pkey_fp: Union[pathlib.Path, str],
+        private_key_path: Union[Path, str],
         port: int = 22,
         timeout: float = 10.0,
     ) -> None:
+        """Initialize SSHSession with connection details."""
         super().__init__()
         self.host = host
         self.user = user
-        self.pkey_fp = pathlib.Path(pkey_fp).absolute().expanduser()
+        self.private_key_path = Path(private_key_path).expanduser().resolve()
         self.port = port
         self.timeout = timeout
         self.sftp = None
 
         logger.info(f"Initializing SSHSession for {user}@{host}:{port}")
         try:
-            self._establish()
+            self._establish_connection()
         except Exception as e:
             logger.error(f"Failed to establish SSH session: {e}")
-            raise SSHAuthenticationException(
-                f"Problem while authenticating to host {self.host}: {e}"
-            )
+            raise SSHAuthenticationException(f"Authentication to {host} failed: {e}")
 
-    def _establish(self) -> None:
+    def _establish_connection(self) -> None:
+        """Establish the SSH connection."""
         self.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         try:
+            key = load_private_key(str(self.private_key_path))
             self.connect(
                 hostname=self.host,
                 port=self.port,
                 username=self.user,
-                pkey=load_private_key(str(self.pkey_fp)),
+                pkey=key,
                 auth_timeout=5,
                 timeout=1,
             )
@@ -264,38 +264,49 @@ class SSHSession(paramiko.SSHClient):
                 f"SSH connection established to {self.user}@{self.host}:{self.port}"
             )
         except Exception as e:
-            logger.error(f"Failed to establish SSH connection to {self.host}: {e}")
+            logger.error(f"SSH connection to {self.host} failed: {e}")
             raise
 
     def copy_over(
-        self, from_path: Union[str, Path], to_path: Union[str, Path], exclude: list = []
-    ):
-        """Copy a file or directory over to the remote device."""
-        from_path = Path(from_path)
-        to_path = Path(to_path)
-        if from_path.name not in exclude:
-            if from_path.is_dir():
-                self.sftp.mkdir(str(to_path), exist_ok=True)
-                for item in from_path.iterdir():
-                    self.copy_over(item, to_path / item.name, exclude)
-            else:
-                self.sftp.put(str(from_path), str(to_path))
+        self,
+        source: Union[str, Path],
+        destination: Union[str, Path],
+        exclude: List[str] = [],
+    ) -> None:
+        """Copy a file or directory to the remote host."""
+        source = Path(source)
+        destination = Path(destination)
+        if source.name in exclude:
+            return
 
-    def mkdir(self, to_path: pathlib.Path, perms: int = 0o777):
-        """Create a directory on the remote device with specified permissions."""
+        if source.is_dir():
+            try:
+                self.sftp.mkdir(str(destination))
+            except OSError:
+                logger.info(f"Directory {destination} already exists on remote host.")
+            for item in source.iterdir():
+                self.copy_over(item, destination / item.name, exclude)
+        else:
+            self.sftp.put(str(source), str(destination))
+            logger.debug(f"Copied {source} to {destination}.")
+
+    def mkdir(self, remote_path: Path, perms: int = 0o777) -> None:
+        """Create a directory on the remote host with specified permissions."""
         try:
-            self.sftp.mkdir(str(to_path), perms)
+            self.sftp.mkdir(str(remote_path), perms)
+            logger.debug(f"Created directory {remote_path} on remote host.")
         except OSError:
-            logger.info(f"Directory {to_path} already exists on remote device")
+            logger.info(f"Directory {remote_path} already exists on remote host.")
 
     def execute_command(self, command: str) -> Dict[str, Any]:
         """Execute a command on the remote host."""
-        result = {"success": False, "stdout": "", "stderr": ""}
+        result = {"success": False, "stdout": "", "stderr": "", "exit_status": 0}
         try:
             stdin, stdout, stderr = self.exec_command(command)
             exit_status = stdout.channel.recv_exit_status()
             result["stdout"] = stdout.read().decode()
             result["stderr"] = stderr.read().decode()
+            result["exit_status"] = exit_status
             if exit_status == 0:
                 logger.info(
                     f"Command '{command}' executed successfully on {self.host}."
@@ -305,7 +316,6 @@ class SSHSession(paramiko.SSHClient):
                 logger.error(
                     f"Command '{command}' failed on {self.host}. Exit status: {exit_status}"
                 )
-            result["exit_status"] = exit_status
         except Exception as e:
             logger.error(f"Error executing command '{command}' on {self.host}: {e}")
         return result
@@ -313,29 +323,27 @@ class SSHSession(paramiko.SSHClient):
     def send_and_run_test_script(
         self, script_content: str, script_name: str, config: Dict[str, Any]
     ) -> bool:
-        """Create, send, and execute a test script on the remote host."""
+        """Send and execute a test script on the remote host."""
         repo_root = get_repo_root()
-        local_script_path = os.path.join(repo_root, "temp", script_name)
+        local_script_path = repo_root / "temp" / script_name
         remote_script_path = f"/tmp/{script_name}"
 
-        logger.info(f"Preparing to send and run test script: {script_name}")
+        logger.info(f"Sending and executing test script: {script_name}")
 
         try:
-            os.makedirs(os.path.dirname(local_script_path), exist_ok=True)
-            with open(local_script_path, "w") as f:
-                f.write(script_content)
-            logger.debug(f"Temporary script created at {local_script_path}")
+            local_script_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(local_script_path, "w") as script_file:
+                script_file.write(script_content)
+            logger.debug(f"Created local script at {local_script_path}")
         except Exception as e:
-            logger.error(f"Failed to create temporary script file: {e}")
+            logger.error(f"Failed to create local script: {e}")
             return False
 
         try:
-            self.copy_over(
-                pathlib.Path(local_script_path), pathlib.Path(remote_script_path)
-            )
-            logger.debug(f"Script copied to remote path: {remote_script_path}")
+            self.copy_over(local_script_path, remote_script_path)
+            logger.debug(f"Copied script to remote path: {remote_script_path}")
             self.execute_command(f"chmod +x {remote_script_path}")
-            logger.debug(f"Execution permissions set for {remote_script_path}")
+            logger.debug(f"Set execution permissions for {remote_script_path}")
 
             run_command = (
                 remote_script_path
@@ -347,8 +355,6 @@ class SSHSession(paramiko.SSHClient):
             stdin, stdout, stderr = self.exec_command(run_command, get_pty=True)
 
             unique_lines = set()
-
-            # Use the shared read_and_log function
             stdout_thread = threading.Thread(
                 target=read_and_log, args=(stdout.channel, logger.info, unique_lines)
             )
@@ -367,13 +373,12 @@ class SSHSession(paramiko.SSHClient):
             success = exit_status == 0
             if success:
                 logger.info(
-                    f"Script '{script_name}' executed successfully on {self.host}"
+                    f"Script '{script_name}' executed successfully on {self.host}."
                 )
             else:
                 logger.error(
-                    f"Script '{script_name}' execution failed on {self.host}. Exit status: {exit_status}"
+                    f"Script '{script_name}' failed on {self.host}. Exit status: {exit_status}."
                 )
-
         except Exception as e:
             logger.error(f"Error executing script '{script_name}' on {self.host}: {e}")
             success = False
@@ -381,65 +386,11 @@ class SSHSession(paramiko.SSHClient):
             self.execute_command(f"rm {remote_script_path}")
             logger.debug(f"Removed remote script: {remote_script_path}")
             try:
-                os.remove(local_script_path)
-                logger.debug(f"Removed local temporary script: {local_script_path}")
+                local_script_path.unlink()
+                logger.debug(f"Removed local script: {local_script_path}")
             except Exception as e:
                 logger.warning(
-                    f"Failed to remove local temporary script '{local_script_path}': {e}"
+                    f"Failed to remove local script '{local_script_path}': {e}"
                 )
 
         return success
-
-
-class NetworkUtils:
-    """Handles network data compression and communication."""
-    
-    @staticmethod
-    def compress_data(data: Any) -> Tuple[bytes, int]:
-        """Compress data using Blosc2."""
-        serialized_data = pickle.dumps(data)
-        compressed_data = blosc2.compress(serialized_data, clevel=4, 
-                                        filter=blosc2.Filter.SHUFFLE, 
-                                        codec=blosc2.Codec.ZSTD)
-        size_bytes = len(compressed_data)
-        return compressed_data, size_bytes
-
-    @staticmethod
-    def decompress_data(compressed_data: bytes) -> Any:
-        """Decompress data using Blosc2."""
-        decompressed_data = blosc2.decompress(compressed_data)
-        return pickle.loads(decompressed_data)
-
-    @staticmethod
-    def receive_full_message(conn: socket.socket, expected_length: int) -> bytes:
-        """Receive a full message of known length from a socket."""
-        data_chunks = []
-        bytes_recd = 0
-        while bytes_recd < expected_length:
-            chunk = conn.recv(min(expected_length - bytes_recd, 4096))
-            if not chunk:
-                raise RuntimeError("Socket connection broken")
-            data_chunks.append(chunk)
-            bytes_recd += len(chunk)
-        return b''.join(data_chunks)
-
-    @staticmethod
-    def receive_data(conn: socket.socket) -> Optional[Dict[str, Any]]:
-        """Receive length-prefixed data from a socket."""
-        try:
-            length_data = conn.recv(4)
-            if not length_data:
-                return None
-            expected_length = int.from_bytes(length_data, 'big')
-            compressed_data = NetworkUtils.receive_full_message(conn, expected_length)
-            return NetworkUtils.decompress_data(compressed_data)
-        except Exception as e:
-            logger.error(f"Error receiving data: {e}")
-            return None
-
-    @staticmethod
-    def send_result(conn: socket.socket, result: Any) -> None:
-        """Send length-prefixed data over a socket."""
-        compressed_data, _ = NetworkUtils.compress_data(result)
-        conn.sendall(len(compressed_data).to_bytes(4, 'big'))
-        conn.sendall(compressed_data)

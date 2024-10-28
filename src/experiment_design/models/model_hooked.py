@@ -6,15 +6,15 @@ import logging
 import sys
 import time
 from contextlib import nullcontext
-from typing import Any, Optional, Union, Dict
 from pathlib import Path
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 import torch
 from PIL import Image
 from torchinfo import summary  # type: ignore
 
-# Add the project root to the Python path
+# Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
@@ -47,6 +47,7 @@ class WrappedModel(BaseModel, ModelInterface):
         master_dict: Optional[MasterDict] = None,
         **kwargs,
     ):
+        """Initialize WrappedModel with configuration and optional MasterDict."""
         BaseModel.__init__(self, config)
         ModelInterface.__init__(self, config)
         logger.info(f"Initializing WrappedModel with config: {config}")
@@ -60,7 +61,7 @@ class WrappedModel(BaseModel, ModelInterface):
         self.forward_post_hooks = []
 
         # Load model using the BaseModel's load_model method
-        self.model = self.load_model()
+        self.model = self._load_model()
         self.drop_save_dict = getattr(self.model, "save", {})
         logger.debug(f"Model loaded with drop_save_dict: {self.drop_save_dict}")
 

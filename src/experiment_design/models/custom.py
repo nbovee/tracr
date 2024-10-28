@@ -1,11 +1,12 @@
 # src/experiment_design/models/custom.py
 
 import logging
+from typing import Any, Dict
+
 import torch
 import torch.nn as nn
 from torch import Tensor
 from torchvision import models  # type: ignore
-from typing import Dict, Any, Optional
 
 from .registry import ModelRegistry
 
@@ -16,18 +17,20 @@ logger = logging.getLogger(__name__)
 class AlexNetModel(nn.Module):
     """Wrapper for the AlexNet model."""
 
-    def __init__(self, model_config: Dict[str, Any], **kwargs):
+    def __init__(self, model_config: Dict[str, Any], **kwargs) -> None:
+        """Initialize AlexNetModel with configuration."""
         super().__init__()
         logger.info("Initializing AlexNetModel")
         pretrained = model_config.get("pretrained", True)
-        version = tuple(map(int, torch.__version__.split(".")[:2]))
-        if version <= (0, 11):
+        torch_version = tuple(map(int, torch.__version__.split(".")[:2]))
+        if torch_version <= (0, 11):
             self.model = models.alexnet(pretrained=pretrained)
         else:
             self.model = models.alexnet(weights="DEFAULT" if pretrained else None)
         logger.debug(f"AlexNetModel initialized with pretrained={pretrained}")
 
-    def forward(self, x: "Tensor") -> "Tensor":
+    def forward(self, x: Tensor) -> Tensor:
+        """Perform a forward pass through AlexNet."""
         logger.debug("AlexNetModel forward pass")
         return self.model(x)
 
@@ -36,7 +39,8 @@ class AlexNetModel(nn.Module):
 class YOLOModel(nn.Module):
     """Wrapper for the YOLO model."""
 
-    def __init__(self, model_config: Dict[str, Any], **kwargs):
+    def __init__(self, model_config: Dict[str, Any], **kwargs) -> None:
+        """Initialize YOLOModel with configuration."""
         from ultralytics import YOLO  # type: ignore
 
         super().__init__()
@@ -48,7 +52,8 @@ class YOLOModel(nn.Module):
         self.model = YOLO(weights_path).model
         logger.debug(f"YOLOModel initialized with weights_path={weights_path}")
 
-    def forward(self, x: "Tensor") -> "Tensor":
+    def forward(self, x: Tensor) -> Tensor:
+        """Perform a forward pass through YOLO."""
         logger.debug("YOLOModel forward pass")
         return self.model(x)
 
@@ -57,13 +62,15 @@ class YOLOModel(nn.Module):
 class CustomModel(nn.Module):
     """Defines and returns the custom model architecture."""
 
-    def __init__(self, model_config: Dict[str, Any], **kwargs):
+    def __init__(self, model_config: Dict[str, Any], **kwargs) -> None:
+        """Initialize CustomModel with configuration."""
         super().__init__()
         logger.info("Initializing CustomModel")
-        input_size = model_config.get("input_size", (3, 224, 224))
+        input_channels, height, width = model_config.get("input_size", (3, 224, 224))
         layers = []
-        in_channels = input_size[0]
-        spatial_dim = input_size[1:]
+        in_channels = input_channels
+        spatial_dims = (height, width)
+
         for out_channels in [16, 32, 64]:
             layers.extend(
                 [
@@ -73,13 +80,20 @@ class CustomModel(nn.Module):
                 ]
             )
             in_channels = out_channels
-            spatial_dim = tuple(dim // 2 for dim in spatial_dim)
+            spatial_dims = tuple(dim // 2 for dim in spatial_dims)
+
         layers.extend(
-            [nn.Flatten(), nn.Linear(in_channels * spatial_dim[0] * spatial_dim[1], 10)]
+            [
+                nn.Flatten(),
+                nn.Linear(in_channels * spatial_dims[0] * spatial_dims[1], 10),
+            ]
         )
         self.model = nn.Sequential(*layers)
-        logger.debug(f"CustomModel initialized with input_size={input_size}")
+        logger.debug(
+            f"CustomModel initialized with input_size={model_config.get('input_size')}"
+        )
 
-    def forward(self, x: "Tensor") -> "Tensor":
+    def forward(self, x: Tensor) -> Tensor:
+        """Perform a forward pass through the custom model."""
         logger.debug("CustomModel forward pass")
         return self.model(x)
