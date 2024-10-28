@@ -7,18 +7,22 @@ from typing import List, Tuple
 
 import torch
 from PIL import Image
+import subprocess
+from src.utils.system_utils import get_repo_root
+import logging
 
 # Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.experiment_design.models.model_hooked import WrappedModel
+from src.api.experiment_mgmt import ExperimentManager
 from src.experiment_design.datasets.dataloader import DataManager
 from src.utils.experiment_utils import SplitExperimentRunner
 from src.utils.system_utils import read_yaml_file
 from src.utils.network_utils import NetworkManager
 from src.utils.logger import setup_logger, DeviceType
+
 
 
 def custom_collate_fn(
@@ -36,7 +40,13 @@ class ExperimentHost:
         """Initialize with configuration and set up components."""
         self.config = read_yaml_file(config_path)
         self._setup_logger(config_path)
-        self.setup_model()
+        
+        # Initialize experiment manager and get model
+        self.experiment_manager = ExperimentManager(config_path)
+        experiment = self.experiment_manager.setup_experiment()
+        self.model = experiment.model
+        self.device = self.model.device
+        
         self.setup_dataloader()
         self.network_manager = NetworkManager(self.config)
         self.network_manager.connect(self.config)
@@ -52,20 +62,15 @@ class ExperimentHost:
     def _setup_logger(self, config_path: str) -> None:
         """Initialize logger with configuration."""
         global logger
-        log_file = self.config["default"].get("log_file", "logs/app.log")
-        log_level = self.config["default"].get("log_level", "INFO")
-        logger_config = {"default": {"log_file": log_file, "log_level": log_level}}
+        default_log_file = self.config["default"].get("log_file", "logs/app.log")
+        default_log_level = self.config["default"].get("log_level", "INFO")
+        model_log_file = self.config["model"].get("log_file", None)
+        logger_config = {
+            "default": {"log_file": default_log_file, "log_level": default_log_level},
+            "model": {"log_file": model_log_file} if model_log_file else {}
+        }
         logger = setup_logger(device=DeviceType.PARTICIPANT, config=logger_config)
         logger.info(f"Initializing experiment host with config from {config_path}")
-
-    def setup_model(self) -> None:
-        """Initialize and configure the model."""
-        logger.info("Initializing model...")
-        self.model = WrappedModel(config=self.config)
-        self.device = torch.device(self.config["default"]["device"])
-        self.model.to(self.device)
-        self.model.eval()
-        logger.info(f"Model initialized on device: {self.device}")
 
     def setup_dataloader(self) -> None:
         """Set up the data loader with the specified configuration."""
@@ -88,11 +93,60 @@ class ExperimentHost:
         """Execute the split inference experiment."""
         self.experiment_runner.run_experiment()
 
+    def _copy_results_to_server(self) -> None:
+        """Copy results to the server using the copy script."""
+        try:
+            script_path = get_repo_root() / "scripts" / "copy_results_to_server.sh"
+            key_path = Path("config/pkeys/jetson_to_wsl.rsa")
+            
+            if not script_path.exists():
+                logger.error(f"Copy script not found at {script_path}")
+                return
+
+            # Fix key permissions
+            logger.info("Setting correct permissions for SSH key...")
+            try:
+                # Set key permissions to 600 (owner read/write only)
+                key_path.chmod(0o600)
+                logger.info("SSH key permissions set successfully")
+            except Exception as e:
+                logger.error(f"Failed to set key permissions: {e}")
+                return
+
+            # Make script executable
+            script_path.chmod(0o755)
+            
+            # Run the script
+            result = subprocess.run(
+                [str(script_path)],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            logger.info("Results successfully copied to server")
+            logger.debug(f"Copy script output: {result.stdout}")
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to copy results to server: {e.stderr}")
+        except Exception as e:
+            logger.error(f"Error copying results to server: {e}")
+        finally:
+            # Reset key permissions to more restrictive setting after use
+            try:
+                key_path.chmod(0o600)
+            except Exception as e:
+                logger.warning(f"Failed to reset key permissions: {e}")
+
     def cleanup(self) -> None:
-        """Clean up resources."""
+        """Clean up resources and copy results."""
         logger.info("Starting cleanup process...")
-        self.network_manager.cleanup()
-        logger.info("Cleanup complete")
+        try:
+            self.network_manager.cleanup()
+            self._copy_results_to_server()
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+        finally:
+            logger.info("Cleanup complete")
 
 
 if __name__ == "__main__":
@@ -106,6 +160,9 @@ if __name__ == "__main__":
     host = None
     try:
         host = ExperimentHost(str(config_path))
+        # Add debug statement to verify logger
+        logger = logging.getLogger("split_computing_logger")
+        logger.info("About to start experiment - logger check")
         host.run_experiment()
     except KeyboardInterrupt:
         if logger:

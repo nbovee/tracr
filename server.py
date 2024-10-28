@@ -145,7 +145,7 @@ class Server:
                     detections = experiment.data_utils.postprocess(
                         result, original_image_size
                     )
-                    logger.debug(f"Processed detections: {len(detections)} found")
+                    logger.info(f"Processed detections: {len(detections)} found")
                     if not detections:
                         logger.warning(
                             f"No detections found for input with size {original_image_size}"
