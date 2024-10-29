@@ -21,7 +21,7 @@ from src.utils.logger import setup_logger, DeviceType, start_logging_server, shu
 
 # Configure logging with default config
 default_config = {
-    "default": {
+    "logging": {
         "log_file": "logs/server.log",
         "log_level": "INFO"
     }
@@ -37,10 +37,15 @@ class Server:
         logger.info("Initializing server...")
         self.device_manager = DeviceManager()
         self.experiment_manager: Optional[ExperimentManager] = None
-        self.server_socket: Optional[socket.socket] = (
-            None  # track server socket to close it when server is shutdown
-        )
-        logger.debug("Server initialized successfully")
+        self.server_socket: Optional[socket.socket] = None
+
+        # Initialize compression with minimal settings until we receive config
+        self.compress_data = CompressData({
+            "clevel": 1,  # Minimum compression level
+            "filter": "NOFILTER",  # No filtering
+            "codec": "BLOSCLZ"  # Fastest codec
+        })
+        logger.debug("Server initialized with temporary minimal compression settings")
 
     def start(self) -> None:
         """Start the server to listen for incoming connections."""
@@ -94,10 +99,15 @@ class Server:
         try:
             # Receive configuration length and data
             config_length = int.from_bytes(conn.recv(4), "big")
-            config_data = CompressData.receive_full_message(
+            config_data = self.compress_data.receive_full_message(
                 conn=conn, expected_length=config_length
             )
             config = pickle.loads(config_data)
+            
+            # Update compression settings from received config
+            if "compression" in config:
+                self.compress_data = CompressData(config["compression"])
+                logger.debug(f"Updated compression settings: {config['compression']}")
 
             # Initialize experiment manager with received config
             self.experiment_manager = ExperimentManager(config)
@@ -120,10 +130,10 @@ class Server:
                 if not length_data:
                     break
                 expected_length = int.from_bytes(length_data, "big")
-                compressed_data = CompressData.receive_full_message(
+                compressed_data = self.compress_data.receive_full_message(
                     conn=conn, expected_length=expected_length
                 )
-                received_data = CompressData.decompress_data(
+                received_data = self.compress_data.decompress_data(
                     compressed_data=compressed_data
                 )
 
@@ -155,7 +165,7 @@ class Server:
 
                 # Send back predictions and processing time
                 response = (detections, server_processing_time)
-                CompressData.send_result(conn=conn, result=response)
+                self.compress_data.send_result(conn=conn, result=response)
 
         except Exception as e:
             logger.error(f"Error handling connection: {e}", exc_info=True)

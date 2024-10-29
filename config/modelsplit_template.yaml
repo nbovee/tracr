@@ -12,8 +12,16 @@
 default:
   device: cuda                   # Options: 'cuda' (GPU), 'cpu' (CPU). Default is cuda.
   font_path: <font_path>         # Path to font file for visualization; e.g., fonts/DejaVuSans-Bold.ttf.
+
+# LOGGING CONFIGURATIONS
+logging:
   log_level: INFO                # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL. Default is INFO.
-  log_file: <log_file>           # Central log file for application-wide logging. Default is logs/app.log
+  log_file: logs/app.log         # Central log file for application-wide logging. Default is logs/app.log
+  progress_interval: 10          # Log every 10% progress
+  layer_progress: true           # Enable layer progress logging
+  image_progress: true           # Enable image processing progress logging
+  save_images: true              # Whether to save processed images
+  detailed_timing: false         # Disable detailed timing logs 
 
 # MODEL CONFIGURATIONS
 # -------------------

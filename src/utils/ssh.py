@@ -394,3 +394,59 @@ class SSHSession(paramiko.SSHClient):
                 )
 
         return success
+
+    def copy_results_to_server(
+        self, 
+        source_dir: Union[str, Path], 
+        destination_dir: Union[str, Path],
+        log_file: Union[str, Path] = "logs/copy_results_to_server.log"
+    ) -> bool:
+        """Copy results directory to remote server using rsync.
+        
+        Args:
+            source_dir: Local results directory path
+            destination_dir: Remote destination path
+            log_file: Path to log file
+        
+        Returns:
+            bool: True if copy was successful, False otherwise
+        """
+        source_dir = Path(source_dir)
+        log_file = Path(log_file)
+        
+        # Create log directory if it doesn't exist
+        log_file.parent.mkdir(exist_ok=True)
+        
+        logger.info("Starting results copy process")
+        
+        # Verify source directory
+        if not source_dir.is_dir() or not any(source_dir.iterdir()):
+            logger.error(f"Source directory '{source_dir}' does not exist or is empty")
+            return False
+            
+        try:
+            # Use rsync through SFTP for efficient transfer
+            logger.info(f"Copying results to {self.host}:{destination_dir}")
+            self.copy_over(
+                source=source_dir,
+                destination=destination_dir,
+                exclude=["__pycache__", "*.pyc", "*.pyo"]
+            )
+            
+            # Verify the transfer
+            logger.info("Verifying copied files...")
+            result = self.execute_command(
+                f"ls -la {destination_dir} && du -sh {destination_dir}"
+            )
+            
+            if result["success"]:
+                logger.info("Results copy process completed successfully!")
+                logger.debug(f"Remote directory contents:\n{result['stdout']}")
+                return True
+            else:
+                logger.error(f"Failed to verify copied files: {result['stderr']}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error copying results to server: {e}")
+            return False

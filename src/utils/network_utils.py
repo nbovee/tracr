@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple
 import logging
 from .compression import CompressData
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("split_computing_logger")
 
 
 class NetworkManager:
@@ -19,6 +19,15 @@ class NetworkManager:
         self.server_host = experiment_config.get("server_host", "10.0.0.245")
         self.server_port = experiment_config.get("port", 12345)
         self.client_socket: Optional[socket.socket] = None
+
+        # Initialize compression with config settings
+        compression_config = config.get("compression", {
+            "clevel": 3,
+            "filter": "SHUFFLE",
+            "codec": "ZSTD"
+        })
+        self.compress_data = CompressData(compression_config)
+        logger.debug(f"NetworkManager initialized with compression config: {compression_config}")
 
     def connect(self, config: dict) -> None:
         """Establish connection to server and send configuration."""
@@ -52,16 +61,18 @@ class NetworkManager:
             if not self.client_socket:
                 raise RuntimeError("No active connection to server")
 
+            # Send split layer index and compressed data
             self.client_socket.sendall(split_layer.to_bytes(4, "big"))
             self.client_socket.sendall(
                 len(compressed_output).to_bytes(4, "big"))
             self.client_socket.sendall(compressed_output)
 
+            # Receive and decompress response
             response_length = int.from_bytes(self.client_socket.recv(4), "big")
-            response_data = CompressData.receive_full_message(
+            response_data = self.compress_data.receive_full_message(
                 conn=self.client_socket, expected_length=response_length
             )
-            return CompressData.decompress_data(compressed_data=response_data)
+            return self.compress_data.decompress_data(compressed_data=response_data)
         except Exception as e:
             logger.error(f"Network communication failed: {e}")
             return [], 0.0

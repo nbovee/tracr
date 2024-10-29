@@ -1,15 +1,13 @@
 # host.py
 
 import argparse
+import logging
 from pathlib import Path
 import sys
 from typing import List, Tuple
 
 import torch
 from PIL import Image
-import subprocess
-from src.utils.system_utils import get_repo_root
-import logging
 
 # Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parent
@@ -18,11 +16,11 @@ if str(project_root) not in sys.path:
 
 from src.api.experiment_mgmt import ExperimentManager
 from src.experiment_design.datasets.dataloader import DataManager
+from src.utils.compression import CompressData
 from src.utils.experiment_utils import SplitExperimentRunner
 from src.utils.system_utils import read_yaml_file
 from src.utils.network_utils import NetworkManager
 from src.utils.logger import setup_logger, DeviceType
-
 
 
 def custom_collate_fn(
@@ -40,6 +38,14 @@ class ExperimentHost:
         """Initialize with configuration and set up components."""
         self.config = read_yaml_file(config_path)
         self._setup_logger(config_path)
+        
+        # Initialize compression with config settings
+        compression_config = self.config.get("compression", {
+            "clevel": 3,
+            "filter": "SHUFFLE",
+            "codec": "ZSTD"
+        })
+        self.compress_data = CompressData(compression_config)
         
         # Initialize experiment manager and get model
         self.experiment_manager = ExperimentManager(config_path)
@@ -62,11 +68,11 @@ class ExperimentHost:
     def _setup_logger(self, config_path: str) -> None:
         """Initialize logger with configuration."""
         global logger
-        default_log_file = self.config["default"].get("log_file", "logs/app.log")
-        default_log_level = self.config["default"].get("log_level", "INFO")
+        default_log_file = self.config["logging"].get("log_file", "logs/app.log")
+        default_log_level = self.config["logging"].get("log_level", "INFO")
         model_log_file = self.config["model"].get("log_file", None)
         logger_config = {
-            "default": {"log_file": default_log_file, "log_level": default_log_level},
+            "logging": {"log_file": default_log_file, "log_level": default_log_level},
             "model": {"log_file": model_log_file} if model_log_file else {}
         }
         logger = setup_logger(device=DeviceType.PARTICIPANT, config=logger_config)
@@ -94,48 +100,36 @@ class ExperimentHost:
         self.experiment_runner.run_experiment()
 
     def _copy_results_to_server(self) -> None:
-        """Copy results to the server using the copy script."""
+        """Copy results to the server using SSH utilities."""
         try:
-            script_path = get_repo_root() / "scripts" / "copy_results_to_server.sh"
-            key_path = Path("config/pkeys/jetson_to_wsl.rsa")
+            from src.utils.ssh import SSHSession
             
-            if not script_path.exists():
-                logger.error(f"Copy script not found at {script_path}")
-                return
-
-            # Fix key permissions
-            logger.info("Setting correct permissions for SSH key...")
-            try:
-                # Set key permissions to 600 (owner read/write only)
-                key_path.chmod(0o600)
-                logger.info("SSH key permissions set successfully")
-            except Exception as e:
-                logger.error(f"Failed to set key permissions: {e}")
-                return
-
-            # Make script executable
-            script_path.chmod(0o755)
+            # SSH connection details
+            ssh_config = {
+                "host": "10.0.0.245",
+                "user": "izhar",
+                "private_key_path": "config/pkeys/jetson_to_wsl.rsa",
+                "port": 22
+            }
             
-            # Run the script
-            result = subprocess.run(
-                [str(script_path)],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            logger.info("Results successfully copied to server")
-            logger.debug(f"Copy script output: {result.stdout}")
+            # Source and destination paths
+            source_dir = Path("results")
+            destination_dir = Path("/mnt/d/github/RACR_AI/results")
             
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to copy results to server: {e.stderr}")
+            logger.info("Establishing SSH connection to server...")
+            with SSHSession(**ssh_config) as ssh:
+                success = ssh.copy_results_to_server(
+                    source_dir=source_dir,
+                    destination_dir=destination_dir
+                )
+                
+                if success:
+                    logger.info("Results successfully copied to server")
+                else:
+                    logger.error("Failed to copy results to server")
+                    
         except Exception as e:
             logger.error(f"Error copying results to server: {e}")
-        finally:
-            # Reset key permissions to more restrictive setting after use
-            try:
-                key_path.chmod(0o600)
-            except Exception as e:
-                logger.warning(f"Failed to reset key permissions: {e}")
 
     def cleanup(self) -> None:
         """Clean up resources and copy results."""

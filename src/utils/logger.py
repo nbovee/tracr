@@ -247,10 +247,10 @@ def setup_logger(
             model_log_file = None
             
             if config:
-                if "default" in config:
-                    log_level_str = config["default"].get("log_level", "INFO")
+                if "logging" in config:
+                    log_level_str = config["logging"].get("log_level", "INFO")
                     log_level = getattr(logging, log_level_str.upper())
-                    default_log_file = Path(config["default"].get("log_file", default_log_file))
+                    default_log_file = Path(config["logging"].get("log_file", default_log_file))
                 
                 if "model" in config and config["model"].get("log_file"):
                     model_log_file = Path(config["model"]["log_file"])

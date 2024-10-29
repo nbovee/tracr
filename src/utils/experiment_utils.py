@@ -16,7 +16,7 @@ from .power_meter import PowerMeter
 
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("split_computing_logger")
 
 
 class SplitExperimentRunner:
@@ -36,18 +36,35 @@ class SplitExperimentRunner:
         self.data_loader = data_loader
         self.network_manager = network_manager
         self.device = device
+        
+        # Initialize compression with config settings
+        compression_config = self.config.get("compression", {
+            "clevel": 3,
+            "filter": "SHUFFLE",
+            "codec": "ZSTD"
+        })
+        self.compress_data = CompressData(compression_config)
+        
         self._setup_directories()
         self._setup_ml_utils()
         self.power_meter = PowerMeter(device)
 
     def _setup_directories(self) -> None:
         """Create necessary directories for results and images."""
+        model_name = self.config["model"].get("model_name", "").lower()
+        
+        # Create base results directory
         self.results_dir = Path("results")
         self.results_dir.mkdir(exist_ok=True)
-        self.images_dir = self.results_dir / "images"
+        
+        # Create model-specific directory
+        self.model_dir = self.results_dir / f"{model_name}_split"
+        self.model_dir.mkdir(exist_ok=True)
+        
+        # Create subdirectories for images and timing results
+        self.images_dir = self.model_dir / "images"
         self.images_dir.mkdir(exist_ok=True)
-        logger.info(f"Created results directories at {self.results_dir}")
-
+        
     def _setup_ml_utils(self) -> None:
         """Initialize ML utilities based on configuration."""
         input_size = tuple(self.config["model"].get("input_size", [3, 224, 224])[1:])
@@ -56,13 +73,15 @@ class SplitExperimentRunner:
             "class_names": self.config["dataset"]["args"].get("class_names", []),
         }
 
-        model_name = self.config["model"].get("model_name", "").lower()
+        model_name = self.config["model"].get("model_name", "").lower()        
         if "yolo" in model_name:
             self.ml_utils = DetectionUtils(input_size=input_size, **common_args)
             logger.info("Initialized Detection Utils for YOLO model")
-        else:
+        elif "alexnet" in model_name:
             self.ml_utils = ClassificationUtils(**common_args)
             logger.info("Initialized Classification Utils")
+        else:
+            raise ValueError(f"Unsupported model type: {model_name}")
 
     def process_single_image(
         self,
@@ -79,7 +98,7 @@ class SplitExperimentRunner:
             input_tensor = inputs.to(self.device)
             output = self.model(input_tensor, end=split_layer)
             data_to_send = (output, original_image.size)
-            compressed_output, _ = CompressData.compress_data(data=data_to_send)
+            compressed_output, _ = self.compress_data.compress_data(data=data_to_send)
             host_time = time.time() - host_start
 
             # Network transfer and server processing
@@ -89,12 +108,9 @@ class SplitExperimentRunner:
             )
             travel_time = time.time() - travel_start - server_time
 
-            # Save results if there are any detections
+            # Save processed image if detections are present
             if detections:
-                self._save_processed_image(
-                    original_image, detections, image_file, output_dir
-                )
-
+                self._save_processed_image(original_image, detections, image_file, output_dir)
             return host_time, travel_time, server_time
 
         except Exception as e:
@@ -124,15 +140,33 @@ class SplitExperimentRunner:
         """Evaluate performance metrics for a specific split layer."""
         host_times, travel_times, server_times = [], [], []
         split_dir = self.images_dir / f"split_{split_layer}"
-        split_dir.mkdir(exist_ok=True)
-        logger.info(f"Testing split at layer {split_layer}")
+        
+        # Get logging configuration
+        log_config = self.config.get("logging", {})
+        save_images = log_config.get("save_images", True)
+        log_image_progress = log_config.get("image_progress", True)
+        progress_interval = log_config.get("progress_interval", 10)
+        detailed_timing = log_config.get("detailed_timing", False)
+
+        if save_images:
+            split_dir.mkdir(exist_ok=True)
+
+        total_images = len(self.data_loader)
+        progress_step = max(1, total_images * progress_interval // 100)
+        next_progress = progress_step
+        current_image = 0
 
         with torch.no_grad():
-            for inputs, original_images, image_files in tqdm(
-                self.data_loader, desc=f"Testing split at layer {split_layer}"
-            ):
+            for inputs, original_images, image_files in self.data_loader:
+                current_image += 1
+                # Log progress based on configuration
+                if log_image_progress and current_image >= next_progress:
+                    logger.debug(f"Processing images: {(current_image/total_images)*100:.0f}% ({current_image}/{total_images})")
+                    next_progress += progress_step
+
                 times = self.process_single_image(
-                    inputs, original_images[0], image_files[0], split_layer, split_dir
+                    inputs, original_images[0], image_files[0], 
+                    split_layer, split_dir if save_images else None
                 )
                 if times:
                     host_time, travel_time, server_time = times
@@ -140,45 +174,69 @@ class SplitExperimentRunner:
                     travel_times.append(travel_time)
                     server_times.append(server_time)
 
-        return self._calculate_total_times(host_times, travel_times, server_times)
-
-    def _calculate_total_times(
-        self,
-        host_times: List[float],
-        travel_times: List[float],
-        server_times: List[float],
-    ) -> Tuple[float, float, float, float]:
-        """Calculate and log total timing information."""
+        # Calculate totals and log based on configuration
         total_host = sum(host_times)
         total_travel = sum(travel_times)
         total_server = sum(server_times)
         total = total_host + total_travel + total_server
 
-        logger.info(
-            f"Performance metrics:"
-            f"\n\tHost time: {total_host:.2f}s"
-            f"\n\tTravel time: {total_travel:.2f}s"
-            f"\n\tServer time: {total_server:.2f}s"
-            f"\n\tTotal time: {total:.2f}s"
-        )
+        if detailed_timing:
+            performance_msg = (
+                f"\n{'='*50}\n"
+                f"Performance Summary - Split Layer {split_layer}\n"
+                f"{'='*50}\n"
+                f"Host Processing Time:   {total_host:.2f}s\n"
+                f"Network Transfer Time:  {total_travel:.2f}s\n"
+                f"Server Processing Time: {total_server:.2f}s\n"
+                f"{'='*30}\n"
+                f"Total Time:            {total:.2f}s\n"
+                f"{'='*50}\n"
+            )
+            logger.info(performance_msg)
+        else:
+            logger.info(f"Layer {split_layer} complete - Total time: {total:.2f}s")
 
         return total_host, total_travel, total_server, total
 
     def run_experiment(self) -> None:
         """Execute the split inference experiment across all layers."""
-        logger.info("Starting experiment...")
+        logger.info("Starting split inference experiment...")
         total_layers = self.config["model"].get("total_layers", 10)
+        logger.info(f"Total layers to test: {total_layers}")
         performance_records = []
 
+        # Get logging configuration
+        log_config = self.config.get("logging", {})
+        progress_interval = log_config.get("progress_interval", 10)
+        log_layer_progress = log_config.get("layer_progress", True)
+        
+        # Calculate progress thresholds
+        progress_step = max(1, total_layers * progress_interval // 100)
+        next_progress = progress_step
+
         for split_layer in range(1, total_layers):
+            # Only log progress at configured intervals
+            if log_layer_progress and split_layer >= next_progress:
+                logger.info(f"Progress: {(split_layer/total_layers)*100:.0f}% ({split_layer}/{total_layers-1} layers)")
+                next_progress += progress_step
+            
             times = self.test_split_performance(split_layer)
             performance_records.append((split_layer, *times))
+
+        # Log completion
+        logger.info("Layer testing complete (100%)")
 
         # Determine the best split point based on total time
         best_split, host, travel, server, total = min(
             performance_records, key=lambda x: x[4]
         )
-        logger.info(f"Best split at layer {best_split} with total time {total:.2f}s")
+        logger.info(
+            f"Best split found at layer {best_split}:\n"
+            f"  Host time: {host:.2f}s\n"
+            f"  Travel time: {travel:.2f}s\n"
+            f"  Server time: {server:.2f}s\n"
+            f"  Total time: {total:.2f}s"
+        )
 
         # Save experiment results
         self.save_results(performance_records)
@@ -197,6 +255,7 @@ class SplitExperimentRunner:
                 "Total Processing Time",
             ],
         )
-        output_file = self.results_dir / "split_layer_times.xlsx"
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        output_file = self.model_dir / f"split_layer_times_{timestamp}.xlsx"
         df.to_excel(output_file, index=False)
         logger.info(f"Results saved to {output_file}")
