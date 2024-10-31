@@ -245,22 +245,24 @@ def setup_logger(
             log_level = logging.INFO
             default_log_file = LOGS_DIR / "app.log"
             model_log_file = None
-            
+
             if config:
                 if "logging" in config:
                     log_level_str = config["logging"].get("log_level", "INFO")
                     log_level = getattr(logging, log_level_str.upper())
-                    default_log_file = Path(config["logging"].get("log_file", default_log_file))
-                
+                    default_log_file = Path(
+                        config["logging"].get("log_file", default_log_file)
+                    )
+
                 if "model" in config and config["model"].get("log_file"):
                     model_log_file = Path(config["model"]["log_file"])
 
             # Create consistent formatters
             file_formatter = logging.Formatter(
                 "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S"
+                datefmt="%Y-%m-%d %H:%M:%S",
             )
-            
+
             # Default file handler
             default_handler = RotatingFileHandler(
                 default_log_file, maxBytes=10**6, backupCount=5
@@ -284,7 +286,7 @@ def setup_logger(
                 show_time=True,
                 show_level=True,
                 markup=True,
-                log_time_format="[%Y-%m-%d %H:%M:%S]"
+                log_time_format="[%Y-%m-%d %H:%M:%S]",
             )
             rich_handler.setLevel(log_level)
             rich_formatter = ColorByDeviceFormatter(

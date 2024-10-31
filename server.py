@@ -17,15 +17,15 @@ if str(project_root) not in sys.path:
 from src.api.device_mgmt import DeviceManager
 from src.api.experiment_mgmt import ExperimentManager
 from src.utils.compression import CompressData
-from src.utils.logger import setup_logger, DeviceType, start_logging_server, shutdown_logging_server
+from src.utils.logger import (
+    setup_logger,
+    DeviceType,
+    start_logging_server,
+    shutdown_logging_server,
+)
 
 # Configure logging with default config
-default_config = {
-    "logging": {
-        "log_file": "logs/server.log",
-        "log_level": "INFO"
-    }
-}
+default_config = {"logging": {"log_file": "logs/server.log", "log_level": "INFO"}}
 logger = setup_logger(device=DeviceType.SERVER, config=default_config)
 logging_server = start_logging_server()
 
@@ -35,11 +35,13 @@ class TemporaryCompression:
 
     def __init__(self) -> None:
         """Initialize with minimal compression settings."""
-        self.compress_data = CompressData({
-            "clevel": 1,      # Minimum compression level
-            "filter": "NOFILTER",  # No filtering
-            "codec": "BLOSCLZ"     # Fastest codec
-        })
+        self.compress_data = CompressData(
+            {
+                "clevel": 1,  # Minimum compression level
+                "filter": "NOFILTER",  # No filtering
+                "codec": "BLOSCLZ",  # Fastest codec
+            }
+        )
         logger.debug("Initialized temporary compression with minimal settings")
 
     def update_from_config(self, config: dict) -> CompressData:
@@ -71,7 +73,7 @@ class Server:
         if not server_devices:
             logger.error("No available server devices found.")
             return
-        
+
         server_device = server_devices[0]
         if not server_device.working_cparams:
             logger.error("Server device has no working connection parameters.")
@@ -84,9 +86,9 @@ class Server:
             if server_device.working_cparams.port
             else 12345
         )
-        
+
         logger.info(f"Starting server on port {port}...")
-        
+
         try:
             # Create a new socket with SO_REUSEADDR option
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -119,7 +121,7 @@ class Server:
                 conn=conn, expected_length=config_length
             )
             config = pickle.loads(config_data)
-            
+
             # Update compression settings from received config
             self.compress_data = TemporaryCompression().update_from_config(config)
 
@@ -200,7 +202,7 @@ class Server:
                 logger.error(f"Error closing socket: {e}")
             self.server_socket = None
             logger.info("Server socket cleaned up")
-        
+
         if logging_server:
             shutdown_logging_server(logging_server)
 

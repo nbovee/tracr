@@ -39,11 +39,10 @@ class BaseExperiment(ExperimentInterface):
         logger.info(f"Initializing model {self.config['model']['model_name']}...")
         # Import model class dynamically to avoid direct dependency
         model_module = __import__(
-            "src.experiment_design.models.model_hooked", 
-            fromlist=["WrappedModel"]
+            "src.experiment_design.models.model_hooked", fromlist=["WrappedModel"]
         )
         model_class = getattr(model_module, "WrappedModel")
-        
+
         model = model_class(config=self.config)
         device = torch.device(self.config["default"]["device"])
         model.to(device)
@@ -87,11 +86,15 @@ class BaseExperiment(ExperimentInterface):
 
     def run(self) -> None:
         """Execute the experiment."""
-        logger.info(f"Running experiment for Model='{self.config['model']['model_name']}' Dataset='{self.config['dataset']['class']}'...")
+        logger.info(
+            f"Running experiment for Model='{self.config['model']['model_name']}' Dataset='{self.config['dataset']['class']}'..."
+        )
         total_layers = self.config["model"]["total_layers"]
 
         if not total_layers:
-            logger.warning("Total layers not specified in config. Trying to dynamically get total layers from model...")
+            logger.warning(
+                "Total layers not specified in config. Trying to dynamically get total layers from model..."
+            )
             total_layers = len(self.model.model.features)
             logger.info(f"Total layers: {total_layers}")
 
@@ -116,16 +119,12 @@ class BaseExperiment(ExperimentInterface):
 
         # Import dataloader dynamically
         dataloader_module = __import__(
-            "src.experiment_design.datasets.dataloader",
-            fromlist=["DataManager"]
+            "src.experiment_design.datasets.dataloader", fromlist=["DataManager"]
         )
         DataManager = getattr(dataloader_module, "DataManager")
-        
+
         dataset = DataManager.get_dataset(
-            {
-                "dataset": self.config["dataset"],
-                "dataloader": self.config["dataloader"]
-            }
+            {"dataset": self.config["dataset"], "dataloader": self.config["dataloader"]}
         )
         data_loader = torch.utils.data.DataLoader(
             dataset,
@@ -196,13 +195,17 @@ class ExperimentManager:
             else None
         )
         if self.port is None:
-            logger.warning("No port specified in device configuration, using default port 12345")
+            logger.warning(
+                "No port specified in device configuration, using default port 12345"
+            )
             self.port = 12345
         logger.info("ExperimentManager initialized")
 
     def setup_experiment(self) -> ExperimentInterface:
         """Set up and return an experiment instance."""
-        logger.info(f"Setting up experiment for Model='{self.config['model']['model_name']}' Dataset='{self.config['dataset']['class']}'...")
+        logger.info(
+            f"Setting up experiment for Model='{self.config['model']['model_name']}' Dataset='{self.config['dataset']['class']}'..."
+        )
         return BaseExperiment(self.config, self.host, self.port)
 
     def process_data(

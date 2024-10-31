@@ -30,13 +30,13 @@ class ExperimentHost:
         self._setup_logger(config_path)
         self.device_manager = DeviceManager()
         self.compress_data = CompressData(self.config["compression"])
-        
+
         # Initialize experiment manager and get model
         self.experiment_manager = ExperimentManager(config_path)
         experiment = self.experiment_manager.setup_experiment()
         self.model = experiment.model
         self.device = self.model.device
-        
+
         self.setup_dataloader()
         self.network_manager = NetworkManager(self.config)
         self.network_manager.connect(self.config)
@@ -57,7 +57,7 @@ class ExperimentHost:
         model_log_file = self.config["model"].get("log_file", None)
         logger_config = {
             "logging": {"log_file": default_log_file, "log_level": default_log_level},
-            "model": {"log_file": model_log_file} if model_log_file else {}
+            "model": {"log_file": model_log_file} if model_log_file else {},
         }
         logger = setup_logger(device=DeviceType.PARTICIPANT, config=logger_config)
         logger.info(f"Initializing experiment host with config from {config_path}")
@@ -67,20 +67,23 @@ class ExperimentHost:
         logger.info("Setting up data loader...")
         dataset_config = self.config.get("dataset", {})
         dataloader_config = self.config.get("dataloader", {})
-        
+
         # Import collate function if specified
         collate_fn = None
         if dataloader_config.get("collate_fn"):
             try:
                 from src.experiment_design.datasets.collate import COLLATE_FUNCTIONS
+
                 collate_fn = COLLATE_FUNCTIONS[dataloader_config["collate_fn"]]
-                logger.debug(f"Using custom collate function: {dataloader_config['collate_fn']}")
+                logger.debug(
+                    f"Using custom collate function: {dataloader_config['collate_fn']}"
+                )
             except KeyError:
                 logger.warning(
                     f"Collate function '{dataloader_config['collate_fn']}' not found. "
                     "Using default collation."
                 )
-        
+
         dataset = DataManager.get_dataset(
             {"dataset": dataset_config, "dataloader": dataloader_config}
         )
@@ -108,39 +111,46 @@ class ExperimentHost:
             if not server_devices:
                 logger.error("No available server devices found for copying results.")
                 return
-                
+
             server_device = server_devices[0]
             if not server_device.working_cparams:
                 logger.error("Server device has no working connection parameters.")
                 return
-                
+
             # Get SSH configuration from server device
             ssh_config = {
                 "host": server_device.working_cparams.host,
                 "user": server_device.working_cparams.username,
                 "private_key_path": str(server_device.working_cparams.private_key_path),
-                "port": server_device.working_cparams.port or 22  # Default to 22 if not specified
+                "port": server_device.working_cparams.port
+                or 22,  # Default to 22 if not specified
             }
-            
+
             # You can add source and destination paths as configuration options if needed
-            source_dir = Path(self.config.get("results", {}).get("source_dir", "results"))
-            destination_dir = Path(self.config.get("results", {}).get(
-                "destination_dir", 
-                "/mnt/d/github/RACR_AI/results"
-            ))
-            
-            logger.info(f"Establishing SSH connection to server {ssh_config['host']}...")
+            source_dir = Path(
+                self.config.get("results", {}).get("source_dir", "results")
+            )
+            destination_dir = Path(
+                self.config.get("results", {}).get(
+                    "destination_dir", "/mnt/d/github/RACR_AI/results"
+                )
+            )
+
+            logger.info(
+                f"Establishing SSH connection to server {ssh_config['host']}..."
+            )
             with SSHSession(**ssh_config) as ssh:
                 success = ssh.copy_results_to_server(
-                    source_dir=source_dir,
-                    destination_dir=destination_dir
+                    source_dir=source_dir, destination_dir=destination_dir
                 )
-                
+
                 if success:
-                    logger.info(f"Results successfully copied to {destination_dir} on server")
+                    logger.info(
+                        f"Results successfully copied to {destination_dir} on server"
+                    )
                 else:
                     logger.error("Failed to copy results to server")
-                    
+
         except Exception as e:
             logger.error(f"Error copying results to server: {e}")
 

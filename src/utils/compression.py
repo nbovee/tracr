@@ -14,7 +14,7 @@ class CompressData:
 
     def __init__(self, compression_config: Dict[str, Any]):
         """Initialize with compression configuration.
-        
+
         Args:
             compression_config: Dictionary containing compression settings:
                 - clevel: Compression level (1-9)
@@ -32,7 +32,7 @@ class CompressData:
                 serialized_data,
                 clevel=self.compression_config.get("clevel", 3),
                 filter=blosc2.Filter[self.compression_config.get("filter", "SHUFFLE")],
-                codec=blosc2.Codec[self.compression_config.get("codec", "ZSTD")]
+                codec=blosc2.Codec[self.compression_config.get("codec", "ZSTD")],
             )
             return compressed_data, len(compressed_data)
         except Exception as e:

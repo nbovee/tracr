@@ -21,13 +21,13 @@ class NetworkManager:
         self.client_socket: Optional[socket.socket] = None
 
         # Initialize compression with config settings
-        compression_config = config.get("compression", {
-            "clevel": 3,
-            "filter": "SHUFFLE",
-            "codec": "ZSTD"
-        })
+        compression_config = config.get(
+            "compression", {"clevel": 3, "filter": "SHUFFLE", "codec": "ZSTD"}
+        )
         self.compress_data = CompressData(compression_config)
-        logger.debug(f"NetworkManager initialized with compression config: {compression_config}")
+        logger.debug(
+            f"NetworkManager initialized with compression config: {compression_config}"
+        )
 
     def connect(self, config: dict) -> None:
         """Establish connection to server and send configuration."""
@@ -35,8 +35,7 @@ class NetworkManager:
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.client_socket.connect((self.server_host, self.server_port))
-            logger.info(
-                f"Connected to server at {self.server_host}:{self.server_port}")
+            logger.info(f"Connected to server at {self.server_host}:{self.server_port}")
 
             # Send configuration to server
             config_bytes = pickle.dumps(config)
@@ -46,8 +45,7 @@ class NetworkManager:
             # Wait for acknowledgment
             ack = self.client_socket.recv(2)
             if ack != b"OK":
-                raise ConnectionError(
-                    "Server failed to acknowledge configuration.")
+                raise ConnectionError("Server failed to acknowledge configuration.")
             logger.info("Server acknowledged configuration.")
         except Exception as e:
             logger.error(f"Failed to set up network connection: {e}")
@@ -63,8 +61,7 @@ class NetworkManager:
 
             # Send split layer index and compressed data
             self.client_socket.sendall(split_layer.to_bytes(4, "big"))
-            self.client_socket.sendall(
-                len(compressed_output).to_bytes(4, "big"))
+            self.client_socket.sendall(len(compressed_output).to_bytes(4, "big"))
             self.client_socket.sendall(compressed_output)
 
             # Receive and decompress response

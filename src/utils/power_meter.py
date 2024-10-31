@@ -10,7 +10,8 @@ import torch
 logger = logging.getLogger("split_computing_logger")
 
 try:
-    from jtop import JtopException, jtop
+    from jtop import JtopException, jtop  # type: ignore
+
     JTOP_AVAILABLE = True
 except ImportError:
     JTOP_AVAILABLE = False
@@ -68,25 +69,25 @@ class PowerMeter:
 
                 # Get power readings from all components
                 power_readings = []
-                
+
                 # Get power readings from stats
-                if 'power' in stats:
-                    power_dict = stats['power']
+                if "power" in stats:
+                    power_dict = stats["power"]
                     # Iterate through all power rails
                     for rail_name, rail_data in power_dict.items():
                         try:
                             # Different Jetson models might report power differently
                             if isinstance(rail_data, dict):
-                                if 'power' in rail_data:
-                                    power_readings.append(float(rail_data['power']))
-                                elif 'instant' in rail_data:
-                                    power_readings.append(float(rail_data['instant']))
+                                if "power" in rail_data:
+                                    power_readings.append(float(rail_data["power"]))
+                                elif "instant" in rail_data:
+                                    power_readings.append(float(rail_data["instant"]))
                             elif isinstance(rail_data, (int, float)):
                                 power_readings.append(float(rail_data))
                         except (ValueError, TypeError) as e:
                             logger.debug(f"Skipping rail {rail_name}: {e}")
                             continue
-                
+
                 if power_readings:
                     # Return the sum of all available power readings
                     total_power = sum(power_readings)
@@ -95,7 +96,7 @@ class PowerMeter:
                 else:
                     logger.warning("No valid power readings available from Jetson")
                     return self._get_fallback_energy()
-                    
+
             except Exception as e:
                 logger.warning(f"Failed to get Jetson power metrics: {e}")
                 return self._get_fallback_energy()
