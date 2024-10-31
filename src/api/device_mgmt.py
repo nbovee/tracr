@@ -90,13 +90,15 @@ class SSHConnectionParams:
         host: str,
         username: str,
         rsa_key_path: Union[Path, str],
+        port: int = None,
         is_default: bool = True,
     ) -> None:
         """Initialize SSH connection parameters."""
-        self.host = host  # Make sure this is set before _set_host
+        self.host = host
         self._set_host(host)
         self._set_username(username)
         self._set_rsa_key(rsa_key_path)
+        self.port = port
         self._is_default = is_default
         logger.debug(f"Initialized SSHConnectionParams for host {host}")
 
@@ -117,6 +119,7 @@ class SSHConnectionParams:
             host=source["host"],
             username=source["user"],
             rsa_key_path=source["pkey_fp"],
+            port=source.get("port", None),
             is_default=source.get("default", True),
         )
 
@@ -161,6 +164,7 @@ class SSHConnectionParams:
             "host": self.host,
             "user": self.username,
             "pkey_fp": str(self.private_key_path),
+            "port": self.port,
         }
 
     def is_default(self) -> bool:

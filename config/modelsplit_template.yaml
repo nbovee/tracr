@@ -10,106 +10,62 @@
 # DEFAULT CONFIGURATIONS
 # ---------------------
 default:
-  device: cuda                   # Options: 'cuda' (GPU), 'cpu' (CPU). Default is cuda.
+  device: <device>               # Options: 'cuda' (GPU), 'cpu' (CPU). Default is cuda.
   font_path: <font_path>         # Path to font file for visualization; e.g., fonts/DejaVuSans-Bold.ttf.
 
 # LOGGING CONFIGURATIONS
 logging:
-  log_level: INFO                # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL. Default is INFO.
-  log_file: logs/app.log         # Central log file for application-wide logging. Default is logs/app.log
-  progress_interval: 10          # Log every 10% progress
-  layer_progress: true           # Enable layer progress logging
-  image_progress: true           # Enable image processing progress logging
-  save_images: true              # Whether to save processed images
-  detailed_timing: false         # Disable detailed timing logs 
+  log_level: <log_level>         # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL. Default is INFO.
+  log_file: <log_file>           # Central log file for application-wide logging. Default is logs/app.log
+  progress_interval: <interval>  # Log every <interval>% progress. Default is 10.
+  layer_progress: <layer_progress>   # Enable layer progress logging. Default is true.
+  image_progress: <image_progress>   # Enable image processing progress logging. Default is true.
+  save_images: <save_images>         # Whether to save processed images. Default is true.
+  detailed_timing: <detailed_timing> # Disable detailed timing logs. Default is false.
 
 # MODEL CONFIGURATIONS
 # -------------------
 model:
-  model_name: null               # REQUIRED: Model architecture name (e.g., 'alexnet', 'yolov8s')
+  model_name: <model_name>       # REQUIRED: Model architecture name (e.g., 'alexnet', 'yolov8s')
   version: null                  # Model version if applicable. Default is null.
   pretrained: false              # Whether to use pretrained weights. Default is false.
   weight_path: null              # Path to custom weights file; e.g., 'path/to/weights/best.pt' for YOLOv8. Default is null.
-  input_size: [3, 224, 224]      # REQUIRED: Input tensor dimensions [channels, height, width]. Common sizes: [3, 224, 224] for AlexNet, [3, 640, 640] for YOLOv8.
-  hook_style: pre                # Where to insert hooks in model layers. Options: 'pre' (before layer execution), 'post' (after layer execution).
-  split_layer: null              # REQUIRED: Layer index where model will be split. Note: Must be less than total_layers.
-  save_layers: [2, 4, 6]         # Layer indices to save intermediate outputs. Useful for debugging and visualization.
-  total_layers: null             # REQUIRED: Total number of layers in model. Example: 8 for AlexNet, 23 for YOLOv8.
-  num_classes: null              # Number of output classes. null: Use model's default. Example: 1000 for ImageNet, 2 for binary classification.
-  mode: eval                     # Model operation mode. Options: 'eval' (recommended for split inference), 'train'.
-  depth: 2                       # Depth for recursive model layer exploration. Default is 2.
-  flush_buffer_size: 100         # Number of inferences before results storage. Default is 100.
-  warmup_iterations: 10          # Iterations to stabilize performance metrics. Default is 10.
-  log_file: logs/modelsplit.log  # Separate log file for model operations. Rename to match your model (e.g., alexnetsplit.log).
+  input_size: <input_size>       # REQUIRED: Input tensor dimensions [channels, height, width]. Common sizes: [3, 224, 224] for AlexNet, [3, 640, 640] for YOLOv8.
+  hook_style: <hook_style>       # Where to insert hooks in model layers. Options: 'pre' (before layer execution), 'post' (after layer execution).
+  split_layer: <split_layer>     # REQUIRED: Layer index where model will be split. Note: Must be less than total_layers.
+  save_layers: <save_layers>     # Layer indices to save intermediate outputs. Useful for debugging and visualization.
+  total_layers: <total_layers>   # REQUIRED: Total number of layers in model. Example: 8 for AlexNet, 23 for YOLOv8.
+  num_classes: <num_classes>     # Number of output classes. null: Use model's default. Example: 1000 for ImageNet, 2 for binary classification.
+  mode: <mode>                   # Model operation mode. Options: 'eval' (recommended for split inference), 'train'.
+  depth: <depth>                         # Depth for recursive model layer exploration. Default is 2.
+  flush_buffer_size: <flush_buffer_size> # Number of inferences before results storage. Default is 100.
+  warmup_iterations: <warmup_iterations> # Iterations to stabilize performance metrics. Default is 10.
+  log_file: <log_file>                   # Separate log file for model operations. Rename to match your model (e.g., alexnetsplit.log).
 
 # DATASET CONFIGURATIONS
 # ---------------------
 dataset:
-  module: null                  # REQUIRED: Python module name for dataset. Examples: 'imagenet', 'onion'. Defined in src/experiment_design/datasets/
-  class: null                   # REQUIRED: Dataset class name. Examples: 'ImageNetDataset', 'OnionDataset'.
+  module: <module>              # REQUIRED: Python module name for dataset. Examples: 'imagenet', 'onion'. Defined in src/experiment_design/datasets/
+  class: <class>                # REQUIRED: Dataset class name. Examples: 'ImageNetDataset', 'OnionDataset'.
+  task: <task>                  # REQUIRED: Dataset task. Examples: 'classification', 'detection'.
   args:
-    root: null                  # REQUIRED: Dataset root directory. Example: 'data/imagenet', 'data/onion'.
-    class_names: null           # Class names or path to class names file. Examples: 'data/imagenet/imagenet_classes.txt', ["with_weeds", "without_weeds"].
-    img_directory: null         # Directory containing images. Example: 'data/imagenet/sample_images'.
-    transform: null             # Custom transformations. null: Use default transforms for the model.
-    max_samples: -1             # Maximum number of samples to process. -1: Process all available samples.
+    root: <root>                # REQUIRED: Dataset root directory. Example: 'data/imagenet', 'data/onion'.
+    class_names: <class_names>  # Class names or path to class names file. Examples: 'data/imagenet/imagenet_classes.txt', ["with_weeds", "without_weeds"].
+    img_directory: <img_directory>     # Directory containing images. Example: 'data/imagenet/sample_images'.
+    transform: <transform>             # Custom transformations. null: Use default transforms for the model.
+    max_samples: <max_samples>         # Maximum number of samples to process. -1: Process all available samples.
 
 # DATALOADER CONFIGURATIONS
 # ------------------------
 dataloader:
-  batch_size: 1                 # Number of samples per batch. Recommended: 1 for split inference.
-  shuffle: false                # Whether to shuffle the dataset. Recommended: false for consistent results.
-  num_workers: 4                # Number of parallel data loading workers. Adjust based on CPU cores available.
-  collate_fn: null              # Custom batch collation function. null: Use default collation.
+  batch_size: <batch_size>          # Number of samples per batch. Recommended: 1 for split inference.
+  shuffle: <shuffle>                # Whether to shuffle the dataset. Recommended: false for consistent results.
+  num_workers: <num_workers>        # Number of parallel data loading workers. Adjust based on CPU cores available.
+  collate_fn: <collate_fn>          # Custom batch collation function. null: Use default collation.
 
 # EXPERIMENT CONFIGURATIONS
 # ------------------------
 compression:
-  clevel: 3                     # Compression level [0 - 9] with 9 being maximum compression as default from blosc2.
-  filter: SHUFFLE               # Compression filter. Options: SHUFFLE, BITSHUFFLE, DELTA, ZSTD.
-  codec: ZSTD                   # Compression codec. Options: ZSTD, BLOSCLZ, LZ4, etc.
-
-# # EXAMPLE CONFIGURATION
-# # ----------------------
-# # DEFAULT CONFIGURATIONS
-# default:
-#   device: cuda
-#   font_path: fonts/DejaVuSans-Bold.ttf
-#   log_level: INFO
-#   log_file: logs/app.log
-
-# # MODEL CONFIGURATIONS
-# model:
-#   model_name: yolov8s
-#   version: null
-#   pretrained: false
-#   weight_path: data/onion/weights/best.pt
-#   input_size: [3, 224, 224]
-#   hook_style: post
-#   split_layer: 10
-#   save_layers: [2, 4, 6]
-#   total_layers: 23
-#   num_classes: null
-#   mode: eval
-#   depth: 2
-#   flush_buffer_size: 100
-#   warmup_iterations: 10
-#   log_file: logs/yolosplit.log
-
-# # DATASET CONFIGURATIONS
-# dataset:
-#   module: onion
-#   class: OnionDataset
-#   args:
-#     root: data/onion
-#     class_names: ["with_weeds", "without_weeds"]
-#     img_directory: data/onion/testing
-#     transform: null
-#     max_samples: -1
-
-# # DATALOADER CONFIGURATIONS
-# dataloader:
-#   batch_size: 1
-#   shuffle: false
-#   num_workers: 4
-#   collate_fn: null
+  clevel: <compression_level>  # Compression level [0 - 9] with 9 being maximum compression as default from blosc2.
+  filter: <compression_filter> # Compression filter. Options: SHUFFLE, BITSHUFFLE, DELTA, ZSTD.
+  codec: <compression_codec>   # Compression codec. Options: ZSTD, BLOSCLZ, LZ4, etc.

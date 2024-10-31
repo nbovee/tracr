@@ -40,6 +40,7 @@ devices:
       - host: <server_ip_address>       # e.g., 192.168.1.100
         user: <username>                # SSH username
         pkey_fp: <server_key.rsa>       # Private key filename in config/pkeys/
+        port: <port_number>             # Port number to use for communication or default to ssh port 22
         default: true                   # Primary connection parameters
 
   - device_type: PARTICIPANT            # Edge device
@@ -47,13 +48,5 @@ devices:
       - host: <participant_ip_address>  # e.g., 192.168.1.101
         user: <username>                # SSH username
         pkey_fp: <participant_key.rsa>  # Private key filename in config/pkeys/
+        port: <port_number>             # Port number to use for communication or default to ssh port 22
         default: true                   # Primary connection parameters
-
-
-# SPLIT INFERENCE NETWORK CONFIGURATIONS
-# Defines the roles of devices in the split inference setup
-split_inference_network:
-  server: SERVER           # Must match device_type above
-  participants:
-    - PARTICIPANT          # Must match device_type above
-

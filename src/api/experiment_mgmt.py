@@ -36,7 +36,7 @@ class BaseExperiment(ExperimentInterface):
 
     def initialize_model(self) -> ModelInterface:
         """Initialize and configure the model."""
-        logger.info("Initializing model...")
+        logger.info(f"Initializing model {self.config['model']['model_name']}...")
         # Import model class dynamically to avoid direct dependency
         model_module = __import__(
             "src.experiment_design.models.model_hooked", 
@@ -55,11 +55,12 @@ class BaseExperiment(ExperimentInterface):
         """Initialize data utilities based on the model type."""
         model_type = self.config["model"]["model_name"]
         class_names = self.config["dataset"]["args"]["class_names"]
+        task = self.config["dataset"]["task"]
         font_path = self.config["default"]["font_path"]
 
-        if model_type == "yolov8s":
+        if task == "detection":
             return DetectionUtils(class_names=class_names, font_path=font_path)
-        if model_type == "alexnet":
+        if task == "classification":
             return ClassificationUtils(class_names=class_names, font_path=font_path)
 
         raise ValueError(f"Unsupported model type: {model_type}")
@@ -86,8 +87,14 @@ class BaseExperiment(ExperimentInterface):
 
     def run(self) -> None:
         """Execute the experiment."""
-        logger.info("Running experiment...")
+        logger.info(f"Running experiment for Model='{self.config['model']['model_name']}' Dataset='{self.config['dataset']['class']}'...")
         total_layers = self.config["model"]["total_layers"]
+
+        if not total_layers:
+            logger.warning("Total layers not specified in config. Trying to dynamically get total layers from model...")
+            total_layers = len(self.model.model.features)
+            logger.info(f"Total layers: {total_layers}")
+
         timing_records = []
 
         for split_layer in range(1, total_layers):
@@ -161,8 +168,7 @@ class BaseExperiment(ExperimentInterface):
                 "Total Processing Time",
             ],
         )
-        model_type = self.config["model"]["model_name"]
-        filename = f"{model_type}_split_layer_times.xlsx"
+        filename = f"{self.config['model']['model_name']}_split_layer_times.xlsx"
         df.to_excel(filename, index=False)
         logger.info(f"Results saved to {filename}")
 
@@ -184,12 +190,19 @@ class ExperimentManager:
             if self.server_device.working_cparams
             else None
         )
-        self.port = self.config.get("experiment", {}).get("port", 12345)
+        self.port = (
+            self.server_device.working_cparams.port
+            if self.server_device.working_cparams
+            else None
+        )
+        if self.port is None:
+            logger.warning("No port specified in device configuration, using default port 12345")
+            self.port = 12345
         logger.info("ExperimentManager initialized")
 
     def setup_experiment(self) -> ExperimentInterface:
         """Set up and return an experiment instance."""
-        logger.info("Setting up experiment...")
+        logger.info(f"Setting up experiment for Model='{self.config['model']['model_name']}' Dataset='{self.config['dataset']['class']}'...")
         return BaseExperiment(self.config, self.host, self.port)
 
     def process_data(
