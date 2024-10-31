@@ -50,7 +50,7 @@ dataloader:
   batch_size: 1
   shuffle: false
   num_workers: 4
-  collate_fn: null
+  collate_fn: custom_image_collate
 
 # EXPERIMENT CONFIGURATIONS
 compression:

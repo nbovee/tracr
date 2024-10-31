@@ -4,10 +4,7 @@ import argparse
 import logging
 from pathlib import Path
 import sys
-from typing import List, Tuple
-
 import torch
-from PIL import Image
 
 # Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parent
@@ -15,20 +12,13 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 from src.api.experiment_mgmt import ExperimentManager
+from src.api.device_mgmt import DeviceManager
 from src.experiment_design.datasets.dataloader import DataManager
 from src.utils.compression import CompressData
 from src.utils.experiment_utils import SplitExperimentRunner
 from src.utils.system_utils import read_yaml_file
 from src.utils.network_utils import NetworkManager
 from src.utils.logger import setup_logger, DeviceType
-
-
-def custom_collate_fn(
-    batch: List[Tuple[torch.Tensor, Image.Image, str]]
-) -> Tuple[torch.Tensor, Tuple[Image.Image, ...], Tuple[str, ...]]:
-    """Custom collate function to handle images and file names."""
-    images, original_images, image_files = zip(*batch)
-    return torch.stack(images, 0), original_images, image_files
 
 
 class ExperimentHost:
@@ -38,14 +28,8 @@ class ExperimentHost:
         """Initialize with configuration and set up components."""
         self.config = read_yaml_file(config_path)
         self._setup_logger(config_path)
-        
-        # Initialize compression with config settings
-        compression_config = self.config.get("compression", {
-            "clevel": 3,
-            "filter": "SHUFFLE",
-            "codec": "ZSTD"
-        })
-        self.compress_data = CompressData(compression_config)
+        self.device_manager = DeviceManager()
+        self.compress_data = CompressData(self.config["compression"])
         
         # Initialize experiment manager and get model
         self.experiment_manager = ExperimentManager(config_path)
@@ -83,6 +67,20 @@ class ExperimentHost:
         logger.info("Setting up data loader...")
         dataset_config = self.config.get("dataset", {})
         dataloader_config = self.config.get("dataloader", {})
+        
+        # Import collate function if specified
+        collate_fn = None
+        if dataloader_config.get("collate_fn"):
+            try:
+                from src.experiment_design.datasets.collate import COLLATE_FUNCTIONS
+                collate_fn = COLLATE_FUNCTIONS[dataloader_config["collate_fn"]]
+                logger.debug(f"Using custom collate function: {dataloader_config['collate_fn']}")
+            except KeyError:
+                logger.warning(
+                    f"Collate function '{dataloader_config['collate_fn']}' not found. "
+                    "Using default collation."
+                )
+        
         dataset = DataManager.get_dataset(
             {"dataset": dataset_config, "dataloader": dataloader_config}
         )
@@ -91,7 +89,7 @@ class ExperimentHost:
             batch_size=dataloader_config.get("batch_size", 32),
             shuffle=dataloader_config.get("shuffle", False),
             num_workers=dataloader_config.get("num_workers", 4),
-            collate_fn=custom_collate_fn,
+            collate_fn=collate_fn,
         )
         logger.info("Data loader setup complete")
 
@@ -103,20 +101,35 @@ class ExperimentHost:
         """Copy results to the server using SSH utilities."""
         try:
             from src.utils.ssh import SSHSession
-            
-            # SSH connection details
+
+            server_devices = self.device_manager.get_devices(
+                available_only=True, device_type="SERVER"
+            )
+            if not server_devices:
+                logger.error("No available server devices found for copying results.")
+                return
+                
+            server_device = server_devices[0]
+            if not server_device.working_cparams:
+                logger.error("Server device has no working connection parameters.")
+                return
+                
+            # Get SSH configuration from server device
             ssh_config = {
-                "host": "10.0.0.245",
-                "user": "izhar",
-                "private_key_path": "config/pkeys/jetson_to_wsl.rsa",
-                "port": 22
+                "host": server_device.working_cparams.host,
+                "user": server_device.working_cparams.username,
+                "private_key_path": str(server_device.working_cparams.private_key_path),
+                "port": server_device.working_cparams.port or 22  # Default to 22 if not specified
             }
             
-            # Source and destination paths
-            source_dir = Path("results")
-            destination_dir = Path("/mnt/d/github/RACR_AI/results")
+            # You can add source and destination paths as configuration options if needed
+            source_dir = Path(self.config.get("results", {}).get("source_dir", "results"))
+            destination_dir = Path(self.config.get("results", {}).get(
+                "destination_dir", 
+                "/mnt/d/github/RACR_AI/results"
+            ))
             
-            logger.info("Establishing SSH connection to server...")
+            logger.info(f"Establishing SSH connection to server {ssh_config['host']}...")
             with SSHSession(**ssh_config) as ssh:
                 success = ssh.copy_results_to_server(
                     source_dir=source_dir,
@@ -124,7 +137,7 @@ class ExperimentHost:
                 )
                 
                 if success:
-                    logger.info("Results successfully copied to server")
+                    logger.info(f"Results successfully copied to {destination_dir} on server")
                 else:
                     logger.error("Failed to copy results to server")
                     

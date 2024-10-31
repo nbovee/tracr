@@ -29,6 +29,28 @@ default_config = {
 logger = setup_logger(device=DeviceType.SERVER, config=default_config)
 logging_server = start_logging_server()
 
+
+class TemporaryCompression:
+    """Manages temporary compression settings until proper compression configuration is received from host."""
+
+    def __init__(self) -> None:
+        """Initialize with minimal compression settings."""
+        self.compress_data = CompressData({
+            "clevel": 1,      # Minimum compression level
+            "filter": "NOFILTER",  # No filtering
+            "codec": "BLOSCLZ"     # Fastest codec
+        })
+        logger.debug("Initialized temporary compression with minimal settings")
+
+    def update_from_config(self, config: dict) -> CompressData:
+        """Update compression settings from received configuration."""
+        if "compression" in config:
+            logger.info("Updating compression settings from received config")
+            return CompressData(config["compression"])
+        logger.warning("No compression settings in config, keeping minimal settings")
+        return self.compress_data
+
+
 class Server:
     """Handles server operations for managing connections and processing data."""
 
@@ -38,14 +60,8 @@ class Server:
         self.device_manager = DeviceManager()
         self.experiment_manager: Optional[ExperimentManager] = None
         self.server_socket: Optional[socket.socket] = None
-
-        # Initialize compression with minimal settings until we receive config
-        self.compress_data = CompressData({
-            "clevel": 1,  # Minimum compression level
-            "filter": "NOFILTER",  # No filtering
-            "codec": "BLOSCLZ"  # Fastest codec
-        })
-        logger.debug("Server initialized with temporary minimal compression settings")
+        self.compress_data = TemporaryCompression().compress_data
+        logger.debug("Server initialized")
 
     def start(self) -> None:
         """Start the server to listen for incoming connections."""
@@ -61,10 +77,14 @@ class Server:
             logger.error("Server device has no working connection parameters.")
             return
 
-        # Use "" to bind to all interfaces instead of specific IP
-        host = ""  # Changed from server_device.working_cparams.host
-        port = 12345
-
+        # Get host and port from device configuration
+        host = ""  # Use empty string to bind to all interfaces for better reliability
+        port = (
+            server_device.working_cparams.port
+            if server_device.working_cparams.port
+            else 12345
+        )
+        
         logger.info(f"Starting server on port {port}...")
         
         try:
@@ -91,11 +111,7 @@ class Server:
             self.cleanup()
 
     def handle_connection(self, conn: socket.socket) -> None:
-        """Handle an individual client connection.
-
-        Args:
-            conn (socket.socket): The client connection socket.
-        """
+        """Handle an individual client connection."""
         try:
             # Receive configuration length and data
             config_length = int.from_bytes(conn.recv(4), "big")
@@ -105,9 +121,7 @@ class Server:
             config = pickle.loads(config_data)
             
             # Update compression settings from received config
-            if "compression" in config:
-                self.compress_data = CompressData(config["compression"])
-                logger.debug(f"Updated compression settings: {config['compression']}")
+            self.compress_data = TemporaryCompression().update_from_config(config)
 
             # Initialize experiment manager with received config
             self.experiment_manager = ExperimentManager(config)
@@ -190,7 +204,7 @@ class Server:
         if logging_server:
             shutdown_logging_server(logging_server)
 
-# At the bottom, update the main block:
+
 if __name__ == "__main__":
     server = Server()
     try:
