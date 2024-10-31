@@ -147,3 +147,6 @@ pkeys/
 
 # devices.yaml
 config/devices_config.yaml
+
+# logs
+logs/*
