@@ -16,15 +16,11 @@ from src.experiment_design.datasets.collate import COLLATE_FUNCTIONS
 # Read config file
 config = read_yaml_file("config/alexnetsplit.yaml")
 
-# Load class names
-with open(config["dataset"]["args"]["class_names"], "r") as f:
-    class_names = [line.strip() for line in f]
-
 # Set up dataset
 dataset = ImageNetDataset(
     root=config["dataset"]["args"]["root"],
     img_directory=config["dataset"]["args"]["img_directory"],
-    class_names=class_names,
+    class_names=config["dataset"]["args"]["class_names"],
     transform=transforms.Compose(
         [
             transforms.Resize(256),
@@ -57,6 +53,17 @@ total_images = 0
 correct_predictions = 0
 detailed_results = []
 
+
+def get_class_name(idx: int, classes: list) -> str:
+    """Get class name from index, returns 'Unknown' if index is invalid."""
+    try:
+        if idx < 0:
+            return "Unknown"
+        return classes[idx]
+    except IndexError:
+        return "Unknown"
+
+
 # Classify images and track predictions
 with torch.no_grad():
     for images, labels, filenames in dataloader:
@@ -74,28 +81,41 @@ with torch.no_grad():
         for filename, actual, pred in zip(
             filenames, labels.cpu().numpy(), predicted.cpu().numpy()
         ):
-            actual_class = (
-                class_names[actual] if actual < len(class_names) else "Unknown"
-            )
-            predicted_class = (
-                class_names[pred] if pred < len(class_names) else "Unknown"
-            )
+            actual_class = get_class_name(int(actual), dataset.classes)
+            predicted_class = get_class_name(int(pred), dataset.classes)
+
+            # Extract class ID from filename for reference
+            class_id = filename.split("_")[0] if "_" in filename else "unknown"
+
             detailed_results.append(
-                (filename, actual_class, actual, predicted_class, pred)
+                {
+                    "filename": filename,
+                    "class_id": class_id,
+                    "actual_class": actual_class,
+                    "actual_idx": int(actual),
+                    "predicted_class": predicted_class,
+                    "predicted_idx": int(pred),
+                }
             )
 
 # Display detailed results
-for (
-    filename,
-    actual_class,
-    actual_id,
-    predicted_class,
-    predicted_id,
-) in detailed_results:
+print("\nDetailed Classification Results:")
+print("-" * 80)
+for result in detailed_results:
     print(
-        f"Image: {filename}, Actual: {actual_class} (ID: {actual_id}), Predicted: {predicted_class} (ID: {predicted_id})"
+        f"Image: {result['filename']}\n"
+        f"Class ID: {result['class_id']}\n"
+        f"Actual: {result['actual_class']} (Index: {result['actual_idx']})\n"
+        f"Predicted: {result['predicted_class']} (Index: {result['predicted_idx']})\n"
     )
+    print("-" * 80)
 
 # Calculate and display accuracy
 accuracy = (correct_predictions / total_images) * 100
 print(f"\nOverall Accuracy: {accuracy:.2f}%")
+
+# Display dataset statistics
+print(f"\nDataset Statistics:")
+print(f"Total classes: {len(dataset.classes)}")
+print(f"Total images: {len(dataset)}")
+print(f"Class mapping size: {len(dataset.class_id_to_name)}")
