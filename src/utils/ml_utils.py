@@ -38,17 +38,12 @@ class ClassificationUtils:
             logger.error(f"Error loading class names: {e}")
             sys.exit(1)
 
-    def postprocess(
-        self, output: torch.Tensor, *args, **kwargs
-    ) -> List[Tuple[int, float]]:
-        """Postprocess classification output."""
-        return self.postprocess_imagenet(output)
-
-    def postprocess_imagenet(self, output: torch.Tensor) -> List[Tuple[int, float]]:
-        """Postprocess ImageNet classification results."""
+    def postprocess_imagenet(self, output: torch.Tensor) -> Tuple[str, float]:
+        """Postprocess ImageNet classification results to return the top class name and its probability."""
         probabilities = torch.nn.functional.softmax(output[0], dim=0)
-        top5_prob, top5_catid = torch.topk(probabilities, 5)
-        return list(zip(top5_catid.tolist(), top5_prob.tolist()))
+        top_prob, top_catid = torch.topk(probabilities, 1)
+        class_name = self.class_names[top_catid.item()]
+        return (class_name, top_prob.item())
 
     def draw_predictions(
         self,
