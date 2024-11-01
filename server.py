@@ -211,6 +211,7 @@ class Server:
 
                 # Send back predictions and processing time
                 response = (processed_result, server_processing_time)
+                logger.debug(f"Sending response: {response}")
                 self.compress_data.send_result(conn=conn, result=response)
 
         except Exception as e:

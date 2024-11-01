@@ -6,7 +6,7 @@ from typing import List, Optional, Tuple, Any
 
 import pandas as pd
 import torch
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
 
 from .compression import CompressData
@@ -107,6 +107,15 @@ class SplitExperimentRunner:
             host_start = time.time()
             input_tensor = inputs.to(self.device)
             output = self.model(input_tensor, end=split_layer)
+            
+            # Save original image for visualization
+            original_image = self.data_loader.dataset.get_original_image(image_file)
+            if original_image is None:
+                logger.warning(f"Could not load original image for {image_file}")
+                original_image = Image.fromarray(
+                    (inputs.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255).astype('uint8')
+                )
+            
             data_to_send = (output, (224, 224))
             compressed_output, _ = self.compress_data.compress_data(data=data_to_send)
             host_time = time.time() - host_start
@@ -120,21 +129,44 @@ class SplitExperimentRunner:
 
             # Log results
             if server_response:
-                # Unpack the server response correctly
-                processed_result = server_response[0]  # First element is the actual result
+                processed_result = server_response[0]
                 logger.debug(f"Server response format: {type(processed_result)}, value: {processed_result}")
                 
                 # Handle different response formats
                 if isinstance(processed_result, tuple) and len(processed_result) == 2:
                     class_name, confidence = processed_result
                 elif isinstance(processed_result, str):
-                    # If server only returned class name, use a default confidence
                     class_name = processed_result
-                    confidence = 0.0
-                    logger.warning(f"Server only returned class name without confidence: {class_name}")
+                    confidence = 0.0  # Default confidence when not provided
                 else:
                     logger.error(f"Unexpected result format from server: {processed_result}")
                     return None
+
+                # Save image with predictions
+                try:
+                    img = original_image.copy()
+                    draw = ImageDraw.Draw(img)
+                    font = ImageFont.truetype(self.config["default"]["font_path"], 20)
+                    
+                    # Draw prediction text
+                    text = f"{class_name}: {confidence:.2%}"
+                    bbox = draw.textbbox((0, 0), text, font=font)
+                    text_width = bbox[2] - bbox[0]
+                    
+                    # Position text in top-right corner
+                    x = img.width - text_width - 10
+                    y = 10
+                    
+                    # Draw white background for text
+                    draw.rectangle([x-5, y-5, x+text_width+5, y+25], fill='white')
+                    draw.text((x, y), text, font=font, fill='black')
+                    
+                    # Save the image
+                    output_path = output_dir / f"{Path(image_file).stem}_pred.jpg"
+                    img.save(output_path)
+                    logger.info(f"Saved prediction image to {output_path}")
+                except Exception as e:
+                    logger.error(f"Error saving prediction image: {e}", exc_info=True)
 
                 # Log the comparison
                 expected_class = self.ml_utils.class_names[class_idx]
@@ -145,35 +177,13 @@ class SplitExperimentRunner:
                     f"Match: {expected_class.lower() == class_name.lower()}"
                 )
 
-            return host_time, travel_time, server_time
+                return host_time, travel_time, server_time
+
+            return None
 
         except Exception as e:
             logger.error(f"Error processing image: {e}", exc_info=True)
             return None
-
-    def _save_processed_image(
-        self,
-        image: Image.Image,
-        predictions: Any,
-        image_file: str,
-        output_dir: Path,
-    ) -> None:
-        """Save the processed image with visualizations."""
-        try:
-            img = image.copy()
-            if self.task == "detection":
-                img_with_predictions = self.ml_utils.draw_detections(img, predictions)
-                prediction_info = f"{len(predictions)} detections"
-            else:  # classification
-                class_name, confidence = predictions
-                img_with_predictions = self.ml_utils.draw_predictions(img, [(class_name, confidence)])
-                prediction_info = f"{class_name} ({confidence:.2%})"
-            
-            output_path = output_dir / f"{Path(image_file).stem}_predictions.jpg"
-            img_with_predictions.save(output_path)
-            logger.info(f"Saved prediction image to {output_path} - {prediction_info}")
-        except Exception as e:
-            logger.error(f"Error saving processed image: {e}")
 
     def test_split_performance(
         self, split_layer: int

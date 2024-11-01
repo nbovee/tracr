@@ -284,6 +284,16 @@ class ImageNetDataset(BaseDataset):
         )
         return subset_dataset
 
+    def get_original_image(self, image_file: str) -> Optional[Image.Image]:
+        """Get the original image without transformations."""
+        try:
+            img_path = self.img_dir / image_file
+            if img_path.exists():
+                return Image.open(img_path).convert('RGB')
+        except Exception as e:
+            logger.error(f"Error loading original image {image_file}: {e}")
+        return None
+
 
 def imagenet_dataset(
     root: Optional[Union[str, Path]] = None,
