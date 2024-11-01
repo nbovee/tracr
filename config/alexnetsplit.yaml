@@ -21,7 +21,7 @@ model:
   split_layer: 5
   save_layers: [2, 4, 6]
   total_layers: 8
-  num_classes: null
+  num_classes: 1000
   mode: eval
   depth: 2
   flush_buffer_size: 100
@@ -45,7 +45,7 @@ dataloader:
   batch_size: 1
   shuffle: false
   num_workers: 4
-  collate_fn: custom_image_collate
+  collate_fn: imagenet_collate
 
 # EXPERIMENT CONFIGURATIONS
 compression:
