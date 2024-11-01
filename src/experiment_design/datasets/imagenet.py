@@ -42,15 +42,17 @@ class ImageNetDataset(BaseDataset):
             logger.error(f"Image directory not found: {self.img_dir}")
             raise FileNotFoundError(f"Image directory not found: {self.img_dir}")
 
+        # Load class names and create class ID mapping
         self.classes = (
             self._load_classes() if self.class_file and self.class_file.exists() else []
         )
-        if self.class_file and not self.class_file.exists():
-            logger.warning(f"Class file not found: {self.class_file}")
+        self.class_id_to_name = {}  # Maps ImageNet IDs to class names
+        self._build_class_mapping()
 
         if create_dirs:
             self.root.mkdir(parents=True, exist_ok=True)
-            self.img_dir.mkdir(parents=True, exist_ok=True)
+            if self.img_dir:
+                self.img_dir.mkdir(parents=True, exist_ok=True)
 
         logger.info(
             f"Initializing ImageNetDataset with root={self.root}, "
@@ -79,14 +81,35 @@ class ImageNetDataset(BaseDataset):
             return []
         with open(self.class_file, "r") as file:
             classes = [line.strip() for line in file]
-        logger.debug(f"Loaded classes: {classes}")
+        logger.debug(f"Loaded {len(classes)} classes")
         return classes
+
+    def _build_class_mapping(self) -> None:
+        """Build mapping between ImageNet IDs and class names."""
+        if not self.img_dir:
+            return
+
+        # Scan image directory to build class ID mapping
+        for img_path in self.img_dir.iterdir():
+            if not img_path.is_file():
+                continue
+            
+            # Extract class ID from filename (e.g., "n01440764" from "n01440764_tench.jpg")
+            parts = img_path.stem.split("_")
+            if len(parts) >= 2:
+                class_id = parts[0]
+                class_name = " ".join(parts[1:])
+                if class_name in self.classes:
+                    self.class_id_to_name[class_id] = class_name
+
+        logger.debug(f"Built class mapping with {len(self.class_id_to_name)} entries")
 
     def _load_image_files(self) -> List[Path]:
         """Load image file paths from the image directory."""
         if not self.img_dir:
             logger.error("Image directory is not set.")
             return []
+        
         image_extensions = {".jpg", ".jpeg", ".png"}
         images = sorted(
             [
@@ -96,8 +119,8 @@ class ImageNetDataset(BaseDataset):
             ]
         )
         if self.max_samples > 0:
-            images = images[: self.max_samples]
-        logger.debug(f"Loaded {len(images)} image files.")
+            images = images[:self.max_samples]
+        logger.debug(f"Loaded {len(images)} image files")
         return images
 
     def __len__(self) -> int:
@@ -112,13 +135,17 @@ class ImageNetDataset(BaseDataset):
         if self.transform:
             image = self.transform(image)
 
-        # Extract class name from filename (e.g., "n01440764_tench.JPEG" -> "tench")
-        class_name = " ".join(img_path.stem.split("_")[1:])
-
-        # Get class index; use -1 if class not found
+        # Extract class ID from filename (e.g., "n01440764" from "n01440764_tench.jpg")
+        parts = img_path.stem.split("_")
+        class_id = parts[0] if len(parts) >= 2 else ""
+        
+        # Get class name from mapping
+        class_name = self.class_id_to_name.get(class_id, "")
+        
+        # Get class index from classes list
         class_idx = self.classes.index(class_name) if class_name in self.classes else -1
         if class_idx == -1:
-            logger.warning(f"Class '{class_name}' not found. Assigned index -1.")
+            logger.warning(f"Class '{class_name}' (ID: {class_id}) not found. Assigned index -1.")
 
         logger.debug(
             f"Loaded image: {img_path.name}, class: {class_name}, index: {class_idx}"
@@ -132,7 +159,7 @@ class ImageNetDataset(BaseDataset):
         transform: Optional[Callable] = None,
         num_classes: int = 10,
     ) -> "ImageNetDataset":
-        """Create a training/testing subset with a specified number of classes."""
+        """Create a training subset with specified number of classes."""
         subset_name = f"imagenet{num_classes}_tr"
         try:
             return cls.load_subset(root, transform, subset_name)
@@ -147,14 +174,15 @@ class ImageNetDataset(BaseDataset):
         num_classes: int = 10,
         subset_name: str = "imagenet10_tr",
     ) -> "ImageNetDataset":
-        """Create a subset of ImageNet with a specific number of classes."""
+        """Create a subset of ImageNet with specific number of classes."""
         dataset = cls(root=root, transform=transform)
 
-        # Map classes to their images
+        # Map class IDs to their images
         class_to_images: Dict[str, List[Path]] = {}
         for img in dataset.img_files:
-            class_name = " ".join(img.stem.split("_")[1:])
-            class_to_images.setdefault(class_name, []).append(img)
+            class_id = img.stem.split("_")[0]
+            if class_id in dataset.class_id_to_name:
+                class_to_images.setdefault(class_id, []).append(img)
 
         # Select random classes with available images
         available_classes = [cls for cls, imgs in class_to_images.items() if imgs]
@@ -176,6 +204,9 @@ class ImageNetDataset(BaseDataset):
         for img in subset_images:
             shutil.copy2(img, subset_img_dir)
 
+        # Create class names list for subset
+        selected_class_names = [dataset.class_id_to_name[cls] for cls in selected_classes]
+
         # Initialize subset dataset
         subset_dataset = cls(
             root=subset_dir,
@@ -185,19 +216,19 @@ class ImageNetDataset(BaseDataset):
             img_directory=str(subset_img_dir),
         )
         subset_dataset.img_files = [subset_img_dir / img.name for img in subset_images]
-        subset_dataset.classes = selected_classes
+        subset_dataset.classes = selected_class_names
 
         # Save subset information
-        subset_dataset.save_subset_info(subset_name, selected_classes)
+        subset_dataset.save_subset_info(subset_name, selected_class_names)
 
         # Write class names to file
         with open(subset_dataset.class_file, "w") as file:
-            for cls_name in selected_classes:
+            for cls_name in selected_class_names:
                 file.write(f"{cls_name}\n")
 
         logger.info(
             f"Created subset '{subset_name}' with {len(subset_dataset.img_files)} images "
-            f"from {len(selected_classes)} classes."
+            f"from {len(selected_class_names)} classes."
         )
         return subset_dataset
 
@@ -224,7 +255,7 @@ class ImageNetDataset(BaseDataset):
     ) -> "ImageNetDataset":
         """Load a previously created ImageNet subset."""
         subset_dir = Path(root) / subset_name if root else Path(subset_name)
-
+        
         if not subset_dir.exists():
             raise FileNotFoundError(f"Subset directory not found: {subset_dir}")
 

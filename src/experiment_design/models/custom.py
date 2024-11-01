@@ -26,7 +26,7 @@ class AlexNetModel(nn.Module):
         if torch_version <= (0, 11):
             self.model = models.alexnet(pretrained=pretrained)
         else:
-            self.model = models.alexnet(weights="DEFAULT" if pretrained else None)
+            self.model = models.alexnet(weights="IMAGENET1K_V1" if pretrained else None)
         logger.debug(f"AlexNetModel initialized with pretrained={pretrained}")
 
     def forward(self, x: Tensor) -> Tensor:

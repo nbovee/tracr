@@ -42,20 +42,15 @@ class BaseExperiment(ExperimentInterface):
             "src.experiment_design.models.model_hooked", fromlist=["WrappedModel"]
         )
         model_class = getattr(model_module, "WrappedModel")
-
         model = model_class(config=self.config)
-        device = torch.device(self.config["default"]["device"])
-        model.to(device)
-        model.eval()
-        logger.info(f"Model initialized on device: {device}")
         return model
 
     def initialize_data_utils(self) -> Any:
         """Initialize data utilities based on the model type."""
         model_type = self.config["model"]["model_name"]
         class_names = self.config["dataset"]["args"]["class_names"]
-        task = self.config["dataset"]["task"]
         font_path = self.config["default"]["font_path"]
+        task = self.config["dataset"]["task"]
 
         if task == "detection":
             return DetectionUtils(class_names=class_names, font_path=font_path)
@@ -139,7 +134,7 @@ class BaseExperiment(ExperimentInterface):
             # Host processing
             host_start = time.time()
             input_tensor = input_tensor.to(self.model.device)
-            output = self.model(input_tensor, end=split_layer)
+            output = self.model(input_tensor, start=split_layer)
             host_times.append(time.time() - host_start)
 
             # Simulate network transfer
@@ -170,7 +165,6 @@ class BaseExperiment(ExperimentInterface):
         filename = f"{self.config['model']['model_name']}_split_layer_times.xlsx"
         df.to_excel(filename, index=False)
         logger.info(f"Results saved to {filename}")
-
 
 class ExperimentManager:
     """Manages the setup and execution of experiments."""
@@ -213,3 +207,4 @@ class ExperimentManager:
     ) -> Dict[str, Any]:
         """Process data using the experiment."""
         return experiment.process_data(data)
+

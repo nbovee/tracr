@@ -15,30 +15,11 @@ logger = logging.getLogger("split_computing_logger")
 class ClassificationUtils:
     """Utilities for classification tasks."""
 
-    def __init__(self, class_names: Union[List[str], str], font_path: str):
-        """Initialize with class names file and font path."""
-        if isinstance(class_names, str):
-            self.class_names = self.load_imagenet_classes(class_names)
-        else:
-            self.class_names = class_names
+    def __init__(self, class_names: List[str], font_path: str):
+        self.class_names = class_names
         self.font_path = font_path
 
-    @staticmethod
-    def load_imagenet_classes(class_file: str) -> List[str]:
-        """Load ImageNet class names from a file."""
-        try:
-            with open(class_file, "r") as f:
-                classes = [line.strip() for line in f]
-            logger.info(f"Loaded {len(classes)} classes from {class_file}")
-            return classes
-        except FileNotFoundError:
-            logger.error(f"Class file not found: {class_file}")
-            sys.exit(1)
-        except Exception as e:
-            logger.error(f"Error loading class names: {e}")
-            sys.exit(1)
-
-    def postprocess_imagenet(self, output: torch.Tensor) -> Tuple[str, float]:
+    def postprocess(self, output: torch.Tensor) -> Tuple[str, float]:
         """Postprocess ImageNet classification results to return the top class name and its probability."""
         probabilities = torch.nn.functional.softmax(output[0], dim=0)
         top_prob, top_catid = torch.topk(probabilities, 1)

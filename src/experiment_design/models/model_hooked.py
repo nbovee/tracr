@@ -78,8 +78,6 @@ class WrappedModel(BaseModel, ModelInterface):
         self.banked_input: Optional[Any] = None
         self.log = False
         self.power_meter = PowerMeter(self.device)
-
-        self.to(self.device)
         self.warmup(iterations=self.warmup_iterations)
         logger.info("WrappedModel initialization complete")
 
