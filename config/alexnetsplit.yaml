@@ -9,11 +9,6 @@ default:
 logging:
   log_level: INFO
   log_file: logs/app.log
-  progress_interval: 10  
-  layer_progress: true
-  image_progress: true  
-  save_images: true     
-  detailed_timing: true 
 
 # MODEL CONFIGURATIONS
 model:

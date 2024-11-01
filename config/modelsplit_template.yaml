@@ -17,11 +17,6 @@ default:
 logging:
   log_level: <log_level>         # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL. Default is INFO.
   log_file: <log_file>           # Central log file for application-wide logging. Default is logs/app.log
-  progress_interval: <interval>  # Log every <interval>% progress. Default is 10.
-  layer_progress: <layer_progress>   # Enable layer progress logging. Default is true.
-  image_progress: <image_progress>   # Enable image processing progress logging. Default is true.
-  save_images: <save_images>         # Whether to save processed images. Default is true.
-  detailed_timing: <detailed_timing> # Disable detailed timing logs. Default is false.
 
 # MODEL CONFIGURATIONS
 # -------------------
