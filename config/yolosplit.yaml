@@ -21,7 +21,7 @@ model:
   split_layer: 10
   save_layers: [2, 4, 6]
   total_layers: 23
-  num_classes: null
+  num_classes: 2
   mode: eval
   depth: 2
   flush_buffer_size: 100

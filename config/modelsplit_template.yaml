@@ -56,7 +56,7 @@ dataloader:
   batch_size: <batch_size>          # Number of samples per batch. Recommended: 1 for split inference.
   shuffle: <shuffle>                # Whether to shuffle the dataset. Recommended: false for consistent results.
   num_workers: <num_workers>        # Number of parallel data loading workers. Adjust based on CPU cores available.
-  collate_fn: <collate_fn>          # Collate function name. Options: "custom_image_collate", "default_collate", null
+  collate_fn: <collate_fn>          # Collate function name. Options: "imagenet_collate", "onion_collate", null
 
 # EXPERIMENT CONFIGURATIONS
 # ------------------------
