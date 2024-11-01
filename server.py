@@ -204,7 +204,7 @@ class Server:
                         
                         # Process final result
                         class_name, confidence = experiment.data_utils.postprocess(result)
-                        processed_result = (class_name, confidence)
+                        processed_result = {"class_name": class_name, "confidence": confidence}
                         logger.info(f"Final classification: {class_name} ({confidence:.2%} confidence)")
 
                 server_processing_time = time.time() - server_start_time

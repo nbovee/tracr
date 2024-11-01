@@ -122,24 +122,35 @@ class SplitExperimentRunner:
 
             # Network transfer and server processing
             travel_start = time.time()
-            server_response, server_time = self.network_manager.communicate_with_server(
+            server_response = self.network_manager.communicate_with_server(
                 split_layer, compressed_output
             )
-            travel_time = time.time() - travel_start - server_time
+            travel_time = time.time() - travel_start
 
             # Log results
             if server_response:
-                processed_result = server_response[0]
-                logger.debug(f"Server response format: {type(processed_result)}, value: {processed_result}")
+                logger.debug(f"Server response: {server_response}")
                 
-                # Handle different response formats
-                if isinstance(processed_result, tuple) and len(processed_result) == 2:
+                # Extract server processing time and result
+                if isinstance(server_response, tuple) and len(server_response) == 2:
+                    processed_result, server_time = server_response
+                else:
+                    logger.warning("Unexpected server response format")
+                    return None
+                
+                travel_time -= server_time  # Adjust travel time by removing server processing time
+                
+                # Handle different result formats
+                if isinstance(processed_result, dict):
+                    class_name = processed_result.get("class_name")
+                    confidence = processed_result.get("confidence", 0.0)
+                elif isinstance(processed_result, tuple) and len(processed_result) == 2:
                     class_name, confidence = processed_result
                 elif isinstance(processed_result, str):
                     class_name = processed_result
-                    confidence = 0.0  # Default confidence when not provided
+                    confidence = 0.0
                 else:
-                    logger.error(f"Unexpected result format from server: {processed_result}")
+                    logger.error(f"Unexpected result format: {processed_result}")
                     return None
 
                 # Save image with predictions
