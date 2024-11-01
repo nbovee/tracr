@@ -69,14 +69,17 @@ class SplitExperimentRunner:
         class_names_path = self.config["dataset"]["args"]["class_names"]
         
         # Load and log class names
-        try:
-            with open(class_names_path, "r") as f:
-                class_names = [line.strip() for line in f]
-            logger.info(f"Loaded {len(class_names)} classes from {class_names_path}")
-            logger.info(f"First 5 classes: {class_names[:5]}")
-        except Exception as e:
-            logger.error(f"Failed to load class names from {class_names_path}: {e}")
-            class_names = []
+        if isinstance(class_names_path, list):
+            class_names = class_names_path
+        else:
+            try:
+                with open(class_names_path, "r") as f:
+                    class_names = [line.strip() for line in f]
+                logger.info(f"Loaded {len(class_names)} classes from {class_names_path}")
+                logger.info(f"First 5 classes: {class_names[:5]}")
+            except Exception as e:
+                logger.error(f"Failed to load class names from {class_names_path}: {e}")
+                class_names = []
         
         common_args = {
             "class_names": class_names,
@@ -116,7 +119,12 @@ class SplitExperimentRunner:
                     (inputs.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255).astype('uint8')
                 )
             
-            data_to_send = (output, (224, 224))
+            # Prepare data to send based on task
+            if self.task == "detection":
+                data_to_send = (output, original_image.size)
+            else:  # classification
+                data_to_send = (output, (224, 224))  # Standard ImageNet size
+                
             compressed_output, _ = self.compress_data.compress_data(data=data_to_send)
             host_time = time.time() - host_start
 
@@ -140,53 +148,71 @@ class SplitExperimentRunner:
                 
                 travel_time -= server_time  # Adjust travel time by removing server processing time
                 
-                # Handle different result formats
-                if isinstance(processed_result, dict):
-                    class_name = processed_result.get("class_name")
-                    confidence = processed_result.get("confidence", 0.0)
-                elif isinstance(processed_result, tuple) and len(processed_result) == 2:
-                    class_name, confidence = processed_result
-                elif isinstance(processed_result, str):
-                    class_name = processed_result
-                    confidence = 0.0
-                else:
-                    logger.error(f"Unexpected result format: {processed_result}")
-                    return None
+                # Handle different result formats based on task
+                if self.task == "classification":
+                    if isinstance(processed_result, dict):
+                        class_name = processed_result.get("class_name")
+                        confidence = processed_result.get("confidence", 0.0)
+                    elif isinstance(processed_result, tuple) and len(processed_result) == 2:
+                        class_name, confidence = processed_result
+                    elif isinstance(processed_result, str):
+                        class_name = processed_result
+                        confidence = 0.0
+                    else:
+                        logger.error(f"Unexpected classification result format: {processed_result}")
+                        return None
 
-                # Save image with predictions
-                try:
-                    img = original_image.copy()
-                    draw = ImageDraw.Draw(img)
-                    font = ImageFont.truetype(self.config["default"]["font_path"], 20)
-                    
-                    # Draw prediction text
-                    text = f"{class_name}: {confidence:.2%}"
-                    bbox = draw.textbbox((0, 0), text, font=font)
-                    text_width = bbox[2] - bbox[0]
-                    
-                    # Position text in top-right corner
-                    x = img.width - text_width - 10
-                    y = 10
-                    
-                    # Draw white background for text
-                    draw.rectangle([x-5, y-5, x+text_width+5, y+25], fill='white')
-                    draw.text((x, y), text, font=font, fill='black')
-                    
-                    # Save the image
-                    output_path = output_dir / f"{Path(image_file).stem}_pred.jpg"
-                    img.save(output_path)
-                    logger.info(f"Saved prediction image to {output_path}")
-                except Exception as e:
-                    logger.error(f"Error saving prediction image: {e}", exc_info=True)
+                    # Save image with classification prediction
+                    try:
+                        img = original_image.copy()
+                        draw = ImageDraw.Draw(img)
+                        font = ImageFont.truetype(self.config["default"]["font_path"], 20)
+                        
+                        # Draw prediction text
+                        text = f"{class_name}: {confidence:.2%}"
+                        bbox = draw.textbbox((0, 0), text, font=font)
+                        text_width = bbox[2] - bbox[0]
+                        
+                        # Position text in top-right corner
+                        x = img.width - text_width - 10
+                        y = 10
+                        
+                        # Draw white background for text
+                        draw.rectangle([x-5, y-5, x+text_width+5, y+25], fill='white')
+                        draw.text((x, y), text, font=font, fill='black')
+                        
+                        # Save the image
+                        output_path = output_dir / f"{Path(image_file).stem}_pred.jpg"
+                        img.save(output_path)
+                        logger.info(f"Saved prediction image to {output_path}")
 
-                # Log the comparison
-                expected_class = self.ml_utils.class_names[class_idx]
-                logger.info(
-                    f"Image: {image_file}\n"
-                    f"Expected: {expected_class} (Index: {class_idx})\n"
-                    f"Predicted: {class_name} ({confidence:.2%})\n"
-                    f"Match: {expected_class.lower() == class_name.lower()}"
-                )
+                        # Log the classification comparison
+                        expected_class = self.ml_utils.class_names[class_idx]
+                        logger.info(
+                            f"Image: {image_file}\n"
+                            f"Expected: {expected_class} (Index: {class_idx})\n"
+                            f"Predicted: {class_name} ({confidence:.2%})\n"
+                            f"Match: {expected_class.lower() == class_name.lower()}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error saving classification image: {e}", exc_info=True)
+
+                else:  # detection
+                    try:
+                        # Process detections
+                        detections = processed_result
+                        if detections:
+                            # Save image with detection boxes
+                            img = original_image.copy()
+                            img_with_detections = self.ml_utils.draw_detections(img, detections)
+                            output_path = output_dir / f"{Path(image_file).stem}_pred.jpg"
+                            img_with_detections.save(output_path)
+                            logger.info(f"Saved detection image to {output_path}")
+                            logger.info(f"Found {len(detections)} detections in {image_file}")
+                        else:
+                            logger.warning(f"No detections found in {image_file}")
+                    except Exception as e:
+                        logger.error(f"Error saving detection image: {e}", exc_info=True)
 
                 return host_time, travel_time, server_time
 
@@ -212,11 +238,6 @@ class SplitExperimentRunner:
             ):
                 # Process each image in the batch
                 for idx, (input_tensor, class_idx, image_file) in enumerate(zip(inputs, class_indices, image_files)):
-                    # Log expected class
-                    if class_idx >= 0:
-                        class_name = self.ml_utils.class_names[class_idx]
-                        logger.info(f"Processing image {image_file} - Expected class: {class_name} (Index: {class_idx})")
-                    
                     times = self.process_single_image(
                         input_tensor.unsqueeze(0),  # Add batch dimension
                         class_idx,

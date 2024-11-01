@@ -119,3 +119,13 @@ class OnionDataset(BaseDataset):
         except Exception as e:
             logger.error(f"Error loading image {img_path}: {e}")
             raise
+
+    def get_original_image(self, image_file: str) -> Optional[Image.Image]:
+        """Get the original image without transformations."""
+        try:
+            img_path = self.img_dir / image_file
+            if img_path.exists():
+                return Image.open(img_path).convert('RGB')
+        except Exception as e:
+            logger.error(f"Error loading original image {image_file}: {e}")
+        return None

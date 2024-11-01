@@ -57,15 +57,18 @@ class BaseExperiment(ExperimentInterface):
         class_names_path = self.config["dataset"]["args"]["class_names"]
         font_path = self.config["default"]["font_path"]
 
-        # Load class names from file
-        try:
-            with open(class_names_path, "r") as f:
-                class_names = [line.strip() for line in f]
-            logger.info(f"Loaded {len(class_names)} classes from {class_names_path}")
-            logger.info(f"First 5 classes: {class_names[:5]}")
-            logger.info(f"Last 5 classes: {class_names[-5:]}")
-        except Exception as e:
-            logger.error(f"Failed to load class names from {class_names_path}: {e}")
+        if isinstance(class_names_path, list):
+            class_names = class_names_path
+        else:
+            # Load class names from file
+            try:
+                with open(class_names_path, "r") as f:
+                    class_names = [line.strip() for line in f]
+                logger.info(f"Loaded {len(class_names)} classes from {class_names_path}")
+                logger.info(f"First 5 classes: {class_names[:5]}")
+                logger.info(f"Last 5 classes: {class_names[-5:]}")
+            except Exception as e:
+                logger.error(f"Failed to load class names from {class_names_path}: {e}")
             class_names = []
 
         if task == "detection":
