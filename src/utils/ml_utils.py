@@ -2,7 +2,7 @@
 
 import sys
 import logging
-from typing import Any, List, Tuple, Optional
+from typing import Any, List, Tuple, Optional, Union
 
 import numpy as np
 import torch
@@ -15,9 +15,12 @@ logger = logging.getLogger("split_computing_logger")
 class ClassificationUtils:
     """Utilities for classification tasks."""
 
-    def __init__(self, class_names_path: str, font_path: str):
+    def __init__(self, class_names: Union[List[str], str], font_path: str):
         """Initialize with class names file and font path."""
-        self.class_names = self.load_imagenet_classes(class_names_path)
+        if isinstance(class_names, str):
+            self.class_names = self.load_imagenet_classes(class_names)
+        else:
+            self.class_names = class_names
         self.font_path = font_path
 
     @staticmethod
