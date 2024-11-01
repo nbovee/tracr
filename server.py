@@ -163,24 +163,30 @@ class Server:
                         for key, value in inner_dict.items():
                             if isinstance(value, torch.Tensor):
                                 inner_dict[key] = value.to(model.device)
-
                     elif isinstance(output, torch.Tensor):
                         output = output.to(model.device)
 
-                    result, layer_outputs = model(output, start=split_layer_index)
-                    detections = experiment.data_utils.postprocess(
-                        result, original_image_size
-                    )
-                    logger.info(f"Processed detections: {len(detections)} found")
-                    if not detections:
-                        logger.warning(
-                            f"No detections found for input with size {original_image_size}"
+                    # Handle different model types
+                    task = config["dataset"]["task"]
+                    if task == "detection":
+                        result, layer_outputs = model(output, start=split_layer_index)
+                        processed_result = experiment.data_utils.postprocess(
+                            result, original_image_size
                         )
+                        logger.info(f"Processed detections: {len(processed_result)} found")
+                        if not processed_result:
+                            logger.warning(
+                                f"No detections found for input with size {original_image_size}"
+                            )
+                    else:  # classification
+                        result = model(output, start=split_layer_index)
+                        processed_result = experiment.data_utils.postprocess_imagenet(result)
+                        logger.info(f"Processed classification result")
 
                 server_processing_time = time.time() - server_start_time
 
                 # Send back predictions and processing time
-                response = (detections, server_processing_time)
+                response = (processed_result, server_processing_time)
                 self.compress_data.send_result(conn=conn, result=response)
 
         except Exception as e:

@@ -2,7 +2,7 @@
 
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Any
 
 import pandas as pd
 import torch
@@ -101,15 +101,15 @@ class SplitExperimentRunner:
 
             # Network transfer and server processing
             travel_start = time.time()
-            detections, server_time = self.network_manager.communicate_with_server(
+            results, server_time = self.network_manager.communicate_with_server(
                 split_layer, compressed_output
             )
             travel_time = time.time() - travel_start - server_time
 
-            # Save processed image if detections are present
-            if detections:
+            # Save processed image if results are present
+            if results:
                 self._save_processed_image(
-                    original_image, detections, image_file, output_dir
+                    original_image, results, image_file, output_dir
                 )
             return host_time, travel_time, server_time
 
@@ -120,18 +120,18 @@ class SplitExperimentRunner:
     def _save_processed_image(
         self,
         image: Image.Image,
-        predictions: List[Tuple[List[int], float, int]],
+        predictions: Any,
         image_file: str,
         output_dir: Path,
     ) -> None:
         """Save the processed image with visualizations."""
         try:
             img = image.copy()
-            img_with_predictions = (
-                self.ml_utils.draw_detections(img, predictions)
-                if self.task == "detection"
-                else self.ml_utils.draw_predictions(img, predictions)
-            )
+            if self.task == "detection":
+                img_with_predictions = self.ml_utils.draw_detections(img, predictions)
+            else:  # classification
+                img_with_predictions = self.ml_utils.draw_predictions(img, predictions)
+            
             output_path = output_dir / f"{Path(image_file).stem}_predictions.jpg"
             img_with_predictions.save(output_path)
             logger.debug(f"Saved prediction image to {output_path}")
@@ -146,9 +146,11 @@ class SplitExperimentRunner:
         split_dir = self.images_dir / f"split_{split_layer}"
         split_dir.mkdir(exist_ok=True)
 
+        task_name = "detections" if self.task == "detection" else "classifications"
+        
         with torch.no_grad():
             for inputs, original_images, image_files in tqdm(
-                self.data_loader, desc=f"Processing split {split_layer}"
+                self.data_loader, desc=f"Processing {task_name} at split {split_layer}"
             ):
                 times = self.process_single_image(
                     inputs,
