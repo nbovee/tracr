@@ -1,8 +1,7 @@
 # src/utils/ml_utils.py
 
-import sys
 import logging
-from typing import Any, List, Tuple, Optional, Union
+from typing import Any, List, Tuple, Optional
 
 import numpy as np
 import torch
@@ -18,13 +17,26 @@ class ClassificationUtils:
     def __init__(self, class_names: List[str], font_path: str):
         self.class_names = class_names
         self.font_path = font_path
+        logger.info(f"ClassificationUtils initialized with {len(class_names)} classes")
+        logger.info(f"First 5 classes: {class_names[:5]}")
 
     def postprocess(self, output: torch.Tensor) -> Tuple[str, float]:
         """Postprocess ImageNet classification results to return the top class name and its probability."""
         probabilities = torch.nn.functional.softmax(output[0], dim=0)
-        top_prob, top_catid = torch.topk(probabilities, 1)
-        class_name = self.class_names[top_catid.item()]
-        return (class_name, top_prob.item())
+        top_prob, top_catid = torch.topk(probabilities, 5)  # Get top 5 for debugging
+        
+        # Log top 5 predictions with indices for debugging
+        top5_results = []
+        for i, (prob, catid) in enumerate(zip(top_prob, top_catid)):
+            class_name = self.class_names[catid.item()]
+            idx = catid.item()
+            top5_results.append(f"Index {idx} - {class_name}: {prob.item():.2%}")
+        
+        logger.info(f"Top 5 predictions:\n" + "\n".join(top5_results))
+        
+        # Return top prediction
+        class_name = self.class_names[top_catid[0].item()]
+        return (class_name, top_prob[0].item())
 
     def draw_predictions(
         self,
@@ -39,7 +51,7 @@ class ClassificationUtils:
         draw = ImageDraw.Draw(image)
         try:
             font = ImageFont.truetype(self.font_path, font_size)
-            logger.debug(f"Loaded font from {self.font_path}")
+            logger.info(f"Loaded font from {self.font_path}")
         except IOError:
             font = ImageFont.load_default()
             logger.warning("Failed to load font. Using default font.")
@@ -153,7 +165,7 @@ class DetectionUtils:
         draw = ImageDraw.Draw(image)
         try:
             font = ImageFont.truetype(self.font_path, font_size)
-            logger.debug(f"Loaded font from {self.font_path}")
+            logger.info(f"Loaded font from {self.font_path}")
         except IOError:
             font = ImageFont.load_default()
             logger.warning("Failed to load font. Using default font.")

@@ -6,7 +6,6 @@ import sys
 import time
 from pathlib import Path
 from typing import Optional
-
 import torch
 
 # Add project root to path so we can import from src module
@@ -42,7 +41,7 @@ class TemporaryCompression:
                 "codec": "BLOSCLZ",  # Fastest codec
             }
         )
-        logger.debug("Initialized temporary compression with minimal settings")
+        logger.info("Initialized temporary compression with minimal settings")
 
     def update_from_config(self, config: dict) -> CompressData:
         """Update compression settings from received configuration."""
@@ -63,7 +62,7 @@ class Server:
         self.experiment_manager: Optional[ExperimentManager] = None
         self.server_socket: Optional[socket.socket] = None
         self.compress_data = TemporaryCompression().compress_data
-        logger.debug("Server initialized")
+        logger.info("Server initialized")
 
     def start(self) -> None:
         """Start the server to listen for incoming connections."""
@@ -129,7 +128,16 @@ class Server:
             self.experiment_manager = ExperimentManager(config)
             experiment = self.experiment_manager.setup_experiment()
             model = experiment.model
+
+            # Ensure model is in eval mode
             model.eval()
+
+            # Log model and data utils initialization
+            logger.info(f"Model type: {config['model']['model_name']}")
+            logger.info(f"Task type: {config['dataset']['task']}")
+            if hasattr(experiment.data_utils, 'class_names'):
+                logger.info(f"Number of classes: {len(experiment.data_utils.class_names)}")
+                logger.info(f"First 5 classes: {experiment.data_utils.class_names[:5]}")
 
             # Send acknowledgment
             conn.sendall(b"OK")
@@ -180,8 +188,24 @@ class Server:
                             )
                     else:  # classification
                         result = model(output, start=split_layer_index)
-                        processed_result = experiment.data_utils.postprocess_imagenet(result)
-                        logger.info(f"Processed classification result")
+                        # Log raw output shape and values for debugging
+                        logger.info(f"Raw output shape: {result.shape}")
+                        logger.info(f"Raw output max value: {torch.max(result).item()}")
+                        logger.info(f"Raw output min value: {torch.min(result).item()}")
+                        
+                        # Get top probabilities and indices
+                        probabilities = torch.nn.functional.softmax(result[0], dim=0)
+                        top_probs, top_indices = torch.topk(probabilities, 5)
+                        
+                        # Log top 5 predictions with indices
+                        for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
+                            class_name = experiment.data_utils.class_names[idx.item()]
+                            logger.info(f"Top {i+1}: Class {idx.item()} ({class_name}) - {prob.item():.2%}")
+                        
+                        # Process final result
+                        class_name, confidence = experiment.data_utils.postprocess(result)
+                        processed_result = (class_name, confidence)
+                        logger.info(f"Final classification: {class_name} ({confidence:.2%} confidence)")
 
                 server_processing_time = time.time() - server_start_time
 

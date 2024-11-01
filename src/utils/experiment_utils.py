@@ -66,8 +66,20 @@ class SplitExperimentRunner:
     def _setup_ml_utils(self) -> None:
         """Initialize ML utilities based on configuration."""
         input_size = tuple(self.config["model"].get("input_size", [3, 224, 224])[1:])
+        class_names_path = self.config["dataset"]["args"]["class_names"]
+        
+        # Load and log class names
+        try:
+            with open(class_names_path, "r") as f:
+                class_names = [line.strip() for line in f]
+            logger.info(f"Loaded {len(class_names)} classes from {class_names_path}")
+            logger.info(f"First 5 classes: {class_names[:5]}")
+        except Exception as e:
+            logger.error(f"Failed to load class names from {class_names_path}: {e}")
+            class_names = []
+        
         common_args = {
-            "class_names": self.config["dataset"]["args"]["class_names"],
+            "class_names": class_names,
             "font_path": self.config["default"]["font_path"],
         }
         self.task = self.config["dataset"]["task"]
@@ -77,14 +89,14 @@ class SplitExperimentRunner:
             logger.info("Initialized Detection Utils")
         elif self.task == "classification":
             self.ml_utils = ClassificationUtils(**common_args)
-            logger.info("Initialized Classification Utils")
+            logger.info(f"Initialized Classification Utils with {len(class_names)} classes")
         else:
             raise ValueError(f"Unsupported task: {self.task}")
 
     def process_single_image(
         self,
         inputs: torch.Tensor,
-        original_image: Image.Image,
+        class_idx: int,
         image_file: str,
         split_layer: int,
         output_dir: Path,
@@ -95,26 +107,48 @@ class SplitExperimentRunner:
             host_start = time.time()
             input_tensor = inputs.to(self.device)
             output = self.model(input_tensor, end=split_layer)
-            data_to_send = (output, original_image.size)
+            data_to_send = (output, (224, 224))
             compressed_output, _ = self.compress_data.compress_data(data=data_to_send)
             host_time = time.time() - host_start
 
             # Network transfer and server processing
             travel_start = time.time()
-            results, server_time = self.network_manager.communicate_with_server(
+            server_response, server_time = self.network_manager.communicate_with_server(
                 split_layer, compressed_output
             )
             travel_time = time.time() - travel_start - server_time
 
-            # Save processed image if results are present
-            if results:
-                self._save_processed_image(
-                    original_image, results, image_file, output_dir
+            # Log results
+            if server_response:
+                # Unpack the server response correctly
+                processed_result = server_response[0]  # First element is the actual result
+                logger.debug(f"Server response format: {type(processed_result)}, value: {processed_result}")
+                
+                # Handle different response formats
+                if isinstance(processed_result, tuple) and len(processed_result) == 2:
+                    class_name, confidence = processed_result
+                elif isinstance(processed_result, str):
+                    # If server only returned class name, use a default confidence
+                    class_name = processed_result
+                    confidence = 0.0
+                    logger.warning(f"Server only returned class name without confidence: {class_name}")
+                else:
+                    logger.error(f"Unexpected result format from server: {processed_result}")
+                    return None
+
+                # Log the comparison
+                expected_class = self.ml_utils.class_names[class_idx]
+                logger.info(
+                    f"Image: {image_file}\n"
+                    f"Expected: {expected_class} (Index: {class_idx})\n"
+                    f"Predicted: {class_name} ({confidence:.2%})\n"
+                    f"Match: {expected_class.lower() == class_name.lower()}"
                 )
+
             return host_time, travel_time, server_time
 
         except Exception as e:
-            logger.error(f"Error processing image: {e}")
+            logger.error(f"Error processing image: {e}", exc_info=True)
             return None
 
     def _save_processed_image(
@@ -129,12 +163,15 @@ class SplitExperimentRunner:
             img = image.copy()
             if self.task == "detection":
                 img_with_predictions = self.ml_utils.draw_detections(img, predictions)
+                prediction_info = f"{len(predictions)} detections"
             else:  # classification
-                img_with_predictions = self.ml_utils.draw_predictions(img, predictions)
+                class_name, confidence = predictions
+                img_with_predictions = self.ml_utils.draw_predictions(img, [(class_name, confidence)])
+                prediction_info = f"{class_name} ({confidence:.2%})"
             
             output_path = output_dir / f"{Path(image_file).stem}_predictions.jpg"
             img_with_predictions.save(output_path)
-            logger.debug(f"Saved prediction image to {output_path}")
+            logger.info(f"Saved prediction image to {output_path} - {prediction_info}")
         except Exception as e:
             logger.error(f"Error saving processed image: {e}")
 
@@ -149,21 +186,28 @@ class SplitExperimentRunner:
         task_name = "detections" if self.task == "detection" else "classifications"
         
         with torch.no_grad():
-            for inputs, original_images, image_files in tqdm(
+            for inputs, class_indices, image_files in tqdm(
                 self.data_loader, desc=f"Processing {task_name} at split {split_layer}"
             ):
-                times = self.process_single_image(
-                    inputs,
-                    original_images[0],
-                    image_files[0],
-                    split_layer,
-                    split_dir,
-                )
-                if times:
-                    host_time, travel_time, server_time = times
-                    host_times.append(host_time)
-                    travel_times.append(travel_time)
-                    server_times.append(server_time)
+                # Process each image in the batch
+                for idx, (input_tensor, class_idx, image_file) in enumerate(zip(inputs, class_indices, image_files)):
+                    # Log expected class
+                    if class_idx >= 0:
+                        class_name = self.ml_utils.class_names[class_idx]
+                        logger.info(f"Processing image {image_file} - Expected class: {class_name} (Index: {class_idx})")
+                    
+                    times = self.process_single_image(
+                        input_tensor.unsqueeze(0),  # Add batch dimension
+                        class_idx,
+                        image_file,
+                        split_layer,
+                        split_dir,
+                    )
+                    if times:
+                        host_time, travel_time, server_time = times
+                        host_times.append(host_time)
+                        travel_times.append(travel_time)
+                        server_times.append(server_time)
 
         # Calculate totals and log based on configuration
         total_host = sum(host_times)

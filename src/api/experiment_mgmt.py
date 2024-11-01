@@ -42,22 +42,40 @@ class BaseExperiment(ExperimentInterface):
             "src.experiment_design.models.model_hooked", fromlist=["WrappedModel"]
         )
         model_class = getattr(model_module, "WrappedModel")
+        
+        # Create model with pretrained=True
+        if self.config['dataset']['task'] == 'classification':
+            self.config['model']['pretrained'] = True
+            logger.info("Using pretrained weights for classification model")
+        
         model = model_class(config=self.config)
         return model
 
     def initialize_data_utils(self) -> Any:
         """Initialize data utilities based on the model type."""
-        model_type = self.config["model"]["model_name"]
-        class_names = self.config["dataset"]["args"]["class_names"]
-        font_path = self.config["default"]["font_path"]
         task = self.config["dataset"]["task"]
+        class_names_path = self.config["dataset"]["args"]["class_names"]
+        font_path = self.config["default"]["font_path"]
+
+        # Load class names from file
+        try:
+            with open(class_names_path, "r") as f:
+                class_names = [line.strip() for line in f]
+            logger.info(f"Loaded {len(class_names)} classes from {class_names_path}")
+            logger.info(f"First 5 classes: {class_names[:5]}")
+            logger.info(f"Last 5 classes: {class_names[-5:]}")
+        except Exception as e:
+            logger.error(f"Failed to load class names from {class_names_path}: {e}")
+            class_names = []
 
         if task == "detection":
             return DetectionUtils(class_names=class_names, font_path=font_path)
-        if task == "classification":
-            return ClassificationUtils(class_names=class_names, font_path=font_path)
+        elif task == "classification":
+            utils = ClassificationUtils(class_names=class_names, font_path=font_path)
+            logger.info(f"Initialized ClassificationUtils with {len(class_names)} classes")
+            return utils
 
-        raise ValueError(f"Unsupported model type: {model_type}")
+        raise ValueError(f"Unsupported task type: {task}")
 
     def process_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Process the input data and return the results."""
