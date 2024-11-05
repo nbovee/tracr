@@ -8,12 +8,12 @@ set -e
 # ----------------------------
 
 # Local repository path (adjust if necessary)
-LOCAL_REPO_PATH="/mnt/d/github/RACR_AI"
+LOCAL_REPO_PATH="/mnt/d/github/tracr"
 
 # Remote device SSH details
 REMOTE_USER="racr"
 REMOTE_HOST="10.0.0.147"
-REMOTE_TMP_DIR="/tmp/RACR_AI"
+REMOTE_TMP_DIR="/tmp/tracr"
 
 # Excluded files and directories
 EXCLUDES=(

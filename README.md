@@ -18,7 +18,7 @@ sudo apt install openssh-client
 
 ## Project Structure
 ```
-RACR_AI/
+tracr/
 ├── config/                      # Configuration Files
 │   ├── pkeys/                   # SSH keys for device authentication
 │   ├── fonts/                   # Custom fonts for visualization
@@ -80,8 +80,8 @@ RACR_AI/
 ### 1. Environment Setup
 ```bash
 # Clone the repository
-git clone https://github.com/ali-izhar/RACR_AI.git
-cd RACR_AI
+git clone https://github.com/nbovee/tracr.git
+cd tracr
 
 # Create and activate virtual environment
 python -m venv venv
@@ -248,6 +248,6 @@ If you use tracr in your research, please cite:
   author = {Nick Bovee, Izhar Ali},
   title = {tracr: Remote Adaptive Collaborative Research for AI},
   year = {2024},
-  url = {https://github.com/ali-izhar/tracr}
+  url = {https://github.com/nbovee/tracr}
 }
 ```

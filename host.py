@@ -132,7 +132,7 @@ class ExperimentHost:
             )
             destination_dir = Path(
                 self.config.get("results", {}).get(
-                    "destination_dir", "/mnt/d/github/RACR_AI/results"
+                    "destination_dir", "/mnt/d/github/tracr/results"
                 )
             )
 
