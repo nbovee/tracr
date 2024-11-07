@@ -19,6 +19,11 @@
 # Windows: ipconfig
 # Note: IP addresses must be on the same subnet for devices to communicate
 
+# CONNECTING REMOTE DEVICE TO WIFI (JETSON):
+# 1. Install network-manager: sudo apt-get install -y network-manager
+# 2. List available wifi networks: nmcli device wifi
+# 3. Connect to wifi: nmcli device wifi connect "<SSID>" password "<PASSWORD>"
+
 # SSH KEY SETUP:
 # 1. Generate SSH key pair on source device:
 #    ssh-keygen -t rsa -b 4096 -f ~/.ssh/device_name_key
@@ -39,7 +44,7 @@ devices:
     connection_params:
       - host: <server_ip_address>       # e.g., 192.168.1.100
         user: <username>                # SSH username
-        pkey_fp: <server_key.rsa>       # Private key filename in config/pkeys/
+        pkey_fp: <server_key.rsa>       # Private key filename in config/pkeys/. Example: jetson_to_wsl.rsa
         port: <port_number>             # Port number to use for communication or default to ssh port 22
         default: true                   # Primary connection parameters
 
@@ -47,6 +52,6 @@ devices:
     connection_params:
       - host: <participant_ip_address>  # e.g., 192.168.1.101
         user: <username>                # SSH username
-        pkey_fp: <participant_key.rsa>  # Private key filename in config/pkeys/
+        pkey_fp: <participant_key.rsa>  # Private key filename in config/pkeys/. Example: wsl_to_jetson.rsa
         port: <port_number>             # Port number to use for communication or default to ssh port 22
         default: true                   # Primary connection parameters
