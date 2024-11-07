@@ -239,6 +239,8 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduc
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+## Acknowledgements
+
 ### Font Attribution
 This project uses the DejaVu Sans font (specifically DejaVuSans-Bold.ttf) for detection and classification overlays. DejaVu fonts are based on Bitstream Vera Fonts, with additional characters and styles. They are free software, licensed under a permissive free license.
 
