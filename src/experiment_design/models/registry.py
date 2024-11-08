@@ -56,6 +56,13 @@ class ModelRegistry:
                 model = YOLO(weights_path).model
                 logger.info(f"YOLO model '{model_name}' loaded successfully")
                 return model
+            
+            elif "alexnet" in name_lower:
+                from torchvision.models import alexnet  # type: ignore
+                logger.debug(f"Loading AlexNet model")
+                model = alexnet(weights='IMAGENET1K_V1')  # Use official ImageNet weights
+                logger.info("Loaded AlexNet with ImageNet weights")
+                return model
 
             elif cls._is_torchvision_model(name_lower):
                 logger.debug(f"Loading torchvision model: {model_name}")

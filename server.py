@@ -112,6 +112,13 @@ class Server:
             model = experiment.model
             model.eval()
 
+            # Validate class names length for ImageNet
+            if len(experiment.ml_utils.class_names) != 1000:
+                logger.warning(
+                    f"Model expects 1000 ImageNet classes but got "
+                    f"{len(experiment.ml_utils.class_names)} classes"
+                )
+
             # Send acknowledgment
             conn.sendall(b"OK")
 
@@ -158,21 +165,28 @@ class Server:
                             f"Processed detections: {len(processed_result)} found"
                         )
                     else:  # classification
+                        # Run the forward pass
                         result = model(output, start=split_layer_index)
+                        
+                        # Log raw output shape and stats for debugging
+                        logger.debug(f"Raw model output shape: {result.shape}")
+                        logger.debug(f"Output range: [{result.min():.2f}, {result.max():.2f}]")
+                        
+                        # Get class prediction and confidence
                         class_name, confidence = experiment.ml_utils.postprocess(result)
                         processed_result = {
                             "class_name": class_name,
                             "confidence": confidence,
                         }
                         logger.info(
-                            f"Final classification: {class_name} ({confidence:.2%} confidence)"
+                            f"\nFinal classification: {class_name} ({confidence:.2%} confidence)"
                         )
 
-                server_processing_time = time.time() - server_start_time
+                    server_processing_time = time.time() - server_start_time
 
-                # Send back predictions and processing time
-                response = (processed_result, server_processing_time)
-                self.compress_data.send_result(conn=conn, result=response)
+                    # Send back predictions and processing time
+                    response = (processed_result, server_processing_time)
+                    self.compress_data.send_result(conn=conn, result=response)
 
         except Exception as e:
             logger.error(f"Error handling connection: {e}", exc_info=True)

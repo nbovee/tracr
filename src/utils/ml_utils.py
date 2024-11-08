@@ -17,20 +17,43 @@ class ClassificationUtils:
     def __init__(self, class_names: List[str], font_path: str):
         self.class_names = class_names
         self.font_path = font_path
+        
+        # Add validation of class names
+        if len(self.class_names) != 1000:
+            logger.warning(f"Expected 1000 ImageNet classes, got {len(self.class_names)} classes")
 
-    def postprocess(self, output: torch.Tensor, top_k: int = 5) -> Tuple[str, float]:
-        """Postprocess ImageNet classification results to return the top class name and its probability."""
-        probabilities = torch.nn.functional.softmax(output[0], dim=0)
-        top_prob, top_catid = torch.topk(probabilities, top_k)
+    def postprocess(self, output: torch.Tensor) -> Tuple[str, float]:
+        """Postprocess ImageNet classification results."""
+        # Ensure we're working with the right tensor shape
+        if output.dim() > 2:
+            output = output.squeeze()
+        logits = output[0] if output.dim() == 2 else output
 
-        top_k_results = []
-        for _, (prob, catid) in enumerate(zip(top_prob, top_catid)):
+        # Apply softmax to get probabilities
+        probabilities = torch.nn.functional.softmax(logits, dim=0)
+        
+        # Get top 5 predictions
+        top5_prob, top5_catid = torch.topk(probabilities, 5)
+        
+        # Validate indices
+        if max(top5_catid) >= len(self.class_names):
+            logger.error(f"Invalid class index {max(top5_catid)} for {len(self.class_names)} classes")
+            return ("unknown", 0.0)
+            
+        # Log top 5 predictions with detailed formatting
+        logger.info("\nTop 5 predictions:")
+        logger.info("-" * 50)
+        for i, (prob, catid) in enumerate(zip(top5_prob, top5_catid)):
             class_name = self.class_names[catid.item()]
-            idx = catid.item()
-            top_k_results.append(f"Index {idx} - {class_name}: {prob.item():.2%}")
-
-        class_name = self.class_names[top_catid[0].item()]
-        return (class_name, top_prob[0].item())
+            prob_value = prob.item()
+            logger.info(f"#{i+1:<2} {class_name:<30} - {prob_value:>6.2%} (index: {catid.item()})")
+        logger.info("-" * 50)
+        
+        # Get top prediction
+        class_name = self.class_names[top5_catid[0].item()]
+        confidence = top5_prob[0].item()
+        
+        return (class_name, confidence)
 
     def draw_predictions(
         self,

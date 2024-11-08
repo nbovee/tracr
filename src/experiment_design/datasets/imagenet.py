@@ -37,10 +37,16 @@ class ImageNetDataset(BaseDataset):
         self.root = Path(root)
         self.class_file = Path(class_names) if class_names else None
         self.img_dir = Path(img_directory) if img_directory else None
-
+        
+        # Initialize the mapping dictionary early
+        self.imagenet_class_mapping = {}
+        
         if self.img_dir and not self.img_dir.exists():
             logger.error(f"Image directory not found: {self.img_dir}")
             raise FileNotFoundError(f"Image directory not found: {self.img_dir}")
+
+        # Load the ImageNet class mapping first
+        self._load_imagenet_mapping()
 
         # Load class names and create class ID mapping
         self.classes = (
@@ -138,20 +144,17 @@ class ImageNetDataset(BaseDataset):
         # Extract class ID from filename (e.g., "n01440764" from "n01440764_tench.jpg")
         parts = img_path.stem.split("_")
         class_id = parts[0] if len(parts) >= 2 else ""
-
-        # Get class name from mapping
-        class_name = self.class_id_to_name.get(class_id, "")
-
-        # Get class index from classes list
-        class_idx = self.classes.index(class_name) if class_name in self.classes else -1
+        
+        # Get class index from mapping
+        class_idx = self.imagenet_class_mapping.get(class_id, -1)
         if class_idx == -1:
+            # For debugging, print more information about the failed mapping
+            class_name = '_'.join(parts[1:]).replace('_', ' ') if len(parts) >= 2 else ""
             logger.warning(
-                f"Class '{class_name}' (ID: {class_id}) not found. Assigned index -1."
+                f"Class ID {class_id} ({class_name}) not found in mapping. "
+                f"File: {img_path.name}"
             )
 
-        logger.debug(
-            f"Loaded image: {img_path.name}, class: {class_name}, index: {class_idx}"
-        )
         return image, class_idx, img_path.name
 
     @classmethod
@@ -297,6 +300,51 @@ class ImageNetDataset(BaseDataset):
         except Exception as e:
             logger.error(f"Error loading original image {image_file}: {e}")
         return None
+
+    def _load_imagenet_mapping(self) -> None:
+        """Load the mapping between ImageNet IDs and class indices."""
+        try:
+            # First load the class names from the text file
+            if not self.class_file or not self.class_file.exists():
+                logger.error("Class names file not found")
+                return
+            
+            with open(self.class_file, 'r') as f:
+                class_names = [line.strip() for line in f]
+
+            # Create mapping from synset ID to index based on image filenames
+            self.imagenet_class_mapping = {}
+            
+            if self.img_dir:
+                for img_path in self.img_dir.iterdir():
+                    if not img_path.is_file():
+                        continue
+                        
+                    # Parse filename (e.g., "n01440764_tench.jpg")
+                    parts = img_path.stem.split('_')
+                    if len(parts) >= 2:
+                        synset_id = parts[0]  # e.g., "n01440764"
+                        class_name = '_'.join(parts[1:])  # e.g., "tench"
+                        
+                        # Replace underscores with spaces to match class names file
+                        class_name = class_name.replace('_', ' ')
+                        
+                        # Find index of this class name in our classes list
+                        try:
+                            class_idx = class_names.index(class_name)
+                            self.imagenet_class_mapping[synset_id] = class_idx
+                            logger.debug(f"Mapped {synset_id} ({class_name}) to index {class_idx}")
+                        except ValueError:
+                            logger.warning(f"Class name '{class_name}' not found in class list")
+                
+                logger.info(f"Created mapping for {len(self.imagenet_class_mapping)} classes")
+            else:
+                logger.warning("No image directory provided for mapping")
+                
+        except Exception as e:
+            logger.error(f"Error creating ImageNet mapping: {e}")
+            # Ensure we always have a mapping, even if empty
+            self.imagenet_class_mapping = {}
 
 
 def imagenet_dataset(

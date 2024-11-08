@@ -29,8 +29,8 @@ def read_yaml_file(path: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
 def load_text_file(path: Union[str, Path]) -> List[str]:
     """Read and return the contents of a text file as a list of lines."""
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            content = [line.strip() for line in f]
+        with open(path) as f:
+            content = f.read().splitlines()
         return content
     except Exception as e:
         logger.error(f"Error loading text file {path}: {e}")
