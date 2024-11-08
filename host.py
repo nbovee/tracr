@@ -11,16 +11,14 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api import ExperimentManager, DeviceManager
+from src.api import ExperimentManager
 from src.experiment_design.datasets import DataManager
 from src.utils import (
-    CompressData,
     DeviceType,
-    NetworkManager,
-    SplitExperimentRunner,
     read_yaml_file,
     setup_logger,
 )
+
 
 class ExperimentHost:
     """Manages the experiment setup and execution."""
@@ -29,29 +27,16 @@ class ExperimentHost:
         """Initialize with configuration and set up components."""
         self.config = read_yaml_file(config_path)
         self._setup_logger(config_path)
-        self.device_manager = DeviceManager()
-        self.compress_data = CompressData(self.config["compression"])
 
-        # Initialize experiment manager and get model
-        self.experiment_manager = ExperimentManager(config_path)
-        experiment = self.experiment_manager.setup_experiment()
-        self.model = experiment.model
-        self.device = self.model.device
+        self.experiment_manager = ExperimentManager(self.config)
+        self.experiment = self.experiment_manager.setup_experiment()
+
+        # Set up network connection before setting up dataloader
+        self._setup_network_connection()
 
         self.setup_dataloader()
+        self.experiment.data_loader = self.data_loader
 
-        server_device = self.device_manager.get_device_by_type("SERVER")
-        host = server_device.get_host()
-        port = server_device.get_port()
-        self.network_manager = NetworkManager(self.config, host=host, port=port)
-        self.network_manager.connect()
-        self.experiment_runner = SplitExperimentRunner(
-            config=self.config,
-            model=self.model,
-            data_loader=self.data_loader,
-            network_manager=self.network_manager,
-            device=self.device,
-        )
         logger.debug("Experiment host initialization complete")
 
     def _setup_logger(self, config_path: str) -> None:
@@ -102,15 +87,18 @@ class ExperimentHost:
         logger.debug("Data loader setup complete")
 
     def run_experiment(self) -> None:
-        """Execute the split inference experiment."""
-        self.experiment_runner.run_experiment()
+        """Execute the experiment."""
+        logger.info("Starting experiment execution...")
+        self.experiment.run()
 
     def _copy_results_to_server(self) -> None:
         """Copy results to the server using SSH utilities."""
         try:
             from src.utils.ssh import SSHSession
 
-            server_device = self.device_manager.get_device_by_type("SERVER")
+            server_device = self.experiment_manager.device_manager.get_device_by_type(
+                "SERVER"
+            )
             ssh_config = {
                 "host": server_device.get_host(),
                 "user": server_device.get_username(),
@@ -118,7 +106,6 @@ class ExperimentHost:
                 "port": server_device.get_port(),
             }
 
-            # You can add source and destination paths as configuration options if needed
             source_dir = Path(
                 self.config.get("results", {}).get("source_dir", "results")
             )
@@ -150,12 +137,44 @@ class ExperimentHost:
         """Clean up resources and copy results."""
         logger.info("Starting cleanup process...")
         try:
-            self.network_manager.cleanup()
+            if hasattr(self.experiment, "network_manager"):
+                self.experiment.network_manager.cleanup()
             self._copy_results_to_server()
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
         finally:
             logger.info("Cleanup complete")
+
+    def _setup_network_connection(self) -> None:
+        """Establish connection to the server with detailed logging."""
+        logger.debug("Setting up network connection...")
+        try:
+            server_device = self.experiment_manager.device_manager.get_device_by_type(
+                "SERVER"
+            )
+            logger.debug(
+                f"Server device info - Host: {server_device.get_host()}, Port: {server_device.get_port()}"
+            )
+
+            if hasattr(self.experiment, "network_manager"):
+                logger.debug("Attempting to connect to server...")
+                self.experiment.network_manager.connect()
+                logger.info(
+                    f"Successfully connected to server at {server_device.get_host()}:{server_device.get_port()}"
+                )
+            else:
+                logger.error("Network manager not found in experiment")
+                raise RuntimeError("Network manager not initialized in experiment")
+
+        except ConnectionRefusedError:
+            logger.error(
+                "Connection refused. Make sure the server is running and accessible"
+            )
+            raise
+        except Exception as e:
+            logger.error(f"Failed to establish network connection: {str(e)}")
+            logger.debug("Connection error details:", exc_info=True)
+            raise
 
 
 if __name__ == "__main__":

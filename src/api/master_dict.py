@@ -16,7 +16,8 @@ class MasterDict:
 
     def __init__(self) -> None:
         """Initialize MasterDict with a reentrant lock and an empty dictionary.
-        A reentrant lock allows the same thread to acquire the lock multiple times without causing a deadlock."""
+        A reentrant lock allows the same thread to acquire the lock multiple times without causing a deadlock.
+        """
         self.lock = threading.RLock()
         self.data: Dict[str, Dict[str, Any]] = {}
         logger.debug("MasterDict initialized")

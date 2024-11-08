@@ -20,7 +20,6 @@ class NetworkManager:
         self.server_port = port
         self.client_socket: Optional[socket.socket] = None
 
-        # Initialize compression with config settings
         compression_config = self.config.get("compression")
         self.compress_data = CompressData(compression_config)
 

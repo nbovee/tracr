@@ -2,6 +2,7 @@
 
 # DEFAULT CONFIGURATIONS
 default:
+  experiment_type: networked
   device: cuda
   font_path: config/fonts/DejaVuSans-Bold.ttf
   save_layer_images: false

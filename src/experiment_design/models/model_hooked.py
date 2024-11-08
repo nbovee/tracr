@@ -28,7 +28,6 @@ from .hooks import (
 )
 from .templates import LAYER_TEMPLATE
 from src.api import MasterDict
-# from src.utils import PowerMeter
 from src.interface import ModelInterface
 
 # Register atexit handler to clear CUDA cache
@@ -76,7 +75,6 @@ class WrappedModel(BaseModel, ModelInterface):
         self.model_stop_i: Optional[int] = None
         self.banked_input: Optional[Any] = None
         self.log = False
-        # self.power_meter = PowerMeter(self.device)
         self.warmup(iterations=self.warmup_iterations)
         logger.info("WrappedModel initialization complete")
 
@@ -147,7 +145,6 @@ class WrappedModel(BaseModel, ModelInterface):
     ) -> Any:
         """Performs a forward pass with optional slicing and logging."""
         start_time = time.perf_counter_ns()
-        # start_energy = self.power_meter.get_energy()
         end = self.layer_count if end == np.inf else end
         logger.info(
             f"Starting forward pass: inference_id={inference_id}, start={start}, end={end}, log={log}"
@@ -181,14 +178,10 @@ class WrappedModel(BaseModel, ModelInterface):
             for i in range(self.model_stop_i, self.layer_count):
                 self.forward_info.pop(i, None)
         end_time = time.perf_counter_ns()
-        # end_energy = self.power_meter.get_energy()
-
         total_time = end_time - start_time
-        # total_energy = end_energy - start_energy
 
         # Update inference info with timing and power usage
         self.inference_info["total_time"] = total_time
-        # self.inference_info["total_energy"] = total_energy
 
         # Handle inference info
         self.inference_info["layer_information"] = self.forward_info

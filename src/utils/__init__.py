@@ -9,8 +9,6 @@ from .logger import (
 )
 from .ml_utils import ClassificationUtils, DetectionUtils
 from .network_utils import NetworkManager
-# from .power_meter import PowerMeter
-from .split_experiment import SplitExperimentRunner
 from .ssh import load_private_key, ssh_connect, SSHSession, DeviceUnavailableException
 from .system_utils import read_yaml_file, load_text_file, get_repo_root
 
@@ -23,8 +21,6 @@ __all__ = [
     "ClassificationUtils",
     "DetectionUtils",
     "NetworkManager",
-    # "PowerMeter",
-    "SplitExperimentRunner",
     "load_private_key",
     "ssh_connect",
     "SSHSession",

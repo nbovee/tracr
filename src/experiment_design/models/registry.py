@@ -56,11 +56,14 @@ class ModelRegistry:
                 model = YOLO(weights_path).model
                 logger.info(f"YOLO model '{model_name}' loaded successfully")
                 return model
-            
+
             elif "alexnet" in name_lower:
                 from torchvision.models import alexnet  # type: ignore
+
                 logger.debug(f"Loading AlexNet model")
-                model = alexnet(weights='IMAGENET1K_V1')  # Use official ImageNet weights
+                model = alexnet(
+                    weights="IMAGENET1K_V1"
+                )  # Use official ImageNet weights
                 logger.info("Loaded AlexNet with ImageNet weights")
                 return model
 
@@ -87,15 +90,21 @@ class ModelRegistry:
 
         except ImportError as e:
             logger.exception(f"ImportError while loading model '{model_name}': {e}")
-            raise ValueError(f"ImportError while loading model '{model_name}': {e}") from e
+            raise ValueError(
+                f"ImportError while loading model '{model_name}': {e}"
+            ) from e
         except AttributeError as e:
-            logger.exception(f"AttributeError: Model '{model_name}' not found in modules.")
+            logger.exception(
+                f"AttributeError: Model '{model_name}' not found in modules."
+            )
             raise ValueError(
                 f"AttributeError: Model '{model_name}' not found in modules."
             ) from e
         except Exception as e:
             logger.exception(f"Unexpected error loading model '{model_name}': {e}")
-            raise ValueError(f"Unexpected error loading model '{model_name}': {e}") from e
+            raise ValueError(
+                f"Unexpected error loading model '{model_name}': {e}"
+            ) from e
 
     @classmethod
     def _is_torchvision_model(cls, name_lower: str) -> bool:

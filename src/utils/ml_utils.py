@@ -17,77 +17,81 @@ class ClassificationUtils:
     def __init__(self, class_names: List[str], font_path: str):
         self.class_names = class_names
         self.font_path = font_path
-        
-        # Add validation of class names
-        if len(self.class_names) != 1000:
-            logger.warning(f"Expected 1000 ImageNet classes, got {len(self.class_names)} classes")
 
     def postprocess(self, output: torch.Tensor) -> Tuple[str, float]:
         """Postprocess ImageNet classification results."""
-        # Ensure we're working with the right tensor shape
         if output.dim() > 2:
             output = output.squeeze()
         logits = output[0] if output.dim() == 2 else output
 
-        # Apply softmax to get probabilities
         probabilities = torch.nn.functional.softmax(logits, dim=0)
-        
-        # Get top 5 predictions
         top5_prob, top5_catid = torch.topk(probabilities, 5)
-        
-        # Validate indices
         if max(top5_catid) >= len(self.class_names):
-            logger.error(f"Invalid class index {max(top5_catid)} for {len(self.class_names)} classes")
+            logger.error(
+                f"Invalid class index {max(top5_catid)} for {len(self.class_names)} classes"
+            )
             return ("unknown", 0.0)
-            
-        # Log top 5 predictions with detailed formatting
-        logger.info("\nTop 5 predictions:")
-        logger.info("-" * 50)
+
+        logger.debug("\nTop 5 predictions:")
+        logger.debug("-" * 50)
         for i, (prob, catid) in enumerate(zip(top5_prob, top5_catid)):
             class_name = self.class_names[catid.item()]
             prob_value = prob.item()
-            logger.info(f"#{i+1:<2} {class_name:<30} - {prob_value:>6.2%} (index: {catid.item()})")
-        logger.info("-" * 50)
-        
-        # Get top prediction
+            logger.debug(
+                f"#{i+1:<2} {class_name:<30} - {prob_value:>6.2%} (index: {catid.item()})"
+            )
+        logger.debug("-" * 50)
+
         class_name = self.class_names[top5_catid[0].item()]
         confidence = top5_prob[0].item()
-        
         return (class_name, confidence)
 
-    def draw_predictions(
+    def draw_prediction_with_truth(
         self,
         image: Image.Image,
-        predictions: List[Tuple[int, float]],
+        predicted_class: str,
+        confidence: float,
+        true_class: str,
         font_size: int = 20,
-        text_color: str = "red",
+        text_color: str = "black",
         bg_color: str = "white",
-        padding: int = 5,
+        padding: int = 10,
     ) -> Image.Image:
-        """Draw prediction labels on an image."""
+        """Draw both prediction and ground truth on image."""
         draw = ImageDraw.Draw(image)
         try:
             font = ImageFont.truetype(self.font_path, font_size)
-            logger.debug(f"Loaded font from {self.font_path}")
         except IOError:
             font = ImageFont.load_default()
             logger.warning("Failed to load font. Using default font.")
 
-        top_class_id, top_prob = predictions[0]
-        class_name = self.class_names[top_class_id]
-        text = f"{class_name}: {top_prob:.2%}"
+        # Prepare prediction and truth texts
+        pred_text = f"Pred: {predicted_class} ({confidence:.1%})"
+        truth_text = f"True: {true_class}"
 
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width, text_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        # Calculate text dimensions
+        pred_bbox = draw.textbbox((0, 0), pred_text, font=font)
+        truth_bbox = draw.textbbox((0, 0), truth_text, font=font)
 
-        x = image.width - text_width - 10
-        y = 10
+        text_width = max(pred_bbox[2] - pred_bbox[0], truth_bbox[2] - truth_bbox[0])
+        text_height = (
+            (pred_bbox[3] - pred_bbox[1]) + (truth_bbox[3] - truth_bbox[1]) + padding
+        )
 
+        # Calculate positions
+        x = image.width - text_width - 2 * padding
+        y_pred = padding
+        y_truth = y_pred + (pred_bbox[3] - pred_bbox[1]) + padding
+
+        # Draw background
         background = Image.new(
             "RGBA", (text_width + 2 * padding, text_height + 2 * padding), bg_color
         )
-        image.paste(background, (x - padding, y - padding), background)
-        draw.text((x, y), text, font=font, fill=text_color)
+        image.paste(background, (x - padding, y_pred - padding), background)
+
+        # Draw prediction and truth
+        draw.text((x, y_pred), pred_text, font=font, fill=text_color)
+        draw.text((x, y_truth), truth_text, font=font, fill=text_color)
 
         return image
 
@@ -172,17 +176,16 @@ class DetectionUtils:
         self,
         image: Image.Image,
         detections: List[Tuple[List[int], float, int]],
-        padding: int = 2,
         font_size: int = 12,
         box_color: str = "red",
-        text_color: Tuple[int, int, int] = (255, 255, 255),
+        text_color: str = "white",
         bg_color: Tuple[int, int, int, int] = (0, 0, 0, 128),
+        padding: int = 5,
     ) -> Image.Image:
         """Draw detection boxes and labels on an image."""
         draw = ImageDraw.Draw(image)
         try:
             font = ImageFont.truetype(self.font_path, font_size)
-            logger.debug(f"Loaded font from {self.font_path}")
         except IOError:
             font = ImageFont.load_default()
             logger.warning("Failed to load font. Using default font.")
@@ -192,21 +195,27 @@ class DetectionUtils:
                 x1, y1, w, h = box
                 x2, y2 = x1 + w, y1 + h
 
+                # Draw box
                 draw.rectangle([x1, y1, x2, y2], outline=box_color, width=2)
-                label = f"{self.class_names[class_id]}: {score:.2f}"
 
+                # Draw label
+                label = f"{self.class_names[class_id]}: {score:.2f}"
                 bbox = draw.textbbox((0, 0), label, font=font)
-                text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                text_w = bbox[2] - bbox[0]
+                text_h = bbox[3] - bbox[1]
 
                 label_x = max(x1 + padding, 0)
                 label_y = max(y1 + padding, 0)
 
+                # Draw label background
                 background = Image.new(
                     "RGBA", (text_w + 2 * padding, text_h + 2 * padding), bg_color
                 )
                 image.paste(
                     background, (label_x - padding, label_y - padding), background
                 )
+
+                # Draw label text
                 draw.text((label_x, label_y), label, fill=text_color, font=font)
 
         return image

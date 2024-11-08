@@ -51,15 +51,15 @@ class BaseModel(nn.Module):
     def _extract_configurations(self) -> None:
         """Extract configurations from the config dictionary."""
         # Global configurations with defaults
-        self.default_configs = self.config.get("default", {})
+        self.default_configs = self.config.get("default")
         self.device = self.default_configs.get("device", "cpu")
         logger.debug(f"Using device: {self.device}")
 
         # Model-specific configurations
-        self.model_config = self.config.get("model", {})
+        self.model_config = self.config.get("model")
         self.model_name = self.model_config.get("model_name")
         self.weight_path = self.model_config.get("weight_path")
-        self.input_size = tuple(self.model_config.get("input_size", (3, 224, 224)))
+        self.input_size = tuple(self.model_config.get("input_size"))
         self.hook_style = self.model_config.get("hook_style")
         self.save_layers = self.model_config.get("save_layers", [])
         self.depth = self.model_config.get("depth", 2)

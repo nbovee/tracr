@@ -205,7 +205,7 @@ class Device:
     def get_host(self) -> str:
         """Get the host address."""
         return self.working_cparams.host
-    
+
     def get_port(self) -> int:
         """Get the port number."""
         return self.working_cparams.port
@@ -213,7 +213,7 @@ class Device:
     def get_username(self) -> str:
         """Get the username."""
         return self.working_cparams.username
-    
+
     def get_private_key_path(self) -> Path:
         """Get the private key path."""
         return self.working_cparams.private_key_path
@@ -239,7 +239,7 @@ class Device:
         return None
 
     def to_ssh_machine(self) -> SshMachine:
-        """Convert the active connection to a plumbum SshMachine to execute and manage 
+        """Convert the active connection to a plumbum SshMachine to execute and manage
         remote shell commands programmatically using the active SSH connection."""
         if self.working_cparams:
             logger.debug(f"Creating SshMachine for device {self.device_type}")
@@ -308,14 +308,17 @@ class DeviceManager:
             f"(available_only={available_only}, device_type={device_type})"
         )
         return filtered_devices
-    
+
     def get_device_by_type(self, device_type: str) -> Device:
         """Retrieve a device by its type: SERVER or PARTICIPANT."""
-        return next((device for device in self.devices if device.device_type == device_type), None)
+        return next(
+            (device for device in self.devices if device.device_type == device_type),
+            None,
+        )
 
     def create_server_socket(self, host: str, port: int) -> socket.socket:
         """Create a server socket bound to the specified host and port.
-        A socket connection enables communication between a client and a server over a network, 
+        A socket connection enables communication between a client and a server over a network,
         allowing data exchange through a defined interface."""
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
