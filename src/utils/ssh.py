@@ -4,11 +4,8 @@ import logging
 import os
 import paramiko  # type: ignore
 import select
-import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
-
-from .system_utils import get_repo_root
 
 logger = logging.getLogger("split_computing_logger")
 
@@ -319,81 +316,6 @@ class SSHSession(paramiko.SSHClient):
         except Exception as e:
             logger.error(f"Error executing command '{command}' on {self.host}: {e}")
         return result
-
-    def send_and_run_test_script(
-        self, script_content: str, script_name: str, config: Dict[str, Any]
-    ) -> bool:
-        """Send and execute a test script on the remote host."""
-        repo_root = get_repo_root()
-        local_script_path = repo_root / "temp" / script_name
-        remote_script_path = f"/tmp/{script_name}"
-
-        logger.info(f"Sending and executing test script: {script_name}")
-
-        try:
-            local_script_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(local_script_path, "w") as script_file:
-                script_file.write(script_content)
-            logger.debug(f"Created local script at {local_script_path}")
-        except Exception as e:
-            logger.error(f"Failed to create local script: {e}")
-            return False
-
-        try:
-            self.copy_over(local_script_path, remote_script_path)
-            logger.debug(f"Copied script to remote path: {remote_script_path}")
-            self.execute_command(f"chmod +x {remote_script_path}")
-            logger.debug(f"Set execution permissions for {remote_script_path}")
-
-            run_command = (
-                remote_script_path
-                if script_name.endswith(".sh")
-                else f"python3 {remote_script_path}"
-            )
-            logger.info(f"Executing script '{script_name}' on {self.host}")
-
-            stdin, stdout, stderr = self.exec_command(run_command, get_pty=True)
-
-            unique_lines = set()
-            stdout_thread = threading.Thread(
-                target=read_and_log, args=(stdout.channel, logger.info, unique_lines)
-            )
-            stderr_thread = threading.Thread(
-                target=read_and_log, args=(stderr.channel, logger.error, unique_lines)
-            )
-
-            stdout_thread.start()
-            stderr_thread.start()
-
-            exit_status = stdout.channel.recv_exit_status()
-
-            stdout_thread.join()
-            stderr_thread.join()
-
-            success = exit_status == 0
-            if success:
-                logger.info(
-                    f"Script '{script_name}' executed successfully on {self.host}."
-                )
-            else:
-                logger.error(
-                    f"Script '{script_name}' failed on {self.host}. Exit status: {exit_status}."
-                )
-        except Exception as e:
-            logger.error(f"Error executing script '{script_name}' on {self.host}: {e}")
-            success = False
-        finally:
-            self.execute_command(f"rm {remote_script_path}")
-            logger.debug(f"Removed remote script: {remote_script_path}")
-            try:
-                local_script_path.unlink()
-                logger.debug(f"Removed local script: {local_script_path}")
-            except Exception as e:
-                logger.warning(
-                    f"Failed to remove local script '{local_script_path}': {e}"
-                )
-
-        return success
 
     def copy_results_to_server(
         self,

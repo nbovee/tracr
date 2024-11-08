@@ -4,6 +4,7 @@
 default:
   device: cuda
   font_path: config/fonts/DejaVuSans-Bold.ttf
+  save_layer_images: false
 
 # LOGGING CONFIGURATIONS
 logging:
@@ -20,7 +21,6 @@ model:
   hook_style: pre
   split_layer: 5
   save_layers: [2, 4, 6]
-  total_layers: 8
   num_classes: 1000
   mode: eval
   depth: 2
@@ -47,7 +47,7 @@ dataloader:
   num_workers: 4
   collate_fn: imagenet_collate
 
-# EXPERIMENT CONFIGURATIONS
+# COMPRESSION CONFIGURATIONS
 compression:
   clevel: 3
   filter: SHUFFLE

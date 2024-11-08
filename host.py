@@ -11,15 +11,16 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api.experiment_mgmt import ExperimentManager
-from src.api.device_mgmt import DeviceManager
-from src.experiment_design.datasets.dataloader import DataManager
-from src.utils.compression import CompressData
-from src.utils.experiment_utils import SplitExperimentRunner
-from src.utils.system_utils import read_yaml_file
-from src.utils.network_utils import NetworkManager
-from src.utils.logger import setup_logger, DeviceType
-
+from src.api import ExperimentManager, DeviceManager
+from src.experiment_design.datasets import DataManager
+from src.utils import (
+    CompressData,
+    DeviceType,
+    NetworkManager,
+    SplitExperimentRunner,
+    read_yaml_file,
+    setup_logger,
+)
 
 class ExperimentHost:
     """Manages the experiment setup and execution."""
@@ -38,8 +39,12 @@ class ExperimentHost:
         self.device = self.model.device
 
         self.setup_dataloader()
-        self.network_manager = NetworkManager(self.config)
-        self.network_manager.connect(self.config)
+
+        server_device = self.device_manager.get_device_by_type("SERVER")
+        host = server_device.get_host()
+        port = server_device.get_port()
+        self.network_manager = NetworkManager(self.config, host=host, port=port)
+        self.network_manager.connect()
         self.experiment_runner = SplitExperimentRunner(
             config=self.config,
             model=self.model,
@@ -47,7 +52,7 @@ class ExperimentHost:
             network_manager=self.network_manager,
             device=self.device,
         )
-        logger.info("Experiment host initialization complete")
+        logger.debug("Experiment host initialization complete")
 
     def _setup_logger(self, config_path: str) -> None:
         """Initialize logger with configuration."""
@@ -64,7 +69,7 @@ class ExperimentHost:
 
     def setup_dataloader(self) -> None:
         """Set up the data loader with the specified configuration."""
-        logger.info("Setting up data loader...")
+        logger.debug("Setting up data loader...")
         dataset_config = self.config.get("dataset", {})
         dataloader_config = self.config.get("dataloader", {})
 
@@ -89,12 +94,12 @@ class ExperimentHost:
         )
         self.data_loader = torch.utils.data.DataLoader(
             dataset,
-            batch_size=dataloader_config.get("batch_size", 32),
-            shuffle=dataloader_config.get("shuffle", False),
-            num_workers=dataloader_config.get("num_workers", 4),
+            batch_size=dataloader_config.get("batch_size"),
+            shuffle=dataloader_config.get("shuffle"),
+            num_workers=dataloader_config.get("num_workers"),
             collate_fn=collate_fn,
         )
-        logger.info("Data loader setup complete")
+        logger.debug("Data loader setup complete")
 
     def run_experiment(self) -> None:
         """Execute the split inference experiment."""
@@ -105,25 +110,12 @@ class ExperimentHost:
         try:
             from src.utils.ssh import SSHSession
 
-            server_devices = self.device_manager.get_devices(
-                available_only=True, device_type="SERVER"
-            )
-            if not server_devices:
-                logger.error("No available server devices found for copying results.")
-                return
-
-            server_device = server_devices[0]
-            if not server_device.working_cparams:
-                logger.error("Server device has no working connection parameters.")
-                return
-
-            # Get SSH configuration from server device
+            server_device = self.device_manager.get_device_by_type("SERVER")
             ssh_config = {
-                "host": server_device.working_cparams.host,
-                "user": server_device.working_cparams.username,
-                "private_key_path": str(server_device.working_cparams.private_key_path),
-                "port": server_device.working_cparams.port
-                or 22,  # Default to 22 if not specified
+                "host": server_device.get_host(),
+                "user": server_device.get_username(),
+                "private_key_path": str(server_device.get_private_key_path()),
+                "port": server_device.get_port(),
             }
 
             # You can add source and destination paths as configuration options if needed

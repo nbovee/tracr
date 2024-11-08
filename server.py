@@ -13,12 +13,11 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api.device_mgmt import DeviceManager
-from src.api.experiment_mgmt import ExperimentManager
-from src.utils.compression import CompressData
-from src.utils.logger import (
-    setup_logger,
+from src.api import DeviceManager, ExperimentManager
+from src.utils import (
+    CompressData,
     DeviceType,
+    setup_logger,
     start_logging_server,
     shutdown_logging_server,
 )
@@ -41,12 +40,12 @@ class TemporaryCompression:
                 "codec": "BLOSCLZ",  # Fastest codec
             }
         )
-        logger.info("Initialized temporary compression with minimal settings")
+        logger.debug("Initialized temporary compression with minimal settings")
 
     def update_from_config(self, config: dict) -> CompressData:
         """Update compression settings from received configuration."""
         if "compression" in config:
-            logger.info("Updating compression settings from received config")
+            logger.debug("Updating compression settings from received config")
             return CompressData(config["compression"])
         logger.warning("No compression settings in config, keeping minimal settings")
         return self.compress_data
@@ -57,35 +56,18 @@ class Server:
 
     def __init__(self) -> None:
         """Initialize the Server with device manager and placeholders."""
-        logger.info("Initializing server...")
+        logger.debug("Initializing server...")
         self.device_manager = DeviceManager()
         self.experiment_manager: Optional[ExperimentManager] = None
         self.server_socket: Optional[socket.socket] = None
         self.compress_data = TemporaryCompression().compress_data
-        logger.info("Server initialized")
+        logger.debug("Server initialized")
 
     def start(self) -> None:
         """Start the server to listen for incoming connections."""
-        server_devices = self.device_manager.get_devices(
-            available_only=True, device_type="SERVER"
-        )
-        if not server_devices:
-            logger.error("No available server devices found.")
-            return
-
-        server_device = server_devices[0]
-        if not server_device.working_cparams:
-            logger.error("Server device has no working connection parameters.")
-            return
-
-        # Get host and port from device configuration
-        host = ""  # Use empty string to bind to all interfaces for better reliability
-        port = (
-            server_device.working_cparams.port
-            if server_device.working_cparams.port
-            else 12345
-        )
-
+        server_device = self.device_manager.get_device_by_type("SERVER")
+        host = ""
+        port = server_device.get_port()
         logger.info(f"Starting server on port {port}...")
 
         try:
@@ -128,16 +110,7 @@ class Server:
             self.experiment_manager = ExperimentManager(config)
             experiment = self.experiment_manager.setup_experiment()
             model = experiment.model
-
-            # Ensure model is in eval mode
             model.eval()
-
-            # Log model and data utils initialization
-            logger.info(f"Model type: {config['model']['model_name']}")
-            logger.info(f"Task type: {config['dataset']['task']}")
-            if hasattr(experiment.data_utils, 'class_names'):
-                logger.info(f"Number of classes: {len(experiment.data_utils.class_names)}")
-                logger.info(f"First 5 classes: {experiment.data_utils.class_names[:5]}")
 
             # Send acknowledgment
             conn.sendall(b"OK")
@@ -178,40 +151,27 @@ class Server:
                     task = config["dataset"]["task"]
                     if task == "detection":
                         result, layer_outputs = model(output, start=split_layer_index)
-                        processed_result = experiment.data_utils.postprocess(
+                        processed_result = experiment.ml_utils.postprocess(
                             result, original_image_size
                         )
-                        logger.info(f"Processed detections: {len(processed_result)} found")
-                        if not processed_result:
-                            logger.warning(
-                                f"No detections found for input with size {original_image_size}"
-                            )
+                        logger.info(
+                            f"Processed detections: {len(processed_result)} found"
+                        )
                     else:  # classification
                         result = model(output, start=split_layer_index)
-                        # Log raw output shape and values for debugging
-                        logger.info(f"Raw output shape: {result.shape}")
-                        logger.info(f"Raw output max value: {torch.max(result).item()}")
-                        logger.info(f"Raw output min value: {torch.min(result).item()}")
-                        
-                        # Get top probabilities and indices
-                        probabilities = torch.nn.functional.softmax(result[0], dim=0)
-                        top_probs, top_indices = torch.topk(probabilities, 5)
-                        
-                        # Log top 5 predictions with indices
-                        for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
-                            class_name = experiment.data_utils.class_names[idx.item()]
-                            logger.info(f"Top {i+1}: Class {idx.item()} ({class_name}) - {prob.item():.2%}")
-                        
-                        # Process final result
-                        class_name, confidence = experiment.data_utils.postprocess(result)
-                        processed_result = {"class_name": class_name, "confidence": confidence}
-                        logger.info(f"Final classification: {class_name} ({confidence:.2%} confidence)")
+                        class_name, confidence = experiment.ml_utils.postprocess(result)
+                        processed_result = {
+                            "class_name": class_name,
+                            "confidence": confidence,
+                        }
+                        logger.info(
+                            f"Final classification: {class_name} ({confidence:.2%} confidence)"
+                        )
 
                 server_processing_time = time.time() - server_start_time
 
                 # Send back predictions and processing time
                 response = (processed_result, server_processing_time)
-                logger.debug(f"Sending response: {response}")
                 self.compress_data.send_result(conn=conn, result=response)
 
         except Exception as e:

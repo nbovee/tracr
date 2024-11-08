@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from src.utils.system_utils import get_repo_root
+from src.utils import get_repo_root
 
 logger = logging.getLogger("split_computing_logger")
 
@@ -16,7 +16,7 @@ class BaseDataset:
 
     def __init__(self) -> None:
         """Initialize the dataset and verify the data source directory."""
-        logger.info(
+        logger.debug(
             f"Initializing BaseDataset with DATA_SOURCE_DIR: {self.DATA_SOURCE_DIR}"
         )
         if not self.DATA_SOURCE_DIR.exists():

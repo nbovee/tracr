@@ -73,7 +73,7 @@ class ImageNetDataset(BaseDataset):
         self.max_samples = max_samples
 
         self.img_files = self._load_image_files()
-        logger.info(f"Initialized ImageNetDataset with {len(self.img_files)} images.")
+        logger.debug(f"Initialized ImageNetDataset with {len(self.img_files)} images.")
 
     def _load_classes(self) -> List[str]:
         """Load class names from the class file."""
@@ -93,7 +93,7 @@ class ImageNetDataset(BaseDataset):
         for img_path in self.img_dir.iterdir():
             if not img_path.is_file():
                 continue
-            
+
             # Extract class ID from filename (e.g., "n01440764" from "n01440764_tench.jpg")
             parts = img_path.stem.split("_")
             if len(parts) >= 2:
@@ -109,7 +109,7 @@ class ImageNetDataset(BaseDataset):
         if not self.img_dir:
             logger.error("Image directory is not set.")
             return []
-        
+
         image_extensions = {".jpg", ".jpeg", ".png"}
         images = sorted(
             [
@@ -119,7 +119,7 @@ class ImageNetDataset(BaseDataset):
             ]
         )
         if self.max_samples > 0:
-            images = images[:self.max_samples]
+            images = images[: self.max_samples]
         logger.debug(f"Loaded {len(images)} image files")
         return images
 
@@ -138,14 +138,16 @@ class ImageNetDataset(BaseDataset):
         # Extract class ID from filename (e.g., "n01440764" from "n01440764_tench.jpg")
         parts = img_path.stem.split("_")
         class_id = parts[0] if len(parts) >= 2 else ""
-        
+
         # Get class name from mapping
         class_name = self.class_id_to_name.get(class_id, "")
-        
+
         # Get class index from classes list
         class_idx = self.classes.index(class_name) if class_name in self.classes else -1
         if class_idx == -1:
-            logger.warning(f"Class '{class_name}' (ID: {class_id}) not found. Assigned index -1.")
+            logger.warning(
+                f"Class '{class_name}' (ID: {class_id}) not found. Assigned index -1."
+            )
 
         logger.debug(
             f"Loaded image: {img_path.name}, class: {class_name}, index: {class_idx}"
@@ -205,7 +207,9 @@ class ImageNetDataset(BaseDataset):
             shutil.copy2(img, subset_img_dir)
 
         # Create class names list for subset
-        selected_class_names = [dataset.class_id_to_name[cls] for cls in selected_classes]
+        selected_class_names = [
+            dataset.class_id_to_name[cls] for cls in selected_classes
+        ]
 
         # Initialize subset dataset
         subset_dataset = cls(
@@ -255,7 +259,7 @@ class ImageNetDataset(BaseDataset):
     ) -> "ImageNetDataset":
         """Load a previously created ImageNet subset."""
         subset_dir = Path(root) / subset_name if root else Path(subset_name)
-        
+
         if not subset_dir.exists():
             raise FileNotFoundError(f"Subset directory not found: {subset_dir}")
 
@@ -289,7 +293,7 @@ class ImageNetDataset(BaseDataset):
         try:
             img_path = self.img_dir / image_file
             if img_path.exists():
-                return Image.open(img_path).convert('RGB')
+                return Image.open(img_path).convert("RGB")
         except Exception as e:
             logger.error(f"Error loading original image {image_file}: {e}")
         return None

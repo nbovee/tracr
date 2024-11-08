@@ -13,16 +13,8 @@ class CompressData:
     """Handles network data compression and communication."""
 
     def __init__(self, compression_config: Dict[str, Any]):
-        """Initialize with compression configuration.
-
-        Args:
-            compression_config: Dictionary containing compression settings:
-                - clevel: Compression level (1-9)
-                - filter: Blosc2 filter (e.g., "SHUFFLE", "BITSHUFFLE")
-                - codec: Compression codec (e.g., "ZSTD", "LZ4", "BLOSCLZ")
-        """
+        """Initialize with compression configuration dictionary."""
         self.compression_config = compression_config
-        logger.debug(f"Initialized compression with config: {compression_config}")
 
     def compress_data(self, data: Any) -> Tuple[bytes, int]:
         """Compress data with configurable parameters using Blosc2."""
@@ -30,9 +22,9 @@ class CompressData:
             serialized_data = pickle.dumps(data)
             compressed_data = blosc2.compress(
                 serialized_data,
-                clevel=self.compression_config.get("clevel", 3),
-                filter=blosc2.Filter[self.compression_config.get("filter", "SHUFFLE")],
-                codec=blosc2.Codec[self.compression_config.get("codec", "ZSTD")],
+                clevel=self.compression_config.get("clevel"),
+                filter=blosc2.Filter[self.compression_config.get("filter")],
+                codec=blosc2.Codec[self.compression_config.get("codec")],
             )
             return compressed_data, len(compressed_data)
         except Exception as e:

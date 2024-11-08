@@ -18,12 +18,12 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.utils.ssh import (
+from src.utils import (
+    get_repo_root,
     load_private_key,
     SSHSession,
     DeviceUnavailableException,
 )
-from src.utils.system_utils import get_repo_root
 
 logger = logging.getLogger("split_computing_logger")
 
@@ -42,7 +42,7 @@ class LAN:
     def is_host_reachable(
         cls, host: str, port: int, timeout: Union[int, float]
     ) -> bool:
-        """Determine if a host is reachable on a specific port."""
+        """Determine if the given host is reachable on the given port within the given timeout."""
         try:
             with socket.create_connection((host, port), timeout):
                 logger.debug(f"Host {host} is reachable on port {port}")
@@ -57,9 +57,9 @@ class LAN:
         hosts: List[str] = None,
         port: int = 22,
         timeout: Union[int, float] = 0.5,
-        max_threads: int = 50,
+        max_threads: int = 10,
     ) -> List[str]:
-        """Return a list of hosts that are reachable."""
+        """Determine the availability of the given hosts on the local network."""
         hosts_to_check = hosts or cls.LOCAL_CIDR_BLOCK
         available_hosts = Queue()
 
@@ -67,12 +67,12 @@ class LAN:
             if cls.is_host_reachable(host, port, timeout):
                 available_hosts.put(host)
 
-        logger.info(f"Checking availability of {len(hosts_to_check)} hosts")
+        logger.debug(f"Checking availability of {len(hosts_to_check)} hosts")
         with ThreadPoolExecutor(max_workers=max_threads) as executor:
             executor.map(check_host, hosts_to_check)
 
         available = list(available_hosts.queue)
-        logger.info(f"Found {len(available)} available hosts")
+        logger.debug(f"Found {len(available)} available hosts")
         return available
 
 
@@ -124,11 +124,13 @@ class SSHConnectionParams:
         )
 
     def _set_host(self, host: str) -> None:
+        """Set the host address and check reachability."""
         self.host = host
         self._is_reachable = LAN.is_host_reachable(host, self.SSH_PORT, self.TIMEOUT)
         logger.debug(f"Host {host} reachability set to {self._is_reachable}")
 
     def _set_username(self, username: str) -> None:
+        """Set the username and validate it."""
         clean_username = username.strip()
         if 0 < len(clean_username) < 32:
             self.username = clean_username
@@ -137,6 +139,7 @@ class SSHConnectionParams:
             raise ValueError(f"Invalid username '{username}'.")
 
     def _set_rsa_key(self, rsa_key_path: Union[Path, str]) -> None:
+        """Set the RSA key path and validate it."""
         rsa_path = (
             Path(rsa_key_path) if not isinstance(rsa_key_path, Path) else rsa_key_path
         )
@@ -195,12 +198,28 @@ class Device:
         )
         logger.info(f"Initialized Device of type {self.device_type}")
         if self.working_cparams:
-            logger.info(f"Device is reachable at {self.working_cparams.host}")
+            logger.debug(f"Device is reachable at {self.working_cparams.host}")
         else:
             logger.warning("Device is not reachable")
 
+    def get_host(self) -> str:
+        """Get the host address."""
+        return self.working_cparams.host
+    
+    def get_port(self) -> int:
+        """Get the port number."""
+        return self.working_cparams.port
+
+    def get_username(self) -> str:
+        """Get the username."""
+        return self.working_cparams.username
+    
+    def get_private_key_path(self) -> Path:
+        """Get the private key path."""
+        return self.working_cparams.private_key_path
+
     def is_reachable(self) -> bool:
-        """Determine if the device is reachable."""
+        """Check if the device is reachable."""
         return self.working_cparams is not None
 
     def serialize(self) -> tuple[str, dict[str, Union[str, bool]]]:
@@ -220,7 +239,8 @@ class Device:
         return None
 
     def to_ssh_machine(self) -> SshMachine:
-        """Convert the active connection to a plumbum SshMachine."""
+        """Convert the active connection to a plumbum SshMachine to execute and manage 
+        remote shell commands programmatically using the active SSH connection."""
         if self.working_cparams:
             logger.debug(f"Creating SshMachine for device {self.device_type}")
             return SshMachine(
@@ -252,9 +272,26 @@ class DeviceManager:
         raise FileNotFoundError(f"PKeys directory not found at {DEFAULT_PKEYS_DIR}")
 
     def __init__(self, datafile_path: Union[Path, None] = None) -> None:
+        """Initialize the DeviceManager with the given datafile path or the default."""
         self.datafile_path = datafile_path or self.DEFAULT_DATAFILE
         self._load_devices()
-        logger.info(f"DeviceManager initialized with {len(self.devices)} devices")
+        logger.debug(f"DeviceManager initialized with {len(self.devices)} devices")
+
+    def _load_devices(self) -> None:
+        """Load devices from the YAML configuration file."""
+        logger.debug(f"Loading devices from {self.datafile_path}")
+        with open(self.datafile_path) as file:
+            data = yaml.safe_load(file)
+
+        for device in data.get("devices", []):
+            for conn_param in device.get("connection_params", []):
+                if "pkey_fp" in conn_param:
+                    conn_param["pkey_fp"] = str(
+                        self.DEFAULT_PKEYS_DIR / os.path.basename(conn_param["pkey_fp"])
+                    )
+
+        self.devices = [Device(record) for record in data.get("devices", [])]
+        logger.info(f"Loaded {len(self.devices)} devices")
 
     def get_devices(
         self, available_only: bool = False, device_type: str = None
@@ -271,9 +308,15 @@ class DeviceManager:
             f"(available_only={available_only}, device_type={device_type})"
         )
         return filtered_devices
+    
+    def get_device_by_type(self, device_type: str) -> Device:
+        """Retrieve a device by its type: SERVER or PARTICIPANT."""
+        return next((device for device in self.devices if device.device_type == device_type), None)
 
     def create_server_socket(self, host: str, port: int) -> socket.socket:
-        """Create a server socket bound to the specified host and port."""
+        """Create a server socket bound to the specified host and port.
+        A socket connection enables communication between a client and a server over a network, 
+        allowing data exchange through a defined interface."""
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             sock.bind((host, port))
@@ -284,22 +327,6 @@ class DeviceManager:
             sock.bind(("", port))
         sock.listen(1)
         return sock
-
-    def _load_devices(self) -> None:
-        """Load devices from the YAML configuration file."""
-        logger.info(f"Loading devices from {self.datafile_path}")
-        with open(self.datafile_path) as file:
-            data = yaml.safe_load(file)
-
-        for device in data.get("devices", []):
-            for conn_param in device.get("connection_params", []):
-                if "pkey_fp" in conn_param:
-                    conn_param["pkey_fp"] = str(
-                        self.DEFAULT_PKEYS_DIR / os.path.basename(conn_param["pkey_fp"])
-                    )
-
-        self.devices = [Device(record) for record in data.get("devices", [])]
-        logger.info(f"Loaded {len(self.devices)} devices")
 
     def _save_devices(self) -> None:
         """Save the current device configurations to the YAML file."""
@@ -324,5 +351,5 @@ def create_ssh_session(
     timeout: float = 10.0,
 ) -> SSHSession:
     """Instantiate and return an SSHSession for the given parameters."""
-    logger.info(f"Creating SSHSession for {username}@{host}")
+    logger.debug(f"Creating SSHSession for {username}@{host}")
     return SSHSession(host, username, private_key_path, port, timeout)

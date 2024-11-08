@@ -16,9 +16,13 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 from src.api.device_mgmt import DeviceManager
-from src.interface.bridge import ExperimentInterface, ModelInterface
-from src.utils.system_utils import read_yaml_file
-from src.utils.ml_utils import ClassificationUtils, DetectionUtils
+from src.interface import ExperimentInterface, ModelInterface
+from src.utils import (
+    ClassificationUtils,
+    DetectionUtils,
+    load_text_file,
+    read_yaml_file,
+)
 
 logger = logging.getLogger("split_computing_logger")
 
@@ -31,12 +35,11 @@ class BaseExperiment(ExperimentInterface):
         self.host = host
         self.port = port
         self.model = self.initialize_model()
-        self.data_utils = self.initialize_data_utils()
-        logger.info("BaseExperiment initialized")
+        self.ml_utils = self.initialize_ml_utils()
 
     def initialize_model(self) -> ModelInterface:
         """Initialize and configure the model."""
-        logger.info(f"Initializing model {self.config['model']['model_name']}...")
+        logger.debug(f"Initializing model {self.config['model']['model_name']}...")
         # Import model class dynamically to avoid direct dependency
         model_module = __import__(
             "src.experiment_design.models.model_hooked", fromlist=["WrappedModel"]
@@ -51,7 +54,7 @@ class BaseExperiment(ExperimentInterface):
         model = model_class(config=self.config)
         return model
 
-    def initialize_data_utils(self) -> Any:
+    def initialize_ml_utils(self) -> Any:
         """Initialize data utilities based on the model type."""
         task = self.config["dataset"]["task"]
         class_names_path = self.config["dataset"]["args"]["class_names"]
@@ -60,22 +63,16 @@ class BaseExperiment(ExperimentInterface):
         if isinstance(class_names_path, list):
             class_names = class_names_path
         else:
-            # Load class names from file
             try:
-                with open(class_names_path, "r") as f:
-                    class_names = [line.strip() for line in f]
-                logger.info(f"Loaded {len(class_names)} classes from {class_names_path}")
-                logger.info(f"First 5 classes: {class_names[:5]}")
-                logger.info(f"Last 5 classes: {class_names[-5:]}")
+                class_names = load_text_file(class_names_path)
             except Exception as e:
                 logger.error(f"Failed to load class names from {class_names_path}: {e}")
-            class_names = []
+                class_names = []
 
         if task == "detection":
             return DetectionUtils(class_names=class_names, font_path=font_path)
         elif task == "classification":
             utils = ClassificationUtils(class_names=class_names, font_path=font_path)
-            logger.info(f"Initialized ClassificationUtils with {len(class_names)} classes")
             return utils
 
         raise ValueError(f"Unsupported task type: {task}")
@@ -96,7 +93,7 @@ class BaseExperiment(ExperimentInterface):
             if isinstance(result, tuple):
                 result, layer_outputs = result
 
-            processed = self.data_utils.postprocess(result, original_size)
+            processed = self.ml_utils.postprocess(result, original_size)
 
         return {f"{self.config['model']['model_name']}_results": processed}
 
@@ -105,18 +102,9 @@ class BaseExperiment(ExperimentInterface):
         logger.info(
             f"Running experiment for Model='{self.config['model']['model_name']}' Dataset='{self.config['dataset']['class']}'..."
         )
-        total_layers = self.config["model"]["total_layers"]
-
-        if not total_layers:
-            logger.warning(
-                "Total layers not specified in config. Trying to dynamically get total layers from model..."
-            )
-            total_layers = len(self.model.model.features)
-            logger.info(f"Total layers: {total_layers}")
 
         timing_records = []
-
-        for split_layer in range(1, total_layers):
+        for split_layer in range(1, self.model.layer_count):
             timings = self.test_split_performance(split_layer)
             logger.info(
                 f"Split at layer {split_layer}, Processing Time: {timings[3]:.2f} seconds"
@@ -187,34 +175,16 @@ class BaseExperiment(ExperimentInterface):
         df.to_excel(filename, index=False)
         logger.info(f"Results saved to {filename}")
 
+
 class ExperimentManager:
     """Manages the setup and execution of experiments."""
 
     def __init__(self, config_path: str):
         self.config = read_yaml_file(config_path)
         self.device_manager = DeviceManager()
-        server_devices = self.device_manager.get_devices(device_type="SERVER")
-
-        if not server_devices:
-            raise ValueError("No SERVER device found in the configuration")
-
-        self.server_device = server_devices[0]
-        self.host = (
-            self.server_device.working_cparams.host
-            if self.server_device.working_cparams
-            else None
-        )
-        self.port = (
-            self.server_device.working_cparams.port
-            if self.server_device.working_cparams
-            else None
-        )
-        if self.port is None:
-            logger.warning(
-                "No port specified in device configuration, using default port 12345"
-            )
-            self.port = 12345
-        logger.info("ExperimentManager initialized")
+        self.server_device = self.device_manager.get_device_by_type("SERVER")
+        self.host = self.server_device.get_host()
+        self.port = self.server_device.get_port()
 
     def setup_experiment(self) -> ExperimentInterface:
         """Set up and return an experiment instance."""
@@ -228,4 +198,3 @@ class ExperimentManager:
     ) -> Dict[str, Any]:
         """Process data using the experiment."""
         return experiment.process_data(data)
-

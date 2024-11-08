@@ -15,10 +15,11 @@ class MasterDict:
     """Thread-safe dictionary to store and manage inference data."""
 
     def __init__(self) -> None:
-        """Initialize MasterDict with a reentrant lock and an empty dictionary."""
+        """Initialize MasterDict with a reentrant lock and an empty dictionary.
+        A reentrant lock allows the same thread to acquire the lock multiple times without causing a deadlock."""
         self.lock = threading.RLock()
         self.data: Dict[str, Dict[str, Any]] = {}
-        logger.info("MasterDict initialized")
+        logger.debug("MasterDict initialized")
 
     def set_item(self, inference_id: str, value: Dict[str, Any]) -> None:
         """Set or update the value for a given inference ID."""
@@ -67,7 +68,7 @@ class MasterDict:
         with self.lock:
             for inference_id, layer_data in new_info.items():
                 self.set_item(inference_id, layer_data)
-        logger.info(f"Updated MasterDict with {len(new_info)} new entries")
+        logger.debug(f"Updated MasterDict with {len(new_info)} new entries")
 
     def get_transmission_latency(
         self, inference_id: str, split_layer: int, mb_per_s: float = 4.0
@@ -163,7 +164,7 @@ class MasterDict:
         self, inference_id: str
     ) -> Tuple[int, int, int, int, int, float]:
         """Calculate various metrics for an inference."""
-        logger.info(f"Calculating supermetrics for inference {inference_id}")
+        logger.debug(f"Calculating supermetrics for inference {inference_id}")
         split_layer = self.get_split_layer(inference_id)
         transmission_latency = self.get_transmission_latency(inference_id, split_layer)
         inf_time_client, inf_time_edge = self.get_total_inference_time(inference_id)
@@ -261,7 +262,7 @@ class MasterDict:
 
     def to_pickle(self) -> bytes:
         """Serialize the master dictionary to a pickle byte stream."""
-        logger.info("Serializing MasterDict to pickle")
+        logger.debug("Serializing MasterDict to pickle")
         with self.lock:
             return pickle.dumps(self.data)
 

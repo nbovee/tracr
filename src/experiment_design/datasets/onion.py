@@ -69,7 +69,7 @@ class OnionDataset(BaseDataset):
 
         self.image_files = self._load_image_files()
         self.length = len(self.image_files)
-        logger.info(f"Initialized OnionDataset with {self.length} images.")
+        logger.debug(f"Initialized OnionDataset with {self.length} images.")
 
     def _load_classes(self) -> List[str]:
         """Load class names from the class file."""
@@ -125,7 +125,7 @@ class OnionDataset(BaseDataset):
         try:
             img_path = self.img_dir / image_file
             if img_path.exists():
-                return Image.open(img_path).convert('RGB')
+                return Image.open(img_path).convert("RGB")
         except Exception as e:
             logger.error(f"Error loading original image {image_file}: {e}")
         return None

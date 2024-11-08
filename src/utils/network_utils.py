@@ -13,32 +13,27 @@ logger = logging.getLogger("split_computing_logger")
 class NetworkManager:
     """Manages network connections and communications for split computing."""
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict, host: str, port: int) -> None:
         """Initialize network manager with configuration."""
-        experiment_config = config.get("experiment", {})
-        self.server_host = experiment_config.get("server_host", "10.0.0.245")
-        self.server_port = experiment_config.get("port", 12345)
+        self.config = config
+        self.server_host = host
+        self.server_port = port
         self.client_socket: Optional[socket.socket] = None
 
         # Initialize compression with config settings
-        compression_config = config.get(
-            "compression", {"clevel": 3, "filter": "SHUFFLE", "codec": "ZSTD"}
-        )
+        compression_config = self.config.get("compression")
         self.compress_data = CompressData(compression_config)
-        logger.debug(
-            f"NetworkManager initialized with compression config: {compression_config}"
-        )
 
-    def connect(self, config: dict) -> None:
+    def connect(self) -> None:
         """Establish connection to server and send configuration."""
-        logger.info("Setting up network connection...")
+        logger.debug("Setting up network connection...")
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.client_socket.connect((self.server_host, self.server_port))
             logger.info(f"Connected to server at {self.server_host}:{self.server_port}")
 
             # Send configuration to server
-            config_bytes = pickle.dumps(config)
+            config_bytes = pickle.dumps(self.config)
             self.client_socket.sendall(len(config_bytes).to_bytes(4, "big"))
             self.client_socket.sendall(config_bytes)
 

@@ -29,7 +29,6 @@ model:
   hook_style: <hook_style>       # Where to insert hooks in model layers. Options: 'pre' (before layer execution), 'post' (after layer execution).
   split_layer: <split_layer>     # REQUIRED: Layer index where model will be split. Note: Must be less than total_layers.
   save_layers: <save_layers>     # Layer indices to save intermediate outputs. Useful for debugging and visualization.
-  total_layers: <total_layers>   # REQUIRED: Total number of layers in model. Example: 8 for AlexNet, 23 for YOLOv8.
   num_classes: <num_classes>     # Number of output classes. null: Use model's default. Example: 1000 for ImageNet, 2 for binary classification.
   mode: <mode>                   # Model operation mode. Options: 'eval' (recommended for split inference), 'train'.
   depth: <depth>                         # Depth for recursive model layer exploration. Default is 2.
@@ -58,7 +57,7 @@ dataloader:
   num_workers: <num_workers>        # Number of parallel data loading workers. Adjust based on CPU cores available.
   collate_fn: <collate_fn>          # Collate function name. Options: "imagenet_collate", "onion_collate", null
 
-# EXPERIMENT CONFIGURATIONS
+# COMPRESSION CONFIGURATIONS
 # ------------------------
 compression:
   clevel: <compression_level>  # Compression level [0 - 9] with 9 being maximum compression as default from blosc2.

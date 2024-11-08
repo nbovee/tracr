@@ -150,7 +150,6 @@ model:
   model_name: <your_model>
   input_size: [3, 224, 224]
   split_layer: <split_point>
-  total_layers: <total_layers>
   # ... other settings
 
 dataset:

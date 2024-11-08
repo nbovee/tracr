@@ -1,5 +1,6 @@
-from .model_hooked import WrappedModel
-from .custom import CustomModel
-from .base import BaseModel
+# src/experiment_design/models/__init__.py
 
-__all__ = ["WrappedModel", "BaseModel", "CustomModel"]
+from .base import BaseModel
+from .model_hooked import WrappedModel
+
+__all__ = ["WrappedModel", "BaseModel"]

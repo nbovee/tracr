@@ -27,9 +27,9 @@ from .hooks import (
     HookExitException,
 )
 from .templates import LAYER_TEMPLATE
-from src.api.master_dict import MasterDict
-from src.utils.power_meter import PowerMeter
-from src.interface.bridge import ModelInterface
+from src.api import MasterDict
+# from src.utils import PowerMeter
+from src.interface import ModelInterface
 
 # Register atexit handler to clear CUDA cache
 atexit.register(torch.cuda.empty_cache)
@@ -50,7 +50,7 @@ class WrappedModel(BaseModel, ModelInterface):
         """Initialize WrappedModel with configuration and optional MasterDict."""
         BaseModel.__init__(self, config)
         ModelInterface.__init__(self, config)
-        logger.info(f"Initializing WrappedModel with config: {config}")
+        logger.debug(f"Initializing WrappedModel with config: {config}")
 
         self.timer = time.perf_counter_ns
         self.master_dict = master_dict
@@ -61,7 +61,6 @@ class WrappedModel(BaseModel, ModelInterface):
         self.forward_post_hooks = []
 
         # Load model using the BaseModel's load_model method
-        self.model = self._load_model()
         self.drop_save_dict = getattr(self.model, "save", {})
         logger.debug(f"Model loaded with drop_save_dict: {self.drop_save_dict}")
 
@@ -77,7 +76,7 @@ class WrappedModel(BaseModel, ModelInterface):
         self.model_stop_i: Optional[int] = None
         self.banked_input: Optional[Any] = None
         self.log = False
-        self.power_meter = PowerMeter(self.device)
+        # self.power_meter = PowerMeter(self.device)
         self.warmup(iterations=self.warmup_iterations)
         logger.info("WrappedModel initialization complete")
 
@@ -148,7 +147,7 @@ class WrappedModel(BaseModel, ModelInterface):
     ) -> Any:
         """Performs a forward pass with optional slicing and logging."""
         start_time = time.perf_counter_ns()
-        start_energy = self.power_meter.get_energy()
+        # start_energy = self.power_meter.get_energy()
         end = self.layer_count if end == np.inf else end
         logger.info(
             f"Starting forward pass: inference_id={inference_id}, start={start}, end={end}, log={log}"
@@ -169,7 +168,7 @@ class WrappedModel(BaseModel, ModelInterface):
             self.log = False
 
         self.inference_info["inference_id"] = current_id
-        logger.info(f"Inference {current_id} started.")
+        logger.debug(f"Inference {current_id} started.")
 
         # Run forward pass
         try:
@@ -182,14 +181,14 @@ class WrappedModel(BaseModel, ModelInterface):
             for i in range(self.model_stop_i, self.layer_count):
                 self.forward_info.pop(i, None)
         end_time = time.perf_counter_ns()
-        end_energy = self.power_meter.get_energy()
+        # end_energy = self.power_meter.get_energy()
 
         total_time = end_time - start_time
-        total_energy = end_energy - start_energy
+        # total_energy = end_energy - start_energy
 
         # Update inference info with timing and power usage
         self.inference_info["total_time"] = total_time
-        self.inference_info["total_energy"] = total_energy
+        # self.inference_info["total_energy"] = total_energy
 
         # Handle inference info
         self.inference_info["layer_information"] = self.forward_info
@@ -203,18 +202,18 @@ class WrappedModel(BaseModel, ModelInterface):
         self.inference_info.clear()
         self.forward_info = copy.deepcopy(self.forward_info_empty)
         self.banked_input = None
-        logger.info(f"Inference {current_id} ended.")
+        logger.debug(f"Inference {current_id} ended.")
         return output
 
     def update_master_dict(self) -> None:
         """Flushes the IO buffer to the MasterDict."""
         logger.debug("Updating MasterDict with IO buffer.")
         if self.master_dict and self.io_buffer:
-            logger.info("Flushing IO buffer to MasterDict.")
+            logger.debug("Flushing IO buffer to MasterDict.")
             self.master_dict.update(self.io_buffer)
             self.io_buffer.clear()
         else:
-            logger.info("MasterDict not updated: buffer empty or MasterDict is None.")
+            logger.debug("MasterDict not updated: buffer empty or MasterDict is None.")
 
     def get_state_dict(self) -> Dict[str, Any]:
         """Returns the model's state dictionary."""

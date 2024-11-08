@@ -16,14 +16,14 @@ class ModelRegistry:
     _registry: Dict[str, Callable[..., nn.Module]] = {}
 
     @classmethod
-    def register(cls, name: str) -> Callable:
+    def register(cls, model_name: str) -> Callable:
         """Decorator to register a model class with a given name."""
 
         def inner_wrapper(
             model_cls: Callable[..., nn.Module]
         ) -> Callable[..., nn.Module]:
-            cls._registry[name.lower()] = model_cls
-            logger.info(f"Registered model: {name}")
+            cls._registry[model_name.lower()] = model_cls
+            logger.debug(f"Registered model: {model_name}")
             return model_cls
 
         return inner_wrapper
@@ -31,19 +31,19 @@ class ModelRegistry:
     @classmethod
     def get_model(
         cls,
-        name: str,
+        model_name: str,
         model_config: Dict[str, Any],
         *args: Any,
         **kwargs: Any,
     ) -> nn.Module:
         """Retrieves and initializes the model using the registered loader or dynamically imports it."""
-        name_lower = name.lower()
-        logger.info(f"Attempting to get model: {name}")
+        name_lower = model_name.lower()
+        logger.debug(f"Attempting to get model: {model_name}")
 
         # Check if the model is in the registry
         if name_lower in cls._registry:
             model_loader = cls._registry[name_lower]
-            logger.debug(f"Model '{name}' found in registry")
+            logger.debug(f"Model '{model_name}' found in registry")
             return model_loader(model_config=model_config, *args, **kwargs)
 
         # If not in registry, try to dynamically import
@@ -51,44 +51,44 @@ class ModelRegistry:
             if "yolo" in name_lower:
                 from ultralytics import YOLO  # type: ignore
 
-                logger.debug(f"Loading YOLO model: {name}")
-                weights_path = model_config.get("weight_path", f"{name}.pt")
+                logger.debug(f"Loading YOLO model: {model_name}")
+                weights_path = model_config.get("weight_path", f"{model_name}.pt")
                 model = YOLO(weights_path).model
-                logger.info(f"YOLO model '{name}' loaded successfully")
+                logger.info(f"YOLO model '{model_name}' loaded successfully")
                 return model
 
             elif cls._is_torchvision_model(name_lower):
-                logger.debug(f"Loading torchvision model: {name}")
+                logger.debug(f"Loading torchvision model: {model_name}")
                 torchvision_models = importlib.import_module("torchvision.models")
-                model_class = getattr(torchvision_models, name)
+                model_class = getattr(torchvision_models, model_name)
                 pretrained = model_config.get("pretrained", True)
                 model = model_class(pretrained=pretrained)
                 if model_config.get("weight_path"):
                     model.load_state_dict(torch.load(model_config["weight_path"]))
-                    logger.info(f"Model '{name}' loaded with custom weights")
+                    logger.info(f"Model '{model_name}' loaded with custom weights")
                 else:
-                    logger.info(f"Model '{name}' loaded with pretrained weights")
+                    logger.info(f"Model '{model_name}' loaded with pretrained weights")
                 return model
 
             else:
                 logger.error(
-                    f"Model '{name}' is not registered and cannot be dynamically imported."
+                    f"Model '{model_name}' is not registered and cannot be dynamically imported."
                 )
                 raise ValueError(
-                    f"Model '{name}' is not registered and cannot be dynamically imported."
+                    f"Model '{model_name}' is not registered and cannot be dynamically imported."
                 )
 
         except ImportError as e:
-            logger.exception(f"ImportError while loading model '{name}': {e}")
-            raise ValueError(f"ImportError while loading model '{name}': {e}") from e
+            logger.exception(f"ImportError while loading model '{model_name}': {e}")
+            raise ValueError(f"ImportError while loading model '{model_name}': {e}") from e
         except AttributeError as e:
-            logger.exception(f"AttributeError: Model '{name}' not found in modules.")
+            logger.exception(f"AttributeError: Model '{model_name}' not found in modules.")
             raise ValueError(
-                f"AttributeError: Model '{name}' not found in modules."
+                f"AttributeError: Model '{model_name}' not found in modules."
             ) from e
         except Exception as e:
-            logger.exception(f"Unexpected error loading model '{name}': {e}")
-            raise ValueError(f"Unexpected error loading model '{name}': {e}") from e
+            logger.exception(f"Unexpected error loading model '{model_name}': {e}")
+            raise ValueError(f"Unexpected error loading model '{model_name}': {e}") from e
 
     @classmethod
     def _is_torchvision_model(cls, name_lower: str) -> bool:

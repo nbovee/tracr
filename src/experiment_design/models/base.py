@@ -11,7 +11,7 @@ from torch import Tensor
 from torchvision.transforms import ToTensor  # type: ignore
 
 from .registry import ModelRegistry
-from src.utils.system_utils import get_repo_root, read_yaml_file
+from src.utils import get_repo_root, read_yaml_file
 
 logger = logging.getLogger("split_computing_logger")
 
@@ -22,7 +22,7 @@ class BaseModel(nn.Module):
     def __init__(self, config: Dict[str, Any]):
         """Initialize BaseModel with configuration."""
         super().__init__()
-        logger.info("Initializing BaseModel")
+        logger.debug("Initializing BaseModel")
 
         if not config:
             repo_root = get_repo_root()
@@ -44,10 +44,9 @@ class BaseModel(nn.Module):
 
         # Initialize the model
         self.model = self._load_model()
-        self.total_layers = len(list(self.model.children()))
         self.to_device()
         self.set_mode(self.mode)
-        logger.info("BaseModel initialization complete")
+        logger.debug("BaseModel initialization complete")
 
     def _extract_configurations(self) -> None:
         """Extract configurations from the config dictionary."""
@@ -110,10 +109,10 @@ class BaseModel(nn.Module):
         logger.info(f"Loading model: {self.model_name}")
         try:
             model = ModelRegistry.get_model(
-                self.model_name,
+                model_name=self.model_name,
                 model_config=self.model_config,
             )
-            logger.info(f"Successfully loaded model: {self.model_name}")
+            logger.debug(f"Successfully loaded model: {self.model_name}")
             return model
         except ValueError as e:
             logger.error(f"Error loading model '{self.model_name}': {e}")
@@ -144,7 +143,7 @@ class BaseModel(nn.Module):
 
         self.model.train(mode == "train")
         self.mode = mode
-        logger.info(f"Set model mode to: {self.mode}")
+        logger.debug(f"Set model mode to: {self.mode}")
 
     def get_mode(self) -> str:
         """Return the current mode of the model ('train' or 'eval')."""
@@ -168,7 +167,7 @@ class BaseModel(nn.Module):
 
     def warmup(self, iterations: int = 50) -> None:
         """Perform warmup iterations to initialize the model."""
-        logger.info(f"Starting model warmup with {iterations} iterations")
+        logger.debug(f"Starting model warmup with {iterations} iterations")
         dummy_input = torch.randn(1, *self.input_size, device=self.device)
         original_mode = self.mode
         self.set_mode("eval")
