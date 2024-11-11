@@ -222,6 +222,32 @@ python host.py --config config/yolosplit.yaml
 - Verify SSH service is running on all devices
 - Make sure pkeys contains `server_to_participant.rsa` and `participant_to_server.rsa`
 
+
+---
+
+> If you're using WSL, make sure to fix the permissions of the pkeys. You first need to check how the Windows Driver is mounted in WSL.
+
+```bash
+mount | grep '^C:'
+```
+
+Add these lines to your `/etc/wsl.conf` file:
+
+```bash
+[automount]
+enabled = true
+options = "metadata,umask=22,fmask=11"
+```
+
+Fix the permissions of the pkeys:
+
+```bash
+chmod 700 config/pkeys
+chmod 600 config/pkeys/*.rsa
+```
+
+---
+
 ### Model Issues
 - Verify `split_layer < total_layers`
 - Check `input_size` matches model requirements
