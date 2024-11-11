@@ -1,85 +1,25 @@
-# `tracr`: Remote Adaptive Collaborative Research for AI
+# tracr
 
-A framework for **distributed AI experiments**, enabling split inference between a **server** and **host** device.
+An experimental framework for distributed AI experiments, enabling split inference between **server** and **host** devices. `tracr` allows you to distribute deep learning model computations across multiple devices, optimizing resource utilization and enabling edge computing scenarios.
 
-## Prerequisites
-- Python 3.10 or higher
-- SSH client and server (`openssh-client` and `openssh-server`)
-- CUDA toolkit (for GPU support)
+> [!Warning]
+> tracr is currently an experimental framework intended to explore distributed AI inference patterns. While functional, it is primarily for research and educational purposes.
+
+## Key Features
+
+- **Split Inference**: Distribute model computations between server and edge devices
+- **Adaptive Partitioning**: Automatically determine optimal split points based on device capabilities
+- **Multiple Model Support**: Pre-configured support for popular models (AlexNet, YOLOv8)
+- **Custom Extensions**: Easy integration of custom models and datasets
+- **Secure Communication**: SSH-based secure data transfer between devices
+
+## Install
+
+Requires Python 3.10+
 
 ```bash
-# Install SSH client and server
-
-sudo apt install openssh-server
-sudo apt install openssh-client
-```
-
-## Project Structure
-```
-RACR_AI/
-├── config/                      # Configuration Files
-│   ├── pkeys/                   # SSH keys for device authentication
-│   ├── fonts/                   # Custom fonts for visualization
-│   │   └── DejaVuSans-Bold.ttf  # Default font for detection/classification overlays
-│   ├── devices_template.yaml    # Template for device configuration
-│   └── modelsplit_template.yaml # Template for model configuration
-│
-├── data/                        # Dataset Storage
-│   ├── imagenet/                # ImageNet dataset example
-│   │   ├── sample_images/       # Image files
-│   │   └── imagenet_classes.txt
-│   └── onion/                   # Custom dataset example
-│       ├── testing/             # Test images
-│       └── weights/             # Model weights
-│
-├── src/                         # Source Code
-│   ├── api/                     # Core API components
-│   │   ├── device_mgmt.py       # Device management and SSH connections
-│   │   ├── experiment_mgmt.py   # Experiment execution and management
-│   │   ├── master_dict.py       # Thread-safe data storage for inference
-│   │   └── tasks_mgmt.py        # Task scheduling and management
-│   │
-│   ├── experiment_design/       # Experiment Design Implementation
-│   │   ├── datasets/            # Dataset implementations
-│   │   │   ├── collate_fns.py   # Dataset custom collate functions
-│   │   │   ├── base.py          # Base dataset class
-│   │   │   ├── dataloader.py    # Dataset Factory
-│   │   │   ├── imagenet.py      # ImageNet dataset implementing BaseDataset
-│   │   │   └── onion.py         # Onion dataset implementing BaseDataset
-│   │   │
-│   │   ├── models/              # Model implementations
-│   │   │   ├── base.py          # Base model class
-│   │   │   ├── custom.py        # Custom model implementations
-│   │   |   ├── hooks.py         # Hook functions for model splitting
-│   |   |   ├── model_hooked.py  # Hooked model class
-│   │   │   └── registry.py      # Model registration system
-│   │   │
-│   │   └── partitioners/        # Model splitting strategies
-│   │       ├── iter_partitioner.py    # Iterative splitting
-│   │       └── linreg_partitioner.py  # Linear regression based splitting
-│   │
-│   ├── interface/               # API bridges
-│   │   └── bridge.py            # Interface between API and experiment_design modules
-│   │
-│   └── utils/                   # Utility functions
-│       ├── compression.py       # Data compression for network transfer
-│       ├── logger.py            # Logging utilities
-│       ├── ml_utils.py          # ML-specific utilities (classificiation, detection)
-│       ├── network_utils.py     # Network utilities
-│       ├── power_meter.py       # Power monitoring utilities
-│       ├── ssh.py               # SSH connection utilities
-│       └── system_utils.py      # System operations
-│
-├── tests/                       # Connection and functionality tests
-├── host.py                      # Run on edge/host device for each experiment config
-└── server.py                    # Run once on the server device
-```
-
-## Setup Instructions
-
-### 1. Environment Setup
-```bash
-git clone https://github.com/ali-izhar/tracr.git
+# Clone repository
+git clone https://github.com/nbovee/tracr.git
 cd tracr
 
 # Create and activate virtual environment
@@ -90,224 +30,286 @@ source venv/bin/activate  # Linux/Mac/WSL
 pip install -r requirements.txt
 ```
 
+## Prerequisites
+
+### System Requirements
+- Python 3.10 or higher
+- SSH client and server (`openssh-client` and `openssh-server`)
+- CUDA toolkit (for GPU support)
+
+### Software Installation
+
+#### For Linux/Ubuntu:
+```bash
+# Update package list
+sudo apt update
+
+# Install SSH client and server
+sudo apt install openssh-server openssh-client
+
+# Install CUDA toolkit (if using GPU)
+# Visit https://developer.nvidia.com/cuda-downloads for latest instructions
+```
+
+#### For Windows:
+1. Install OpenSSH:
+   - Open `Settings > Apps > Optional Features`
+   - Add `OpenSSH Client` and `OpenSSH Server`
+   - Or follow [Microsoft's OpenSSH guide](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=gui)
+
+2. Install WSL2 (if needed):
+   ```powershell
+   wsl --install
+   ```
+
+## Quick Start Guide
+
+### 1. Basic Setup
+
+Start with a simple server-host configuration:
+
+1. On the server machine:
+```bash
+python server.py
+```
+
+2. On the host machine:
+```bash
+python host.py --config config/alexnetsplit.yaml
+```
+
+### 2. Pre-configured Experiments
+
+We provide ready-to-use configurations for common scenarios:
+
+#### ImageNet Classification
+```bash
+# Run AlexNet split inference
+python host.py --config config/alexnetsplit.yaml
+```
+
+#### Object Detection
+```bash
+# Run YOLOv8 split inference
+python host.py --config config/yolosplit.yaml
+```
+
+## Detailed Setup Guide
+
+### 1. Project Structure
+```
+tracr/
+├── config/                # Configuration files
+│   ├── pkeys/             # SSH keys directory
+│   ├── devices_config.yaml
+│   └── *split.yaml        # Model configurations
+├── data/                  # Dataset storage
+├── src/                   # Source code
+│   ├── api/               # Core API components
+│   ├── experiment_design/ # Experiment implementations
+│   ├── interface/         # API bridges
+│   └── utils/             # Utility functions
+├── tests/                 # Test suite
+├── host.py                # Host device entry point
+└── server.py              # Server entry point
+```
+
 ### 2. Device Configuration
 
-#### SSH Key Setup
-1. Generate SSH keys on each device:
+#### A. SSH Key Setup
+Generate and exchange SSH keys between devices:
+
 ```bash
-# On Server device
+# On Server Device
 ssh-keygen -t rsa -b 4096 -f ~/.ssh/server_key
-# Copy public key to participant device
+# Enter passphrase (optional)
 ssh-copy-id -i ~/.ssh/server_key.pub user@participant_ip
 
-# On Participant device
+# On Participant Device
 ssh-keygen -t rsa -b 4096 -f ~/.ssh/participant_key
-# Copy public key to server device
 ssh-copy-id -i ~/.ssh/participant_key.pub user@server_ip
 ```
 
-2. Copy private keys to project:
+#### B. Key Installation
 ```bash
-# Create pkeys directory if it doesn't exist
+# Create keys directory
 mkdir -p config/pkeys/
 
-# Copy private keys (do this on each device)
+# Copy private keys
 cp ~/.ssh/server_key config/pkeys/server_to_participant.rsa
 cp ~/.ssh/participant_key config/pkeys/participant_to_server.rsa
 
-# Add the public keys to the authorized_keys file
-cat ~/.ssh/server_key.pub >> ~/.ssh/authorized_keys
-cat ~/.ssh/participant_key.pub >> ~/.ssh/authorized_keys
-
-# Set correct permissions
+# Set proper permissions
 chmod 600 config/pkeys/*.rsa
 ```
 
-If you're using WSL, first check how the Windows Driver is mounted in WSL.
+#### C. Device Configuration
+Create `config/devices_config.yaml`:
+```yaml
+devices:
+  - device_type: SERVER
+    connection_params:
+      - host: <server_ip>        # e.g., 192.168.1.100
+        user: <username>         # your SSH username
+        pkey_fp: server_key.rsa
+        default: true
 
+  - device_type: PARTICIPANT
+    connection_params:
+      - host: <participant_ip>   # e.g., 192.168.1.101
+        user: <username>
+        pkey_fp: participant_key.rsa
+        default: true
+```
+
+### Windows WSL Setup
+
+> [!Note]
+> Required only for Windows users running tracr through WSL.
+
+<details>
+<summary>Click to expand WSL setup instructions</summary>
+
+#### 1. WSL Network Configuration
+Check your WSL network mount:
 ```bash
 mount | grep '^C:'
 ```
 
-Add these lines to your `/etc/wsl.conf` file:
-
+Configure WSL in `/etc/wsl.conf`:
 ```bash
 [automount]
 enabled = true
 options = "metadata,umask=22,fmask=11"
 ```
 
-Fix the permissions of the pkeys:
-
-```bash
-chmod 700 config/pkeys
-chmod 600 config/pkeys/*.rsa
-```
-
-By default, WSL has its own network interface (IP Address 172.x.x.x). You can check your WSL IP address with:
-
-```bash
-wsl hostname -I
-```
-
-**Port Forwarding**: To access services running inside WSL from the Windows host or other devices, you must forward ports from the Windows host to the WSL instance.
-
+#### 2. Port Forwarding Setup
+Run in PowerShell as Administrator:
 ```powershell
-# Forward SSH port (22) to WSL
-netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=22 connectaddress=<wsl_ip> connectport=22
+# Get WSL IP address
+wsl hostname -I
 
-# Forward custom SSH port (12345) to WSL
+# Set up port forwarding
+netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=22 connectaddress=<wsl_ip> connectport=22
 netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=12345 connectaddress=<wsl_ip> connectport=12345
 
-# Verify port forwarding
-netsh interface portproxy show all
-```
-
-**Windows Firewall**: After setting up port forwarding, you may need to adjust the firewall settings to allow traffic through the forwarded ports.
-
-```powershell
-# Allow inbound traffic on the forwarded ports
+# Configure firewall
 New-NetFirewallRule -DisplayName "WSL SSH Port 22" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 22
 New-NetFirewallRule -DisplayName "WSL SSH Port 12345" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 12345
 ```
 
-Once you've made changes to the SSH configuration, restart the SSH service on the WSL instance:
-
+#### 3. SSH Service
 ```bash
 sudo service ssh restart
 ```
+</details>
 
-#### Configure Devices
-1. Copy `config/devices_template.yaml` to `config/devices_config.yaml`
-2. Update the configuration with your device details:
-```yaml
-devices:
-  - device_type: SERVER
-    connection_params:
-      - host: <server_ip>
-        user: <username>
-        pkey_fp: server_to_participant.rsa
-        default: true
+## Extending `tracr`
 
-  - device_type: PARTICIPANT
-    connection_params:
-      - host: <participant_ip>
-        user: <username>
-        pkey_fp: participant_to_server.rsa
-        default: true
+### Adding Custom Models
+
+1. Create your model class in `src/experiment_design/models/custom.py`:
+```python
+from .base import BaseModel
+
+class MyCustomModel(BaseModel):
+    def __init__(self):
+        super().__init__()
+        # Your model initialization
 ```
 
-### 3. Model Configuration
+2. Register in `src/experiment_design/models/registry.py`:
+```python
+from .custom import MyCustomModel
 
-1. Copy `config/modelsplit_template.yaml` to `config/<your_model>split.yaml`
-2. Configure your model settings:
+MODEL_REGISTRY = {
+    'my_custom_model': MyCustomModel,
+    # ... other models
+}
+```
+
+### Adding Custom Datasets
+
+1. Create dataset class in `src/experiment_design/datasets/<dataset_name>.py`:
+```python
+from .base import BaseDataset
+
+class MyDataset(BaseDataset):
+    def __init__(self, root):
+        super().__init__(root)
+        # Your dataset initialization
+```
+
+### Configuration Files
+
+Create new model configurations in `config/`:
 ```yaml
 model:
-  model_name: <your_model>
-  split_layer: <split_point>
-  # ... other settings
+  name: my_custom_model
+  split_layer: 5
+  batch_size: 32
 
 dataset:
-  module: <dataset_module>
-  class: <dataset_class>
+  module: my_dataset
+  class: MyDataset
   args:
-    root: data/<dataset_name>
-    # ... other dataset settings
-```
-
-### 4. Custom Implementation
-
-You can extend the framework by adding custom models, datasets, and experiment designs.
-
-#### Adding Custom Models
-1. Register your model in `src/experiment_design/models/registry.py`
-
-#### Adding Custom Datasets
-1. Create dataset class in `src/experiment_design/datasets/<dataset_name>.py`
-2. Inherit from BaseDataset and implement required methods:
-   - `__init__`
-   - `__len__`
-   - `__getitem__`
-
-#### Adding Config Designs
-1. Create new config in `config/`
-2. Inherit from `config/modelsplit_template.yaml`
-
-## Running Experiments
-
-### 1. Start the Server
-```bash
-# On the server device
-python server.py
-```
-
-### 2. Run the Host
-```bash
-# On the participant device
-python host.py --config config/<your_config>.yaml
-```
-
-## Pre-configured Experiments
-
-### Running ImageNet Classification with AlexNet
-```bash
-# Start server
-python server.py
-
-# On participant
-python host.py --config config/alexnetsplit.yaml
-```
-
-### Running Onion Detection with YOLOv8
-```bash
-# Start server
-python server.py
-
-# On participant
-python host.py --config config/yolosplit.yaml
+    root: data/my_dataset
 ```
 
 ## Troubleshooting
 
-### Connection Issues
-- Verify IP addresses in devices_config.yaml
-- Check SSH key permissions (600)
-- Test SSH connection manually
-- Make sure WSL is configured correctly (if using Windows)
-- Make sure ports in use are not blocked by firewall or used by other applications
-- Dynamic WSL IP: WSL's IP address can change, so you may need to update your port forwarding rules accordingly.
-- Ensure devices are on same network
-- Verify SSH service is running on all devices
-- Make sure pkeys contains `server_to_participant.rsa` and `participant_to_server.rsa`
+<details>
+<summary>Connection Issues</summary>
 
-### Model Issues
-- Verify `split_layer < total_layers`
-- Check `input_size` matches model requirements
-- Ensure dataset paths are correct
-- Validate model weights accessibility
+- **SSH Key Problems**:
+  - Verify key permissions: `ls -l config/pkeys/*.rsa`
+  - Test manual SSH: `ssh -i config/pkeys/server_key.rsa user@host`
+  - Check SSH service: `sudo systemctl status ssh`
 
-### Performance Issues
-- Monitor GPU memory usage
-- Check network bandwidth between devices
-- Verify CPU/GPU utilization
-- Adjust batch size and worker count
+- **Network Issues**:
+  - Confirm devices are on same network
+  - Check firewall settings
+  - Verify ports are not blocked
+</details>
 
-## Contributing
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+<details>
+<summary>Model Issues</summary>
+
+- **Split Layer Problems**:
+  - Ensure `split_layer` is less than total layers
+  - Verify layer compatibility
+  - Check memory requirements
+
+- **Dataset Issues**:
+  - Confirm correct paths in config
+  - Verify dataset format
+  - Check file permissions
+</details>
+
+<details>
+<summary>Performance Issues</summary>
+
+- **Resource Usage**:
+  - Monitor GPU memory: `nvidia-smi`
+  - Check CPU usage: `top`
+  - Verify network bandwidth
+  
+- **Optimization Tips**:
+  - Adjust batch size
+  - Modify worker count
+  - Consider split point optimization
+</details>
 
 ## License
-This project is licensed under the [MIT License](LICENSE).
+
+This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
 
 ## Acknowledgements
 
 ### Font Attribution
-This project uses the DejaVu Sans font (specifically DejaVuSans-Bold.ttf) for detection and classification overlays. DejaVu fonts are based on Bitstream Vera Fonts, with additional characters and styles. They are free software, licensed under a permissive free license.
+This project uses the DejaVu Sans font for detection and classification overlays. DejaVu fonts are based on Bitstream Vera Fonts and are licensed under a [permissive free license](https://dejavu-fonts.github.io/License.html).
 
-DejaVu Fonts License: https://dejavu-fonts.github.io/License.html
-
-## Citing
-
-If you use tracr in your research, please cite:
+## Citation
 
 ```bibtex
 @software{tracr2024,
