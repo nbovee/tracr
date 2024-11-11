@@ -8,11 +8,9 @@ A framework for **distributed AI experiments**, enabling split inference between
 - CUDA toolkit (for GPU support)
 
 ```bash
-# Install SSH requirements
-# For participants (host/edge devices):
-sudo apt install openssh-server
+# Install SSH client and server
 
-# For the server:
+sudo apt install openssh-server
 sudo apt install openssh-client
 ```
 
@@ -81,7 +79,6 @@ RACR_AI/
 
 ### 1. Environment Setup
 ```bash
-# Clone the repository
 git clone https://github.com/ali-izhar/tracr.git
 cd tracr
 
@@ -118,8 +115,66 @@ mkdir -p config/pkeys/
 cp ~/.ssh/server_key config/pkeys/server_to_participant.rsa
 cp ~/.ssh/participant_key config/pkeys/participant_to_server.rsa
 
+# Add the public keys to the authorized_keys file
+cat ~/.ssh/server_key.pub >> ~/.ssh/authorized_keys
+cat ~/.ssh/participant_key.pub >> ~/.ssh/authorized_keys
+
 # Set correct permissions
 chmod 600 config/pkeys/*.rsa
+```
+
+If you're using WSL, first check how the Windows Driver is mounted in WSL.
+
+```bash
+mount | grep '^C:'
+```
+
+Add these lines to your `/etc/wsl.conf` file:
+
+```bash
+[automount]
+enabled = true
+options = "metadata,umask=22,fmask=11"
+```
+
+Fix the permissions of the pkeys:
+
+```bash
+chmod 700 config/pkeys
+chmod 600 config/pkeys/*.rsa
+```
+
+By default, WSL has its own network interface (IP Address 172.x.x.x). You can check your WSL IP address with:
+
+```bash
+wsl hostname -I
+```
+
+**Port Forwarding**: To access services running inside WSL from the Windows host or other devices, you must forward ports from the Windows host to the WSL instance.
+
+```powershell
+# Forward SSH port (22) to WSL
+netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=22 connectaddress=<wsl_ip> connectport=22
+
+# Forward custom SSH port (12345) to WSL
+netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=12345 connectaddress=<wsl_ip> connectport=12345
+
+# Verify port forwarding
+netsh interface portproxy show all
+```
+
+**Windows Firewall**: After setting up port forwarding, you may need to adjust the firewall settings to allow traffic through the forwarded ports.
+
+```powershell
+# Allow inbound traffic on the forwarded ports
+New-NetFirewallRule -DisplayName "WSL SSH Port 22" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 22
+New-NetFirewallRule -DisplayName "WSL SSH Port 12345" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 12345
+```
+
+Once you've made changes to the SSH configuration, restart the SSH service on the WSL instance:
+
+```bash
+sudo service ssh restart
 ```
 
 #### Configure Devices
@@ -218,35 +273,12 @@ python host.py --config config/yolosplit.yaml
 - Verify IP addresses in devices_config.yaml
 - Check SSH key permissions (600)
 - Test SSH connection manually
+- Make sure WSL is configured correctly (if using Windows)
+- Make sure ports in use are not blocked by firewall or used by other applications
+- Dynamic WSL IP: WSL's IP address can change, so you may need to update your port forwarding rules accordingly.
 - Ensure devices are on same network
 - Verify SSH service is running on all devices
 - Make sure pkeys contains `server_to_participant.rsa` and `participant_to_server.rsa`
-
-
----
-
-> If you're using WSL, make sure to fix the permissions of the pkeys. You first need to check how the Windows Driver is mounted in WSL.
-
-```bash
-mount | grep '^C:'
-```
-
-Add these lines to your `/etc/wsl.conf` file:
-
-```bash
-[automount]
-enabled = true
-options = "metadata,umask=22,fmask=11"
-```
-
-Fix the permissions of the pkeys:
-
-```bash
-chmod 700 config/pkeys
-chmod 600 config/pkeys/*.rsa
-```
-
----
 
 ### Model Issues
 - Verify `split_layer < total_layers`
