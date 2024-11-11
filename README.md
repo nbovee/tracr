@@ -1,6 +1,6 @@
 # `tracr`: Remote Adaptive Collaborative Research for AI
 
-A framework for **distributed AI experiments**, enabling split inference across multiple devices. This project allows you to run AI models across different devices, with automatic network management and experiment coordination.
+A framework for **distributed AI experiments**, enabling split inference between a **server** and **host** device.
 
 ## Prerequisites
 - Python 3.10 or higher
@@ -9,7 +9,7 @@ A framework for **distributed AI experiments**, enabling split inference across 
 
 ```bash
 # Install SSH requirements
-# For participants (edge devices):
+# For participants (host/edge devices):
 sudo apt install openssh-server
 
 # For the server:
@@ -43,9 +43,11 @@ RACR_AI/
 │   │
 │   ├── experiment_design/       # Experiment Design Implementation
 │   │   ├── datasets/            # Dataset implementations
-│   │   │   ├── custom.py        # Base dataset class
-│   │   │   ├── imagenet.py      # ImageNet dataset implementation
-│   │   │   └── onion.py         # Custom dataset example
+│   │   │   ├── collate_fns.py   # Dataset custom collate functions
+│   │   │   ├── base.py          # Base dataset class
+│   │   │   ├── dataloader.py    # Dataset Factory
+│   │   │   ├── imagenet.py      # ImageNet dataset implementing BaseDataset
+│   │   │   └── onion.py         # Onion dataset implementing BaseDataset
 │   │   │
 │   │   ├── models/              # Model implementations
 │   │   │   ├── base.py          # Base model class
@@ -59,19 +61,19 @@ RACR_AI/
 │   │       └── linreg_partitioner.py  # Linear regression based splitting
 │   │
 │   ├── interface/               # API bridges
-│   │   └── bridge.py            # Interface between API and experiment modules
+│   │   └── bridge.py            # Interface between API and experiment_design modules
 │   │
 │   └── utils/                   # Utility functions
 │       ├── compression.py       # Data compression for network transfer
 │       ├── logger.py            # Logging utilities
 │       ├── ml_utils.py          # ML-specific utilities (classificiation, detection)
+│       ├── network_utils.py     # Network utilities
 │       ├── power_meter.py       # Power monitoring utilities
 │       ├── ssh.py               # SSH connection utilities
 │       └── system_utils.py      # System operations
 │
-├── results/                     # Experiment results and outputs
 ├── tests/                       # Connection and functionality tests
-├── host.py                      # Run on edge device for each experiment config
+├── host.py                      # Run on edge/host device for each experiment config
 └── server.py                    # Run once on the server device
 ```
 
@@ -80,13 +82,12 @@ RACR_AI/
 ### 1. Environment Setup
 ```bash
 # Clone the repository
-git clone https://github.com/ali-izhar/RACR_AI.git
-cd RACR_AI
+git clone https://github.com/ali-izhar/tracr.git
+cd tracr
 
 # Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-.\venv\Scripts\activate   # Windows
+python3 -m venv venv
+source venv/bin/activate  # Linux/Mac/WSL
 
 # Install dependencies
 pip install -r requirements.txt
@@ -148,7 +149,6 @@ devices:
 ```yaml
 model:
   model_name: <your_model>
-  input_size: [3, 224, 224]
   split_layer: <split_point>
   # ... other settings
 
@@ -162,20 +162,21 @@ dataset:
 
 ### 4. Custom Implementation
 
-The project is designed to be extensible through several key components:
+You can extend the framework by adding custom models, datasets, and experiment designs.
 
 #### Adding Custom Models
-1. Create new model in `src/experiment_design/models/custom.py`
-2. Register it in `src/experiment_design/models/registry.py`
+1. Register your model in `src/experiment_design/models/registry.py`
 
 #### Adding Custom Datasets
-1. Create dataset class in `src/experiment_design/datasets/custom.py`
-2. Inherit from BaseDataset
-3. Implement required methods:
+1. Create dataset class in `src/experiment_design/datasets/<dataset_name>.py`
+2. Inherit from BaseDataset and implement required methods:
    - `__init__`
    - `__len__`
    - `__getitem__`
-   - Data transformation logic
+
+#### Adding Config Designs
+1. Create new config in `config/`
+2. Inherit from `config/modelsplit_template.yaml`
 
 ## Running Experiments
 
@@ -188,10 +189,10 @@ python server.py
 ### 2. Run the Host
 ```bash
 # On the participant device
-python host.py --config config/<your_model>split.yaml
+python host.py --config config/<your_config>.yaml
 ```
 
-## Example Experiments
+## Pre-configured Experiments
 
 ### Running ImageNet Classification with AlexNet
 ```bash
@@ -219,10 +220,11 @@ python host.py --config config/yolosplit.yaml
 - Test SSH connection manually
 - Ensure devices are on same network
 - Verify SSH service is running on all devices
+- Make sure pkeys contains `server_to_participant.rsa` and `participant_to_server.rsa`
 
 ### Model Issues
-- Verify split_layer < total_layers
-- Check input_size matches model requirements
+- Verify `split_layer < total_layers`
+- Check `input_size` matches model requirements
 - Ensure dataset paths are correct
 - Validate model weights accessibility
 
@@ -236,7 +238,7 @@ python host.py --config config/yolosplit.yaml
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the [MIT License](LICENSE).
 
 ## Acknowledgements
 
@@ -251,9 +253,9 @@ If you use tracr in your research, please cite:
 
 ```bibtex
 @software{tracr2024,
-  author = {Nick Bovee, Izhar Ali},
+  author = {Nick Bovee, Izhar Ali, Suraj Bitla, Gopi Patapanchala, Shen-Shyang Ho},
   title = {tracr: Remote Adaptive Collaborative Research for AI},
   year = {2024},
-  url = {https://github.com/ali-izhar/tracr}
+  url = {https://github.com/nbovee/tracr}
 }
 ```
