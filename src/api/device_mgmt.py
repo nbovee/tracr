@@ -200,7 +200,9 @@ class Device:
         if self.working_cparams:
             logger.debug(f"Device is reachable at {self.working_cparams.host}")
         else:
-            logger.warning("Device is not reachable")
+            logger.warning(
+                f"Device {self.device_type} is not reachable on any configured connection"
+            )
 
     def get_host(self) -> str:
         """Get the host address."""

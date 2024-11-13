@@ -11,7 +11,7 @@ import torch
 import torchvision.transforms as transforms  # type: ignore
 from PIL import Image
 
-from .custom import BaseDataset
+from .base import BaseDataset
 
 logger = logging.getLogger("split_computing_logger")
 

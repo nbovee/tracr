@@ -307,35 +307,6 @@ class NetworkedExperiment(BaseExperiment):
         return total_host, total_travel, total_server, total
 
 
-class LocalExperiment(BaseExperiment):
-    """Experiment implementation for local testing."""
-
-    def test_split_performance(
-        self, split_layer: int
-    ) -> Tuple[float, float, float, float]:
-        """Test local split computing performance."""
-        host_times, server_times = [], []
-
-        with torch.no_grad():
-            for input_tensor, _ in tqdm(
-                self.data_loader, desc=f"Testing split at layer {split_layer}"
-            ):
-                # Host processing
-                host_start = time.time()
-                input_tensor = input_tensor.to(self.device)
-                output = self.model(input_tensor, end=split_layer)
-                host_times.append(time.time() - host_start)
-
-                # Server processing
-                server_start = time.time()
-                self.process_data({"input": (output, None), "split_layer": split_layer})
-                server_times.append(time.time() - server_start)
-
-        total_host = sum(host_times)
-        total_server = sum(server_times)
-        return total_host, 0.0, total_server, total_host + total_server
-
-
 class ExperimentManager:
     """Factory class for creating and managing experiments."""
 
@@ -348,12 +319,4 @@ class ExperimentManager:
 
     def setup_experiment(self) -> ExperimentInterface:
         """Create and return an experiment instance."""
-        experiment_type = self.config["default"]["experiment_type"]
-        logger.info(f"Setting up {experiment_type} experiment...")
-
-        if experiment_type == "networked":
-            return NetworkedExperiment(self.config, self.host, self.port)
-        elif experiment_type == "local":
-            return LocalExperiment(self.config, self.host, self.port)
-        else:
-            raise ValueError(f"Unknown experiment type: {experiment_type}")
+        return NetworkedExperiment(self.config, self.host, self.port)

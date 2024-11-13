@@ -8,7 +8,7 @@ from PIL import Image
 import torch
 from torchvision import transforms  # type: ignore
 
-from .custom import BaseDataset
+from .base import BaseDataset
 
 logger = logging.getLogger("split_computing_logger")
 

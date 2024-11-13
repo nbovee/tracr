@@ -1,3 +1,5 @@
+# tests/test_alexnet_imagenet.py
+
 import os
 import sys
 import torch
@@ -11,7 +13,7 @@ if parent_dir not in sys.path:
 
 from src.experiment_design.datasets.imagenet import ImageNetDataset
 from src.utils.system_utils import read_yaml_file
-from src.experiment_design.datasets.collate import COLLATE_FUNCTIONS
+from src.experiment_design.datasets.collate_fns import COLLATE_FUNCTIONS
 
 # Read config file
 config = read_yaml_file("config/alexnetsplit.yaml")

@@ -62,7 +62,7 @@ class ExperimentHost:
         collate_fn = None
         if dataloader_config.get("collate_fn"):
             try:
-                from src.experiment_design.datasets.collate import COLLATE_FUNCTIONS
+                from src.experiment_design.datasets.collate_fns import COLLATE_FUNCTIONS
 
                 collate_fn = COLLATE_FUNCTIONS[dataloader_config["collate_fn"]]
                 logger.debug(

@@ -179,6 +179,14 @@ class Server:
     def start(self) -> None:
         """Start the server to listen for incoming connections."""
         server_device = self.device_manager.get_device_by_type("SERVER")
+        if not server_device:
+            logger.error("No SERVER device configured. Cannot start server.")
+            return
+        
+        if not server_device.is_reachable():
+            logger.error("SERVER device is not reachable. Check network connection.")
+            return
+        
         port = server_device.get_port()
         logger.info(f"Starting server on port {port}...")
 

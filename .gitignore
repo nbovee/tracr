@@ -150,3 +150,6 @@ config/devices_config.yaml
 
 # logs
 logs/*
+
+# .tex files
+*.tex

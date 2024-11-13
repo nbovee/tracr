@@ -10,7 +10,6 @@
 # DEFAULT CONFIGURATIONS
 # ---------------------
 default:
-  experiment_type: <experiment_type> # Options: 'networked', 'local'. Default is 'networked'.
   device: <device>               # Options: 'cuda' (GPU), 'cpu' (CPU). Default is cuda.
   font_path: <font_path>         # Path to font file for visualization; e.g., fonts/DejaVuSans-Bold.ttf.
   save_layer_images: <save_layer_images> # Whether to save intermediate layer images. Default is false.
