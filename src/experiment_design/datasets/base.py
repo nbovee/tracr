@@ -1,4 +1,4 @@
-# src/experiment_design/datasets/custom.py
+# src/experiment_design/datasets/base.py
 
 import logging
 from pathlib import Path

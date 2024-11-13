@@ -40,71 +40,62 @@ class ModelRegistry:
         name_lower = model_name.lower()
         logger.debug(f"Attempting to get model: {model_name}")
 
-        # Check if the model is in the registry
+        # First try to get from registry
         if name_lower in cls._registry:
             model_loader = cls._registry[name_lower]
             logger.debug(f"Model '{model_name}' found in registry")
             return model_loader(model_config=model_config, *args, **kwargs)
 
-        # If not in registry, try to dynamically import
+        # If not in registry, try dynamic import
         try:
+            # Handle YOLO models from ultralytics
             if "yolo" in name_lower:
                 from ultralytics import YOLO  # type: ignore
 
                 logger.debug(f"Loading YOLO model: {model_name}")
-                weights_path = model_config.get("weight_path", f"{model_name}.pt")
+                weights_path = model_config.get("weight_path")
+                if not weights_path:
+                    raise ValueError("weight_path must be provided for YOLO models")
                 model = YOLO(weights_path).model
                 logger.info(f"YOLO model '{model_name}' loaded successfully")
                 return model
 
-            elif "alexnet" in name_lower:
-                from torchvision.models import alexnet  # type: ignore
-
-                logger.debug(f"Loading AlexNet model")
-                model = alexnet(
-                    weights="IMAGENET1K_V1"
-                )  # Use official ImageNet weights
-                logger.info("Loaded AlexNet with ImageNet weights")
-                return model
-
-            elif cls._is_torchvision_model(name_lower):
+            # Handle torchvision models
+            if cls._is_torchvision_model(name_lower):
                 logger.debug(f"Loading torchvision model: {model_name}")
                 torchvision_models = importlib.import_module("torchvision.models")
-                model_class = getattr(torchvision_models, model_name)
-                pretrained = model_config.get("pretrained", True)
-                model = model_class(pretrained=pretrained)
+                model_fn = getattr(torchvision_models, name_lower)
+
+                # Handle different ways of specifying pretrained weights based on torch version
+                torch_version = tuple(map(int, torch.__version__.split(".")[:2]))
+                if torch_version <= (0, 11):
+                    pretrained = model_config.get("pretrained", True)
+                    model = model_fn(pretrained=pretrained)
+                else:
+                    pretrained = model_config.get("pretrained", True)
+                    weights = "IMAGENET1K_V1" if pretrained else None
+                    model = model_fn(weights=weights)
+
+                # Load custom weights if specified
                 if model_config.get("weight_path"):
                     model.load_state_dict(torch.load(model_config["weight_path"]))
                     logger.info(f"Model '{model_name}' loaded with custom weights")
                 else:
-                    logger.info(f"Model '{model_name}' loaded with pretrained weights")
+                    logger.info(
+                        f"Model '{model_name}' loaded with {'pretrained' if pretrained else 'random'} weights"
+                    )
                 return model
 
-            else:
-                logger.error(
-                    f"Model '{model_name}' is not registered and cannot be dynamically imported."
-                )
-                raise ValueError(
-                    f"Model '{model_name}' is not registered and cannot be dynamically imported."
-                )
+            raise ValueError(
+                f"Model '{model_name}' not found in registry or supported frameworks"
+            )
 
         except ImportError as e:
-            logger.exception(f"ImportError while loading model '{model_name}': {e}")
-            raise ValueError(
-                f"ImportError while loading model '{model_name}': {e}"
-            ) from e
-        except AttributeError as e:
-            logger.exception(
-                f"AttributeError: Model '{model_name}' not found in modules."
-            )
-            raise ValueError(
-                f"AttributeError: Model '{model_name}' not found in modules."
-            ) from e
+            logger.exception(f"Failed to import model '{model_name}': {e}")
+            raise
         except Exception as e:
-            logger.exception(f"Unexpected error loading model '{model_name}': {e}")
-            raise ValueError(
-                f"Unexpected error loading model '{model_name}': {e}"
-            ) from e
+            logger.exception(f"Error loading model '{model_name}': {e}")
+            raise
 
     @classmethod
     def _is_torchvision_model(cls, name_lower: str) -> bool:

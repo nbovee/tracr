@@ -182,11 +182,11 @@ class Server:
         if not server_device:
             logger.error("No SERVER device configured. Cannot start server.")
             return
-        
+
         if not server_device.is_reachable():
             logger.error("SERVER device is not reachable. Check network connection.")
             return
-        
+
         port = server_device.get_port()
         logger.info(f"Starting server on port {port}...")
 
