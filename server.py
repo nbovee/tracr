@@ -14,7 +14,7 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 from src.api import (
-    CompressData,
+    DataCompression,
     DeviceManager,
     ExperimentManager,
     DeviceType,
@@ -42,7 +42,7 @@ class Server:
 
     def _setup_compression(self) -> None:
         """Initialize compression with minimal settings."""
-        self.compress_data = CompressData(
+        self.compress_data = DataCompression(
             {
                 "clevel": 1,  # Minimum compression level
                 "filter": "NOFILTER",  # No filtering
@@ -55,7 +55,7 @@ class Server:
         """Update compression settings from received configuration."""
         if "compression" in config:
             logger.debug("Updating compression settings from received config")
-            self.compress_data = CompressData(config["compression"])
+            self.compress_data = DataCompression(config["compression"])
         else:
             logger.warning(
                 "No compression settings in config, keeping minimal settings"

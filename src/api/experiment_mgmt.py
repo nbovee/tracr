@@ -14,7 +14,7 @@ from PIL import Image
 from .device_mgmt import DeviceManager
 from .ml_utils import ClassificationUtils, DetectionUtils
 from .network_utils import NetworkManager
-from .compression import CompressData
+from .data_compression import DataCompression
 
 # Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parents[2]
@@ -149,7 +149,7 @@ class NetworkedExperiment(BaseExperiment):
         super().__init__(config, host, port)
         self.network_manager = NetworkManager(config, host, port)
         compression_config = config.get("compression")
-        self.compress_data = CompressData(compression_config)
+        self.compress_data = DataCompression(compression_config)
         self.task = config["dataset"]["task"]
 
     def process_single_image(

@@ -5,7 +5,7 @@ import socket
 from typing import List, Optional, Tuple
 
 import logging
-from .compression import CompressData
+from .data_compression import DataCompression
 
 logger = logging.getLogger("split_computing_logger")
 
@@ -21,7 +21,7 @@ class NetworkManager:
         self.client_socket: Optional[socket.socket] = None
 
         compression_config = self.config.get("compression")
-        self.compress_data = CompressData(compression_config)
+        self.compress_data = DataCompression(compression_config)
 
     def connect(self) -> None:
         """Establish connection to server and send configuration."""

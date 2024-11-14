@@ -1,6 +1,6 @@
 # src/api/__init__.py
 
-from .compression import CompressData
+from .data_compression import DataCompression
 from .device_mgmt import DeviceManager
 from .experiment_mgmt import ExperimentManager
 from .logger import DeviceType, setup_logger, start_logging_server, shutdown_logging_server
@@ -10,7 +10,7 @@ from .network_utils import NetworkManager
 from .ssh import load_private_key, ssh_connect, SSHSession, DeviceUnavailableException
 
 __all__ = [
-    "CompressData",
+    "DataCompression",
     "DeviceManager",
     "ExperimentManager",
     "setup_logger",
