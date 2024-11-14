@@ -231,7 +231,41 @@ class MyCustomModel(nn.Module):
         return self.model(x)
 ```
 
-#### 2. Adding Pre-trained Model Support
+#### 2. Adding Custom Post-Processing
+
+You can either use pre-defined processors or create custom ones in `src/api/inference_utils.py`:
+
+```python
+from src.api.inference_utils import ModelProcessor, ModelProcessorFactory
+
+# Option 1: Use pre-defined processors
+# For classification models (ImageNet-style):
+"model_name": "my_classification_model"  # Will use ImageNetProcessor
+
+# For detection models (YOLO-style):
+"model_name": "my_detection_model"  # Will use YOLOProcessor
+
+# Option 2: Create custom processor
+class MyCustomProcessor(ModelProcessor):
+    def __init__(self, class_names: List[str], vis_config: VisualizationConfig):
+        self.class_names = class_names
+        self.vis_config = vis_config
+
+    def process_output(self, output: torch.Tensor, original_size: Tuple[int, int]) -> Any:
+        # Your custom processing logic
+        return processed_result
+
+    def visualize_result(self, image: Image.Image, result: Any) -> Image.Image:
+        # Your custom visualization logic
+        return annotated_image
+
+# Register your processor
+ModelProcessorFactory._PROCESSORS.update({
+    "my_model": MyCustomProcessor
+})
+```
+
+#### 3. Adding Pre-trained Model Support
 
 To add support for pre-trained weights and dataset-specific configurations, update the mappings in `src/experiment_design/models/templates.py`:
 
@@ -255,7 +289,7 @@ MODEL_HEAD_TYPES.update({
 })
 ```
 
-#### 3. Configuration File
+#### 4. Configuration File
 
 Create a configuration file for your model in `config/`:
 
@@ -276,7 +310,7 @@ dataset:
     root: data/my_dataset
 ```
 
-#### 4. Using External Model Libraries
+#### 5. Using External Model Libraries
 
 For models from popular libraries (torchvision, ultralytics, etc.), you can use them directly by specifying the model name in the config:
 
@@ -287,17 +321,20 @@ model:
   num_classes: 10  # Will automatically adjust the model architecture
 ```
 
-The registry will automatically:
+The framework will:
 - Load the appropriate pre-trained weights
 - Adjust the model architecture for your dataset
 - Handle different PyTorch versions
 - Provide proper logging
+- Use appropriate post-processing based on model type
 
 > [!Note]
 > - Custom models should inherit from `nn.Module`
 > - The `model_config` parameter in `__init__` is required
 > - The registry supports automatic head adjustment for different numbers of classes
 > - Pre-trained weight handling is automatic if configured in `templates.py`
+> - Post-processing is handled automatically for common model types (classification, detection)
+> - Custom post-processing can be added by extending `ModelProcessor` class
 
 ### Adding Custom Datasets
 
