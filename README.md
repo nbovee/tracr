@@ -294,10 +294,10 @@ The registry will automatically:
 - Provide proper logging
 
 > [!Note]
-> Custom models should inherit from `nn.Module`
-> The `model_config` parameter in `__init__` is required
-> The registry supports automatic head adjustment for different numbers of classes
-> Pre-trained weight handling is automatic if configured in `templates.py`
+> - Custom models should inherit from `nn.Module`
+> - The `model_config` parameter in `__init__` is required
+> - The registry supports automatic head adjustment for different numbers of classes
+> - Pre-trained weight handling is automatic if configured in `templates.py`
 
 ### Adding Custom Datasets
 
