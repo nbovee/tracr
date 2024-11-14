@@ -12,7 +12,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from src.experiment_design.datasets.imagenet import ImageNetDataset
-from src.utils.system_utils import read_yaml_file
+from src.utils.file_manager import read_yaml_file
 from src.experiment_design.datasets.collate_fns import COLLATE_FUNCTIONS
 
 # Read config file
