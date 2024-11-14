@@ -12,7 +12,7 @@ import yaml
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 
-from .remote_connection import SSHKeyHandler
+from .remote_connection import SSHKeyHandler, SSHError, create_ssh_client
 
 # Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parents[2]
@@ -136,22 +136,31 @@ class SSHConnectionParams:
 
     def _set_rsa_key(self, rsa_key_path: Union[Path, str]) -> None:
         """Set the RSA key path and validate it."""
-        rsa_path = (
-            Path(rsa_key_path) if not isinstance(rsa_key_path, Path) else rsa_key_path
-        )
+        try:
+            rsa_path = (
+                Path(rsa_key_path)
+                if not isinstance(rsa_key_path, Path)
+                else rsa_key_path
+            )
 
-        if not rsa_path.is_absolute():
-            rsa_path = project_root / rsa_path
+            if not rsa_path.is_absolute():
+                rsa_path = project_root / rsa_path
 
-        rsa_path = rsa_path.expanduser().absolute()
+            rsa_path = rsa_path.expanduser().absolute()
 
-        if rsa_path.exists() and rsa_path.is_file():
-            self.private_key = SSHKeyHandler.load_key(str(rsa_path))
-            self.private_key_path = rsa_path
-            logger.debug(f"RSA key loaded from {rsa_path}")
-        else:
-            logger.error(f"Invalid RSA key path: {rsa_path}")
-            raise ValueError(f"Invalid RSA key path: {rsa_path}")
+            if rsa_path.exists() and rsa_path.is_file():
+                key_type = SSHKeyHandler.detect_key_type(rsa_path)
+                logger.debug(f"Detected key type: {key_type} for {rsa_path}")
+
+                self.private_key = SSHKeyHandler.load_key(str(rsa_path))
+                self.private_key_path = rsa_path
+                logger.debug(f"SSH key loaded successfully from {rsa_path}")
+            else:
+                logger.error(f"Invalid SSH key path: {rsa_path}")
+                raise ValueError(f"Invalid SSH key path: {rsa_path}")
+        except Exception as e:
+            logger.error(f"Failed to load SSH key: {e}")
+            raise ValueError(f"Failed to load SSH key: {e}")
 
     def is_host_reachable(self) -> bool:
         """Check if the host is reachable."""
@@ -235,6 +244,32 @@ class Device:
             if attr_clean in {"user", "username", "usr", "user name"}:
                 return self.working_cparams.username
         return None
+
+    def execute_remote_command(self, command: str) -> dict:
+        """Execute a command on the remote device."""
+        if not self.is_reachable():
+            raise SSHError("Device is not reachable")
+
+        client = create_ssh_client(
+            host=self.working_cparams.host,
+            user=self.working_cparams.username,
+            private_key_path=self.working_cparams.private_key_path,
+            port=self.working_cparams.port or 22,
+        )
+
+        with client:
+            return client.execute_command(command)
+
+    def transfer_files(self, source: Path, destination: Path) -> None:
+        """Transfer files to the remote device."""
+        if not self.is_reachable():
+            raise SSHError("Device is not reachable")
+
+        with self.create_ssh_client() as client:
+            if source.is_dir():
+                client.transfer_directory(source, destination)
+            else:
+                client.transfer_file(source, destination)
 
 
 # -------------------- Device Manager --------------------
@@ -322,3 +357,35 @@ class DeviceManager:
             yaml.dump(serialized_devices, file)
         logger.info(f"Saved {len(self.devices)} devices")
 
+    def execute_command_on_devices(
+        self, command: str, device_type: str = None
+    ) -> dict[str, dict]:
+        """Execute a command on all matching devices."""
+        results = {}
+        devices = self.get_devices(available_only=True, device_type=device_type)
+
+        for device in devices:
+            try:
+                results[device.get_host()] = device.execute_remote_command(command)
+            except SSHError as e:
+                logger.error(f"Failed to execute command on {device.get_host()}: {e}")
+                results[device.get_host()] = {"success": False, "error": str(e)}
+
+        return results
+
+    def transfer_to_devices(
+        self, source: Path, destination: Path, device_type: str = None
+    ) -> dict[str, bool]:
+        """Transfer files to all matching devices."""
+        results = {}
+        devices = self.get_devices(available_only=True, device_type=device_type)
+
+        for device in devices:
+            try:
+                device.transfer_files(source, destination)
+                results[device.get_host()] = True
+            except SSHError as e:
+                logger.error(f"Failed to transfer files to {device.get_host()}: {e}")
+                results[device.get_host()] = False
+
+        return results

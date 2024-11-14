@@ -97,7 +97,7 @@ class SSHKeyHandler:
         """Load an SSH key from file."""
         try:
             key_type = SSHKeyHandler.detect_key_type(key_path)
-            
+
             if key_type == SSHKeyType.RSA:
                 return paramiko.RSAKey.from_private_key_file(str(key_path))
             elif key_type == SSHKeyType.ED25519:
@@ -111,11 +111,12 @@ class SSHKeyHandler:
                         return paramiko.Ed25519Key.from_private_key_file(str(key_path))
                     except:
                         raise SSHError(f"Unsupported key type for file: {key_path}")
-                        
+
         except paramiko.PasswordRequiredException:
             raise AuthenticationError(f"Key file {key_path} requires passphrase")
         except Exception as e:
             raise SSHError(f"Failed to load key: {e}")
+
 
 class SSHClient:
     """Manages SSH connections and operations."""
