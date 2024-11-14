@@ -9,11 +9,10 @@ from pathlib import Path
 
 import ipaddress
 import yaml
-from plumbum import SshMachine
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 
-from .ssh import load_private_key, SSHSession, DeviceUnavailableException
+from .remote_connection import SSHKeyHandler
 
 # Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parents[2]
@@ -147,7 +146,7 @@ class SSHConnectionParams:
         rsa_path = rsa_path.expanduser().absolute()
 
         if rsa_path.exists() and rsa_path.is_file():
-            self.private_key = load_private_key(str(rsa_path))
+            self.private_key = SSHKeyHandler.load_key(str(rsa_path))
             self.private_key_path = rsa_path
             logger.debug(f"RSA key loaded from {rsa_path}")
         else:
@@ -237,24 +236,6 @@ class Device:
                 return self.working_cparams.username
         return None
 
-    def to_ssh_machine(self) -> SshMachine:
-        """Convert the active connection to a plumbum SshMachine to execute and manage
-        remote shell commands programmatically using the active SSH connection."""
-        if self.working_cparams:
-            logger.debug(f"Creating SshMachine for device {self.device_type}")
-            return SshMachine(
-                self.working_cparams.host,
-                user=self.working_cparams.username,
-                keyfile=str(self.working_cparams.private_key_path),
-                ssh_opts=["-o StrictHostKeyChecking=no"],
-            )
-        logger.error(
-            f"Cannot create SshMachine for device {self.device_type}: not available"
-        )
-        raise DeviceUnavailableException(
-            f"Cannot create SshMachine for device {self.device_type}: not available."
-        )
-
 
 # -------------------- Device Manager --------------------
 
@@ -341,17 +322,3 @@ class DeviceManager:
             yaml.dump(serialized_devices, file)
         logger.info(f"Saved {len(self.devices)} devices")
 
-
-# -------------------- SSH Session Factory --------------------
-
-
-def create_ssh_session(
-    host: str,
-    username: str,
-    private_key_path: Union[Path, str],
-    port: int = 22,
-    timeout: float = 10.0,
-) -> SSHSession:
-    """Instantiate and return an SSHSession for the given parameters."""
-    logger.debug(f"Creating SSHSession for {username}@{host}")
-    return SSHSession(host, username, private_key_path, port, timeout)

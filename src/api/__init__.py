@@ -7,7 +7,14 @@ from .logger import DeviceType, setup_logger, start_logging_server, shutdown_log
 from .master_dict import MasterDict
 from .ml_utils import ClassificationUtils, DetectionUtils
 from .network_utils import NetworkManager
-from .ssh import load_private_key, ssh_connect, SSHSession, DeviceUnavailableException
+from .remote_connection import (
+    SSHKeyHandler,
+    SSHClient,
+    SSHLogger,
+    create_ssh_client,
+    DEFAULT_PORT,
+    DEFAULT_TIMEOUT,
+)
 
 __all__ = [
     "DataCompression",
@@ -21,8 +28,10 @@ __all__ = [
     "ClassificationUtils",
     "DetectionUtils",
     "NetworkManager",
-    "load_private_key",
-    "ssh_connect",
-    "SSHSession",
-    "DeviceUnavailableException",
+    "SSHKeyHandler",
+    "SSHClient",
+    "SSHLogger",
+    "create_ssh_client",
+    "DEFAULT_PORT",
+    "DEFAULT_TIMEOUT",
 ]
