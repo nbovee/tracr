@@ -60,12 +60,12 @@ class NetworkError(Exception):
 class DataCompression:
     """Handles network data compression and communication."""
 
-    def __init__(self, compression_config: Dict[str, Any]) -> None:
+    def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize compression handler with configuration."""
         self.config = CompressionConfig(
-            clevel=compression_config.get("clevel", 3),
-            filter=compression_config.get("filter", "NOSHUFFLE"),
-            codec=compression_config.get("codec", "ZSTD"),
+            clevel=config.get("clevel", 3),
+            filter=config.get("filter", "NOSHUFFLE"),
+            codec=config.get("codec", "ZSTD"),
         )
 
     def compress_data(self, data: Any) -> Tuple[bytes, int]:

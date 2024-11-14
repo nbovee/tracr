@@ -11,10 +11,10 @@ import torch
 from tqdm import tqdm
 from PIL import Image
 
+from .data_compression import DataCompression
 from .device_mgmt import DeviceManager
 from .ml_utils import ClassificationUtils, DetectionUtils
-from .network_utils import NetworkManager
-from .data_compression import DataCompression
+from .network_client import create_network_client
 
 # Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parents[2]
@@ -147,9 +147,8 @@ class NetworkedExperiment(BaseExperiment):
 
     def __init__(self, config: Dict[str, Any], host: str, port: int):
         super().__init__(config, host, port)
-        self.network_manager = NetworkManager(config, host, port)
-        compression_config = config.get("compression")
-        self.compress_data = DataCompression(compression_config)
+        self.network_client = create_network_client(config, host, port)
+        self.compress_data = DataCompression(config.get("compression"))
         self.task = config["dataset"]["task"]
 
     def process_single_image(
@@ -190,7 +189,7 @@ class NetworkedExperiment(BaseExperiment):
 
             # Network transfer and server processing
             travel_start = time.time()
-            server_response = self.network_manager.communicate_with_server(
+            server_response = self.network_client.process_split_computation(
                 split_layer, compressed_output
             )
             travel_time = time.time() - travel_start

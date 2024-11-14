@@ -10,7 +10,7 @@ from .log_manager import (
 )
 from .master_dict import MasterDict
 from .ml_utils import ClassificationUtils, DetectionUtils
-from .network_utils import NetworkManager
+from .network_client import create_network_client
 from .remote_connection import (
     SSHKeyHandler,
     SSHClient,
@@ -30,7 +30,7 @@ __all__ = [
     "MasterDict",
     "ClassificationUtils",
     "DetectionUtils",
-    "NetworkManager",
+    "create_network_client",
     "SSHKeyHandler",
     "SSHClient",
     "SSHLogger",

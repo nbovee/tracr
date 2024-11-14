@@ -15,7 +15,6 @@ from src.api import (
     DeviceType,
     ExperimentManager,
     start_logging_server,
-    shutdown_logging_server,
 )
 from src.experiment_design.datasets import DataManager
 from src.utils import read_yaml_file
@@ -31,10 +30,7 @@ class ExperimentHost:
 
         self.experiment_manager = ExperimentManager(self.config)
         self.experiment = self.experiment_manager.setup_experiment()
-
-        # Set up network connection before setting up dataloader
         self._setup_network_connection()
-
         self.setup_dataloader()
         self.experiment.data_loader = self.data_loader
 
@@ -141,8 +137,8 @@ class ExperimentHost:
         """Clean up resources and copy results."""
         logger.info("Starting cleanup process...")
         try:
-            if hasattr(self.experiment, "network_manager"):
-                self.experiment.network_manager.cleanup()
+            if hasattr(self.experiment, "network_client"):
+                self.experiment.network_client.cleanup()
             self._copy_results_to_server()
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
@@ -160,9 +156,9 @@ class ExperimentHost:
                 f"Server device info - Host: {server_device.get_host()}, Port: {server_device.get_port()}"
             )
 
-            if hasattr(self.experiment, "network_manager"):
+            if hasattr(self.experiment, "network_client"):
                 logger.debug("Attempting to connect to server...")
-                self.experiment.network_manager.connect()
+                self.experiment.network_client.connect()
                 logger.info(
                     f"Successfully connected to server at {server_device.get_host()}:{server_device.get_port()}"
                 )
@@ -192,9 +188,7 @@ if __name__ == "__main__":
     host = None
     try:
         host = ExperimentHost(str(config_path))
-        # Add debug statement to verify logger
         logger = logging.getLogger("split_computing_logger")
-        logger.info("About to start experiment - logger check")
         host.run_experiment()
     except KeyboardInterrupt:
         if logger:
