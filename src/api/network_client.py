@@ -53,13 +53,13 @@ class SplitComputeClient:
                 config_bytes = pickle.dumps(self.config)
                 self.socket.sendall(len(config_bytes).to_bytes(HEADER_SIZE, "big"))
                 self.socket.sendall(config_bytes)
-                
+
                 # Verify connection
                 ack = self.socket.recv(len(ACK_MESSAGE))
                 if ack != ACK_MESSAGE:
                     raise NetworkError("Server failed to acknowledge configuration")
                 logger.info("Server acknowledged configuration")
-                
+
         except Exception as e:
             raise NetworkError(f"Connection setup failed: {e}") from e
 
