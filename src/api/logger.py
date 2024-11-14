@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional
 from logging.handlers import RotatingFileHandler, SocketHandler
 from rich.logging import RichHandler
 
-from .system_utils import get_repo_root
+from src.utils import get_repo_root
 
 # Constants
 LOGS_DIR = Path(get_repo_root()) / "logs"

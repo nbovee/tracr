@@ -13,9 +13,10 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api import DeviceManager, ExperimentManager
-from src.utils import (
+from src.api import (
     CompressData,
+    DeviceManager,
+    ExperimentManager,
     DeviceType,
     setup_logger,
     start_logging_server,

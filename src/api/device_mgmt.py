@@ -13,17 +13,14 @@ from plumbum import SshMachine
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 
+from .ssh import load_private_key, SSHSession, DeviceUnavailableException
+
 # Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.utils import (
-    get_repo_root,
-    load_private_key,
-    SSHSession,
-    DeviceUnavailableException,
-)
+from src.utils import get_repo_root
 
 logger = logging.getLogger("split_computing_logger")
 

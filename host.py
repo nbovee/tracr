@@ -11,13 +11,9 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api import ExperimentManager
+from src.api import DeviceType, setup_logger, ExperimentManager
 from src.experiment_design.datasets import DataManager
-from src.utils import (
-    DeviceType,
-    read_yaml_file,
-    setup_logger,
-)
+from src.utils import read_yaml_file
 
 
 class ExperimentHost:
@@ -94,7 +90,7 @@ class ExperimentHost:
     def _copy_results_to_server(self) -> None:
         """Copy results to the server using SSH utilities."""
         try:
-            from src.utils.ssh import SSHSession
+            from src.api import SSHSession
 
             server_device = self.experiment_manager.device_manager.get_device_by_type(
                 "SERVER"

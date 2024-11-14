@@ -11,20 +11,18 @@ import torch
 from tqdm import tqdm
 from PIL import Image
 
+from .device_mgmt import DeviceManager
+from .ml_utils import ClassificationUtils, DetectionUtils
+from .network_utils import NetworkManager
+from .compression import CompressData
+
 # Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api.device_mgmt import DeviceManager
 from src.interface import ExperimentInterface, ModelInterface
-from src.utils import (
-    ClassificationUtils,
-    DetectionUtils,
-    NetworkManager,
-    CompressData,
-    load_text_file,
-)
+from src.utils import load_text_file
 
 logger = logging.getLogger("split_computing_logger")
 
