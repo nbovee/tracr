@@ -3,15 +3,14 @@
 An experimental framework for distributed AI experiments, enabling split inference between **server** and **host** devices. `tracr` allows you to distribute deep learning model computations across multiple devices, optimizing resource utilization and enabling edge computing scenarios.
 
 > [!Warning]
-> tracr is currently an experimental framework intended to explore distributed AI inference patterns. While functional, it is primarily for research and educational purposes.
+> `tracr` is currently an experimental framework intended to explore distributed AI inference patterns. While functional, it is primarily for research and educational purposes.
 
 ## Key Features
 
 - **Split Inference**: Distribute model computations between server and edge devices
 - **Adaptive Partitioning**: Automatically determine optimal split points based on device capabilities
-- **Multiple Model Support**: Pre-configured support for popular models (AlexNet, YOLOv8)
+- **Multiple Model Support**: Pre-configured support for torchvision models and ultralytics YOLO models
 - **Custom Extensions**: Easy integration of custom models and datasets
-- **Secure Communication**: SSH-based secure data transfer between devices
 
 ## Install
 
@@ -208,25 +207,97 @@ sudo service ssh restart
 
 ### Adding Custom Models
 
-1. Create your model class in `src/experiment_design/models/custom.py`:
-```python
-from .base import BaseModel
+There are several ways to add custom models to `tracr`:
 
-class MyCustomModel(BaseModel):
-    def __init__(self):
+#### 1. Using the Model Registry Decorator
+
+The simplest way is to use the `@ModelRegistry.register` decorator:
+
+```python
+from torch import nn, Tensor
+from typing import Dict, Any
+from experiment_design.models.registry import ModelRegistry
+
+@ModelRegistry.register("my_custom_model")
+class MyCustomModel(nn.Module):
+    def __init__(self, model_config: Dict[str, Any], **kwargs) -> None:
         super().__init__()
         # Your model initialization
+        self.model = nn.Sequential(
+            # Your model layers
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.model(x)
 ```
 
-2. Register in `src/experiment_design/models/registry.py`:
+#### 2. Adding Pre-trained Model Support
+
+To add support for pre-trained weights and dataset-specific configurations, update the mappings in `src/experiment_design/models/templates.py`:
+
 ```python
-from .custom import MyCustomModel
+# Add dataset-specific weights
+DATASET_WEIGHTS_MAP.update({
+    "my_dataset": "MY_DATASET_WEIGHTS_V1"
+})
 
-MODEL_REGISTRY = {
-    'my_custom_model': MyCustomModel,
-    # ... other models
-}
+# Add model-specific weights for different datasets
+MODEL_WEIGHTS_MAP.update({
+    "my_custom_model": {
+        "my_dataset": "MY_DATASET_WEIGHTS_V1",
+        "imagenet": "IMAGENET1K_V1"
+    }
+})
+
+# Add head type mapping if your model has a custom classification head
+MODEL_HEAD_TYPES.update({
+    "my_head_attr": ["my_custom_model"]
+})
 ```
+
+#### 3. Configuration File
+
+Create a configuration file for your model in `config/`:
+
+```yaml
+# config/my_custom_split.yaml
+model:
+  model_name: my_custom_model
+  pretrained: true
+  weight_path: path/to/weights.pt  # Optional
+  input_size: [3, 224, 224]
+  split_layer: 5
+  num_classes: 10  # Will automatically adjust the model head
+
+dataset:
+  module: my_dataset
+  class: MyDataset
+  args:
+    root: data/my_dataset
+```
+
+#### 4. Using External Model Libraries
+
+For models from popular libraries (torchvision, ultralytics, etc.), you can use them directly by specifying the model name in the config:
+
+```yaml
+model:
+  model_name: resnet50  # or yolov8s, vit_b_16, etc.
+  pretrained: true
+  num_classes: 10  # Will automatically adjust the model architecture
+```
+
+The registry will automatically:
+- Load the appropriate pre-trained weights
+- Adjust the model architecture for your dataset
+- Handle different PyTorch versions
+- Provide proper logging
+
+> [!Note]
+> Custom models should inherit from `nn.Module`
+> The `model_config` parameter in `__init__` is required
+> The registry supports automatic head adjustment for different numbers of classes
+> Pre-trained weight handling is automatic if configured in `templates.py`
 
 ### Adding Custom Datasets
 
