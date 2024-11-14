@@ -3,9 +3,8 @@
 from .data_compression import DataCompression
 from .device_mgmt import DeviceManager
 from .experiment_mgmt import ExperimentManager
-from .logger import (
+from .log_manager import (
     DeviceType,
-    setup_logger,
     start_logging_server,
     shutdown_logging_server,
 )
@@ -25,7 +24,6 @@ __all__ = [
     "DataCompression",
     "DeviceManager",
     "ExperimentManager",
-    "setup_logger",
     "start_logging_server",
     "shutdown_logging_server",
     "DeviceType",

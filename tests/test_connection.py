@@ -14,7 +14,12 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from src.utils.file_manager import read_yaml_file, get_repo_root
-from src.api import setup_logger, DeviceType, ssh_connect
+from src.api import (
+    DeviceType,
+    ssh_connect,
+    start_logging_server,
+    shutdown_logging_server,
+)
 
 init(autoreset=True)
 
@@ -167,7 +172,8 @@ def main():
 
         # Initialize logger with SERVER device type
         global logger
-        logger = setup_logger(device=DeviceType.SERVER, config=config)
+        logging_server = start_logging_server(device=DeviceType.SERVER, config=config)
+        logger = logging.getLogger("split_computing_logger")
         logger.info("Starting SSH connectivity checks")
 
         checker = ConnectivityChecker(config)
@@ -184,13 +190,7 @@ def main():
             )
             sys.exit(1)
     finally:
-        # Close loggers with a timeout using threading
-        if logger and logger.handlers:
-            shutdown_thread = threading.Thread(target=close_loggers, args=(logger,))
-            shutdown_thread.start()
-            shutdown_thread.join(timeout=5)  # 5-second timeout
-            if shutdown_thread.is_alive():
-                print("Logging shutdown timed out. Forcing exit.")
+        shutdown_logging_server(logging_server)
 
         # Force exit
         os._exit(0)

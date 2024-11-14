@@ -1,5 +1,6 @@
 # server.py
 
+import logging
 import pickle
 import socket
 import sys
@@ -18,14 +19,13 @@ from src.api import (
     DeviceManager,
     ExperimentManager,
     DeviceType,
-    setup_logger,
     start_logging_server,
     shutdown_logging_server,
 )
 
 default_config = {"logging": {"log_file": "logs/server.log", "log_level": "INFO"}}
-logger = setup_logger(device=DeviceType.SERVER, config=default_config)
-logging_server = start_logging_server()
+logging_server = start_logging_server(device=DeviceType.SERVER, config=default_config)
+logger = logging.getLogger("split_computing_logger")
 
 
 class Server:

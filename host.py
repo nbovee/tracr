@@ -11,7 +11,12 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api import DeviceType, setup_logger, ExperimentManager
+from src.api import (
+    DeviceType,
+    ExperimentManager,
+    start_logging_server,
+    shutdown_logging_server,
+)
 from src.experiment_design.datasets import DataManager
 from src.utils import read_yaml_file
 
@@ -45,7 +50,10 @@ class ExperimentHost:
             "logging": {"log_file": default_log_file, "log_level": default_log_level},
             "model": {"log_file": model_log_file} if model_log_file else {},
         }
-        logger = setup_logger(device=DeviceType.PARTICIPANT, config=logger_config)
+        self.logging_host = start_logging_server(
+            device=DeviceType.PARTICIPANT, config=logger_config
+        )
+        logger = logging.getLogger("split_computing_logger")
         logger.info(f"Initializing experiment host with config from {config_path}")
 
     def setup_dataloader(self) -> None:
