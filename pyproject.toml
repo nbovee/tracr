@@ -1,0 +1,18 @@
+[project]
+name = "tracr"
+version = "0.3.0"
+description = "hook-based model agnostic runtime splitting of pytorch models"
+readme = "README.md"
+authors = [
+    { name = "nbovee", email = "12849851+nbovee@users.noreply.github.com" },
+    { name = "ali-izhar", email = "54752570+ali-izhar@users.noreply.github.com"}
+]
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+tracr = "tracr:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
