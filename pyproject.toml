@@ -5,11 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "tracr"
 version = "0.1.0"
-description = "A distributed neural network splitting framework"
+description = "An experimental framework for computational offloading and distributed neural network inference through split computing"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 authors = [
-    { name = "Your Name", email = "your.email@example.com" }
+    { name = "Izhar Ali", email = "izharali.skt@gmail.com" }
 ]
 # Core dependencies that are absolutely required
 dependencies = [
