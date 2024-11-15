@@ -91,10 +91,7 @@ class Server:
         """Process received data through model and return results."""
         server_start_time = time.time()
         processed_result = experiment.process_data(
-            {
-                "input": (output, original_size),
-                "split_layer": split_layer_index
-            }
+            {"input": (output, original_size), "split_layer": split_layer_index}
         )
         return processed_result, time.time() - server_start_time
 

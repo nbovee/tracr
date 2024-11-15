@@ -1,4 +1,4 @@
-# src/api/file_manager.py
+# src/utils/file_manager.py
 
 import logging
 from dataclasses import dataclass

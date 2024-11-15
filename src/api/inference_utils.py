@@ -13,7 +13,7 @@ import cv2  # type: ignore
 logger = logging.getLogger("split_computing_logger")
 
 # Constants
-DEFAULT_FONT_SIZE: Final[int] = 20
+DEFAULT_FONT_SIZE: Final[int] = 10
 DEFAULT_CONF_THRESHOLD: Final[float] = 0.25
 DEFAULT_IOU_THRESHOLD: Final[float] = 0.45
 DEFAULT_INPUT_SIZE: Final[Tuple[int, int]] = (224, 224)
@@ -85,7 +85,9 @@ class ImageNetProcessor(ModelProcessor):
         predictions = self.predictor.predict_top_k(output)
         self.predictor.log_predictions(predictions)
         top_pred = predictions[0]
-        logger.info(f"Top prediction: {top_pred[0]} with confidence {round(top_pred[1], 2)}")
+        logger.info(
+            f"Top prediction: {top_pred[0]} with confidence {round(top_pred[1], 2)}"
+        )
         return {"class_name": top_pred[0], "confidence": top_pred[1]}
 
     def visualize_result(
@@ -127,12 +129,12 @@ class YOLOProcessor(ModelProcessor):
         """Process detection output."""
         detections = self.detector.process_detections(output, original_size)
         logger.info(f"{len(detections)} detections found")
-        logger.info(f"Detections: {detections}")
+        logger.debug(f"Detections: {detections}")
         return [
             {
                 "box": box,  # [x1, y1, w, h]
                 "confidence": float(score),  # Ensure score is a float
-                "class_name": self.class_names[int(class_id)]  # Ensure class_id is int
+                "class_name": self.class_names[int(class_id)],  # Ensure class_id is int
             }
             for box, score, class_id in detections
         ]
@@ -187,7 +189,7 @@ class ModelProcessorFactory:
 
         if processor_class == YOLOProcessor:
             det_config = DetectionConfig(
-                input_size=tuple(model_config.get("input_size", DEFAULT_INPUT_SIZE)),
+                input_size=tuple(model_config["input_size"][1:]),
                 conf_threshold=model_config.get(
                     "conf_threshold", DEFAULT_CONF_THRESHOLD
                 ),
@@ -287,10 +289,15 @@ class PredictionVisualizer:
         # Draw background
         background = Image.new(
             "RGBA",
-            (max_width + 2 * self.config.padding, total_height + 2 * self.config.padding),
+            (
+                max_width + 2 * self.config.padding,
+                total_height + 2 * self.config.padding,
+            ),
             self.config.bg_color,
         )
-        image.paste(background, (x - self.config.padding, y - self.config.padding), background)
+        image.paste(
+            background, (x - self.config.padding, y - self.config.padding), background
+        )
 
         # Draw texts
         current_y = y
@@ -309,62 +316,59 @@ class YOLODetector:
         self.class_names = class_names
         self.config = config
 
-    def _scale_box(self, box: np.ndarray, x_factor: float, y_factor: float) -> List[int]:
+    def _scale_box(
+        self, box: np.ndarray, x_factor: float, y_factor: float
+    ) -> List[int]:
         """Scale detection box to original image size."""
         # YOLO format is [x_center, y_center, width, height]
-        x_center, y_center, width, height = box
-        
-        # Convert from center coordinates to top-left coordinates
-        x1 = (x_center - width/2) * x_factor
-        y1 = (y_center - height/2) * y_factor
-        w = width * x_factor
-        h = height * y_factor
-        
-        # Return [x1, y1, width, height] format
-        return [
-            int(max(0, x1)),  # ensure non-negative
-            int(max(0, y1)),
-            int(w),
-            int(h)
-        ]
+        x, y, w, h = box
+
+        # Scale dimensions
+        w = w * x_factor
+        h = h * y_factor
+
+        # Scale center coordinates
+        x = x * x_factor
+        y = y * y_factor
+
+        # Convert to top-left format
+        left = int(x - w / 2)
+        top = int(y - h / 2)
+        width = int(w)
+        height = int(h)
+
+        return [left, top, width, height]
 
     def process_detections(
         self, outputs: torch.Tensor, original_img_size: Tuple[int, int]
     ) -> List[Tuple[List[int], float, int]]:
         """Process YOLO detection outputs to bounding boxes."""
         outputs = self._prepare_outputs(outputs)
-        
+        rows = outputs.shape[0]
+
         # Get scaling factors
         img_w, img_h = original_img_size
-        x_factor = img_w / self.config.input_size[0]
-        y_factor = img_h / self.config.input_size[1]
-
+        input_h, input_w = self.config.input_size
+        x_factor = float(img_w) / float(input_w)
+        y_factor = float(img_h) / float(input_h)
         boxes, scores, class_ids = [], [], []
-        
-        # Process each detection
-        for detection in outputs:
-            # Get confidence scores for each class
+
+        for i in range(rows):
+            detection = outputs[i]
             class_scores = detection[4:]
             class_id = np.argmax(class_scores)
             confidence = class_scores[class_id]
-            
-            # Ensure class_id is within valid range
-            if class_id >= len(self.class_names):
-                logger.warning(f"Invalid class id {class_id}, skipping detection")
-                continue
-                
+
             if confidence >= self.config.conf_threshold:
-                # Scale box coordinates
                 box = self._scale_box(detection[:4], x_factor, y_factor)
-                
-                # Skip invalid boxes
-                if any(coord < 0 or coord > max(img_w, img_h) * 2 for coord in box):
-                    logger.warning(f"Invalid box coordinates {box}, skipping detection")
-                    continue
-                    
-                boxes.append(box)
-                scores.append(float(confidence))
-                class_ids.append(int(class_id))
+
+                # Basic validation
+                if box[2] > 0 and box[3] > 0:  # width and height must be positive
+                    boxes.append(box)
+                    scores.append(float(confidence))
+                    class_ids.append(int(class_id))
+                else:
+                    logger.debug(f"Skipping invalid box {box}")
 
         # Apply NMS
         if boxes:
@@ -372,12 +376,12 @@ class YOLODetector:
                 indices = cv2.dnn.NMSBoxes(
                     boxes, scores, self.config.conf_threshold, self.config.iou_threshold
                 ).flatten()
-                
+
                 return [(boxes[i], scores[i], class_ids[i]) for i in indices]
             except Exception as e:
                 logger.error(f"Error during NMS: {e}")
                 return []
-        
+
         return []
 
     def _prepare_outputs(self, outputs: torch.Tensor) -> np.ndarray:
@@ -385,16 +389,8 @@ class YOLODetector:
         if isinstance(outputs, tuple):
             outputs = outputs[0]
         outputs = outputs.detach().cpu().numpy()
-        if outputs.ndim == 1:
-            outputs = outputs[np.newaxis, :]
-        
-        # Ensure outputs have the correct shape
-        outputs = np.squeeze(outputs)
-        if outputs.ndim == 1:
-            outputs = outputs[np.newaxis, :]
-            
-        # Log shape for debugging
-        logger.debug(f"Output shape after preparation: {outputs.shape}")
+        outputs = outputs[np.newaxis, :] if outputs.ndim == 1 else outputs
+        outputs = np.transpose(np.squeeze(outputs))
         return outputs
 
 
@@ -430,31 +426,25 @@ class DetectionVisualizer:
                 x1, y1, w, h = box
                 x2, y2 = x1 + w, y1 + h
 
-                # Ensure coordinates are within image bounds
-                x1 = max(0, min(x1, image.width))
-                y1 = max(0, min(y1, image.height))
-                x2 = max(0, min(x2, image.width))
-                y2 = max(0, min(y2, image.height))
-
-                # Draw box with thicker width
-                draw.rectangle([x1, y1, x2, y2], outline=self.config.box_color, width=3)
+                # Draw box
+                draw.rectangle([x1, y1, x2, y2], outline=self.config.box_color, width=1)
 
                 # Draw label
                 label = f"{class_name}: {score:.2f}"
-                
-                # Calculate label dimensions
                 bbox = draw.textbbox((0, 0), label, font=self.font)
                 text_w = bbox[2] - bbox[0]
                 text_h = bbox[3] - bbox[1]
 
-                # Position label
                 label_x = max(x1 + self.config.padding, 0)
                 label_y = max(y1 + self.config.padding, 0)
 
                 # Draw label background
                 background = Image.new(
                     "RGBA",
-                    (text_w + 2 * self.config.padding, text_h + 2 * self.config.padding),
+                    (
+                        text_w + 2 * self.config.padding,
+                        text_h + 2 * self.config.padding,
+                    ),
                     self.config.bg_color,
                 )
                 image.paste(
@@ -468,7 +458,7 @@ class DetectionVisualizer:
                     (label_x, label_y),
                     label,
                     fill=self.config.text_color,
-                    font=self.font
+                    font=self.font,
                 )
 
         return image

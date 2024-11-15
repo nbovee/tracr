@@ -125,12 +125,16 @@ class WrappedModel(BaseModel, ModelInterface):
             # Register hooks
             self.forward_hooks.append(
                 layer.register_forward_pre_hook(
-                    create_forward_prehook(self, walk_i, layer_name, (0, 0), self.device)
+                    create_forward_prehook(
+                        self, walk_i, layer_name, (0, 0), self.device
+                    )
                 )
             )
             self.forward_post_hooks.append(
                 layer.register_forward_hook(
-                    create_forward_posthook(self, walk_i, layer_name, (0, 0), self.device)
+                    create_forward_posthook(
+                        self, walk_i, layer_name, (0, 0), self.device
+                    )
                 )
             )
             logger.debug(f"Registered layer {walk_i}: {layer_info.class_name}")
@@ -149,7 +153,9 @@ class WrappedModel(BaseModel, ModelInterface):
         """Execute forward pass with optional slicing and logging."""
         start_time = self.timer()
         end = self.layer_count if end == np.inf else end
-        logger.info(f"Starting forward pass: id={inference_id}, start={start}, end={end}")
+        logger.info(
+            f"Starting forward pass: id={inference_id}, start={start}, end={end}"
+        )
 
         # Configure forward pass
         self.log = log

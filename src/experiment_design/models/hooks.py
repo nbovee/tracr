@@ -53,9 +53,11 @@ def create_forward_prehook(
         hook_output = layer_input
 
         # Handle early exit condition
-        if (wrapped_model.model_stop_i is not None
+        if (
+            wrapped_model.model_stop_i is not None
             and wrapped_model.model_stop_i <= layer_index < wrapped_model.layer_count
-            and getattr(wrapped_model, "hook_style", "pre") == "pre"):
+            and getattr(wrapped_model, "hook_style", "pre") == "pre"
+        ):
             logger.info(f"Exit signal: during prehook {layer_index}")
             wrapped_model.banked_input[layer_index - 1] = layer_input[0]
             raise HookExitException(wrapped_model.banked_input)
@@ -69,20 +71,32 @@ def create_forward_prehook(
                 hook_output = torch.randn(1, *wrapped_model.input_size).to(device)
 
         # Handle marked layers
-        elif (layer_index in wrapped_model.drop_save_dict
-              or wrapped_model.model_start_i == layer_index):
-            if (wrapped_model.model_start_i == 0
-                and getattr(wrapped_model, "hook_style", "pre") == "pre"):
+        elif (
+            layer_index in wrapped_model.drop_save_dict
+            or wrapped_model.model_start_i == layer_index
+        ):
+            if (
+                wrapped_model.model_start_i == 0
+                and getattr(wrapped_model, "hook_style", "pre") == "pre"
+            ):
                 wrapped_model.banked_input[layer_index] = layer_input
-            elif (0 < wrapped_model.model_start_i > layer_index
-                  and getattr(wrapped_model, "hook_style", "pre") == "pre"):
+            elif (
+                0 < wrapped_model.model_start_i > layer_index
+                and getattr(wrapped_model, "hook_style", "pre") == "pre"
+            ):
                 hook_output = wrapped_model.banked_input[layer_index - 1]
 
         # Log metrics if needed
         if wrapped_model.log and layer_index >= wrapped_model.model_start_i:
-            wrapped_model.forward_info[layer_index]["completed_by_node"] = wrapped_model.node_name
-            wrapped_model.forward_info[layer_index]["inference_time"] = -wrapped_model.timer()
-            wrapped_model.forward_info[layer_index]["start_energy"] = wrapped_model.power_meter.get_energy()
+            wrapped_model.forward_info[layer_index][
+                "completed_by_node"
+            ] = wrapped_model.node_name
+            wrapped_model.forward_info[layer_index][
+                "inference_time"
+            ] = -wrapped_model.timer()
+            wrapped_model.forward_info[layer_index][
+                "start_energy"
+            ] = wrapped_model.power_meter.get_energy()
 
         logger.debug(f"End prehook {layer_index} - {layer_name}")
         return hook_output
@@ -107,26 +121,36 @@ def create_forward_posthook(
 
         # Log metrics if needed
         if wrapped_model.log and layer_index >= wrapped_model.model_start_i:
-            wrapped_model.forward_info[layer_index]["inference_time"] += wrapped_model.timer()
+            wrapped_model.forward_info[layer_index][
+                "inference_time"
+            ] += wrapped_model.timer()
             end_energy = wrapped_model.power_meter.get_energy()
-            energy_used = end_energy - wrapped_model.forward_info[layer_index]["start_energy"]
+            energy_used = (
+                end_energy - wrapped_model.forward_info[layer_index]["start_energy"]
+            )
             wrapped_model.forward_info[layer_index]["watts_used"] = energy_used / (
                 wrapped_model.forward_info[layer_index]["inference_time"] / 1e9
             )
 
         # Handle marked layers
-        if (layer_index in wrapped_model.drop_save_dict
-            or wrapped_model.model_start_i == layer_index):
+        if (
+            layer_index in wrapped_model.drop_save_dict
+            or wrapped_model.model_start_i == layer_index
+        ):
             if wrapped_model.model_start_i == 0:
                 wrapped_model.banked_input[layer_index] = output
-            elif (getattr(wrapped_model, "hook_style", "post") == "post"
-                  and wrapped_model.model_start_i >= layer_index):
+            elif (
+                getattr(wrapped_model, "hook_style", "post") == "post"
+                and wrapped_model.model_start_i >= layer_index
+            ):
                 output = wrapped_model.banked_input[layer_index]
 
         # Handle early exit condition
-        if (wrapped_model.model_stop_i is not None
+        if (
+            wrapped_model.model_stop_i is not None
             and wrapped_model.model_stop_i <= layer_index < wrapped_model.layer_count
-            and getattr(wrapped_model, "hook_style", "post") == "post"):
+            and getattr(wrapped_model, "hook_style", "post") == "post"
+        ):
             logger.info(f"Exit signal: during posthook {layer_index}")
             wrapped_model.banked_input[layer_index] = output
             raise HookExitException(wrapped_model.banked_input)

@@ -148,7 +148,9 @@ class BaseModel(nn.Module):
 
     def warmup(self, iterations: Optional[int] = None) -> None:
         """Perform model warmup iterations."""
-        logger.info(f"Performing {iterations or self.warmup_iterations} warmup iterations")
+        logger.info(
+            f"Performing {iterations or self.warmup_iterations} warmup iterations"
+        )
         iters = iterations or self.warmup_iterations
         dummy_input = torch.randn(1, *self.input_size, device=self.device)
 

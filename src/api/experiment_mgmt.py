@@ -27,6 +27,7 @@ from src.utils.file_manager import load_text_file
 
 logger = logging.getLogger("split_computing_logger")
 
+
 @dataclass
 class ExperimentPaths:
     """Container for experiment-related paths."""
@@ -70,7 +71,9 @@ class BaseExperiment(ExperimentInterface):
         """Initialize ML utilities based on model configuration."""
         class_names = self._load_class_names()
         return ModelProcessorFactory.create_processor(
-            model_config=self.config["model"], class_names=class_names, font_path=self.config["default"].get("font_path")
+            model_config=self.config["model"],
+            class_names=class_names,
+            font_path=self.config["default"].get("font_path"),
         )
 
     def _load_class_names(self) -> List[str]:
@@ -102,16 +105,13 @@ class BaseExperiment(ExperimentInterface):
 
     def run(self) -> None:
         """Execute the experiment."""
-        logger.info("Starting split inference experiment...")
         performance_records = [
             self.test_split_performance(split_layer)
             for split_layer in range(1, self.model.layer_count)
         ]
         self.save_results(performance_records)
 
-    def save_results(
-        self, results: List[Tuple[int, float, float, float]]
-    ) -> None:
+    def save_results(self, results: List[Tuple[int, float, float, float]]) -> None:
         """Save experiment results to Excel file."""
         # First create DataFrame with the actual data we have
         df = pd.DataFrame(
@@ -121,16 +121,18 @@ class BaseExperiment(ExperimentInterface):
                 "Host Time",
                 "Travel Time",
                 "Server Time",
-            ]
+            ],
         )
-        
+
         # Then add the calculated column
-        df["Total Processing Time"] = df["Host Time"] + df["Travel Time"] + df["Server Time"]
-        
+        df["Total Processing Time"] = (
+            df["Host Time"] + df["Travel Time"] + df["Server Time"]
+        )
+
         # Save to Excel
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         output_file = self.paths.model_dir / f"split_layer_times_{timestamp}.xlsx"
-        
+
         try:
             df.to_excel(output_file, index=False)
             logger.info(f"Results saved to {output_file}")
@@ -193,11 +195,7 @@ class NetworkedExperiment(BaseExperiment):
 
             if self.config["default"].get("save_layer_images"):
                 self._save_intermediate_results(
-                    processed_result,
-                    original_image,
-                    class_idx,
-                    image_file,
-                    output_dir
+                    processed_result, original_image, class_idx, image_file, output_dir
                 )
 
             return ProcessingTimes(host_time, travel_time, server_time)
@@ -249,27 +247,17 @@ class NetworkedExperiment(BaseExperiment):
                 true_class=true_class,
             )
 
-            # Create output filename
             output_path = output_dir / f"{Path(image_file).stem}_pred.jpg"
-            
-            # Ensure image is in RGB mode before saving
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
-            
-            # Save with high quality
-            img.save(output_path, 'JPEG', quality=95)
-            logger.debug(f"Saved visualization to {output_path}")
+            if img.mode != "RGB":
+                img = img.convert("RGB")
 
-            # Log additional info based on result type
-            if isinstance(processed_result, dict):  # ImageNet result
-                logger.debug(f"Classification: {processed_result['class_name']} "
-                           f"({processed_result['confidence']:.2%})")
-            elif isinstance(processed_result, list):  # YOLO result
-                logger.debug(f"Found {len(processed_result)} detections in {image_file}")
+            img.save(output_path, "JPEG", quality=95)
+            logger.debug(f"Saved visualization to {output_path}")
 
         except Exception as e:
             logger.error(f"Error saving visualization: {e}", exc_info=True)
             import traceback
+
             logger.error(traceback.format_exc())
 
     def test_split_performance(
@@ -291,10 +279,10 @@ class NetworkedExperiment(BaseExperiment):
             total_host = sum(t.host_time for t in times)
             total_travel = sum(t.travel_time for t in times)
             total_server = sum(t.server_time for t in times)
-            
+
             self._log_performance_summary(total_host, total_travel, total_server)
             return split_layer, total_host, total_travel, total_server
-        
+
         return split_layer, 0.0, 0.0, 0.0
 
     def _process_batch(
