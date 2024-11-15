@@ -85,7 +85,7 @@ class ImageNetProcessor(ModelProcessor):
         predictions = self.predictor.predict_top_k(output)
         self.predictor.log_predictions(predictions)
         top_pred = predictions[0]
-        logger.info(f"Top prediction: {top_pred[0]} with confidence {top_pred[1]}")
+        logger.info(f"Top prediction: {top_pred[0]} with confidence {round(top_pred[1], 2)}")
         return {"class_name": top_pred[0], "confidence": top_pred[1]}
 
     def visualize_result(

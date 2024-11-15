@@ -3,6 +3,7 @@
 import logging
 import sys
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
 
@@ -10,122 +11,109 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 from PIL import Image
+import numpy as np
 
 from .data_compression import DataCompression
 from .device_mgmt import DeviceManager
-from .ml_utils import ClassificationUtils, DetectionUtils
+from .inference_utils import ModelProcessorFactory, ModelProcessor
 from .network_client import create_network_client
 
-# Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 from src.interface import ExperimentInterface, ModelInterface
-from src.utils import load_text_file
+from src.utils.file_manager import load_text_file
 
 logger = logging.getLogger("split_computing_logger")
+
+@dataclass
+class ExperimentPaths:
+    """Container for experiment-related paths."""
+
+    results_dir: Path = field(default_factory=lambda: Path("results"))
+    model_dir: Optional[Path] = None
+    images_dir: Optional[Path] = None
+
+    def setup_directories(self, model_name: str) -> None:
+        """Create necessary directories for experiment results."""
+        self.results_dir.mkdir(exist_ok=True)
+        self.model_dir = self.results_dir / f"{model_name.lower()}_split"
+        self.model_dir.mkdir(exist_ok=True)
+        self.images_dir = self.model_dir / "images"
+        self.images_dir.mkdir(exist_ok=True)
 
 
 class BaseExperiment(ExperimentInterface):
     """Base class for running experiments."""
 
-    def __init__(self, config: Dict[str, Any], host: str, port: int):
+    def __init__(self, config: Dict[str, Any], host: str, port: int) -> None:
         """Initialize experiment with configuration."""
         self.config = config
         self.host = host
         self.port = port
-        self.model = self.initialize_model()
-        self.ml_utils = self.initialize_ml_utils()
+        self.paths = ExperimentPaths()
+        self.paths.setup_directories(self.config["model"]["model_name"])
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self._setup_directories()
-
-    def _setup_directories(self) -> None:
-        """Create necessary directories for results and images."""
-        model_name = self.config["model"].get("model_name", "").lower()
-        self.results_dir = Path("results")
-        self.results_dir.mkdir(exist_ok=True)
-
-        self.model_dir = self.results_dir / f"{model_name}_split"
-        self.model_dir.mkdir(exist_ok=True)
-        self.images_dir = self.model_dir / "images"
-        self.images_dir.mkdir(exist_ok=True)
+        self.model = self.initialize_model()
+        self.post_processor = self._initialize_post_processor()
 
     def initialize_model(self) -> ModelInterface:
         """Initialize and configure the model."""
-        logger.debug(f"Initializing model {self.config['model']['model_name']}...")
         model_module = __import__(
             "src.experiment_design.models.model_hooked", fromlist=["WrappedModel"]
         )
-        model_class = getattr(model_module, "WrappedModel")
-        model = model_class(config=self.config)
-        return model
+        return getattr(model_module, "WrappedModel")(config=self.config)
 
-    def initialize_ml_utils(self) -> Any:
-        """Initialize ML utilities based on configuration."""
-        task = self.config["dataset"]["task"]
+    def _initialize_post_processor(self) -> ModelProcessor:
+        """Initialize ML utilities based on model configuration."""
+        class_names = self._load_class_names()
+        return ModelProcessorFactory.create_processor(
+            model_config=self.config["model"], class_names=class_names, font_path=self.config["default"].get("font_path")
+        )
+
+    def _load_class_names(self) -> List[str]:
+        """Load class names from configuration."""
         class_names_path = self.config["dataset"]["args"]["class_names"]
-        font_path = self.config["default"]["font_path"]
-
         if isinstance(class_names_path, list):
-            class_names = class_names_path
-        else:
-            try:
-                class_names = load_text_file(class_names_path)
-            except Exception as e:
-                raise ValueError(
-                    f"Failed to load class names from {class_names_path}: {e}"
-                )
-
-        common_args = {
-            "class_names": class_names,
-            "font_path": font_path,
-        }
-
-        if task == "detection":
-            input_size = tuple(self.config["model"]["input_size"][1:])
-            return DetectionUtils(input_size=input_size, **common_args)
-        elif task == "classification":
-            return ClassificationUtils(**common_args)
-
-        raise ValueError(f"Unsupported task type: {task}")
+            return class_names_path
+        try:
+            return load_text_file(class_names_path)
+        except Exception as e:
+            raise ValueError(f"Failed to load class names from {class_names_path}: {e}")
 
     def process_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Process input data and return results."""
         output, original_size = data["input"]
-        split_layer = data["split_layer"]
-
         with torch.no_grad():
-            result = self.model(output, start=split_layer)
+            if hasattr(output, "inner_dict"):
+                inner_dict = output.inner_dict
+                for key, value in inner_dict.items():
+                    if isinstance(value, torch.Tensor):
+                        inner_dict[key] = value.to(self.model.device)
+            elif isinstance(output, torch.Tensor):
+                output = output.to(self.model.device)
+
+            result = self.model(output, start=data["split_layer"])
             if isinstance(result, tuple):
                 result, _ = result
-            processed = self.ml_utils.postprocess(result, original_size)
-
-        return processed
+            return self.post_processor.process_output(result, original_size)
 
     def run(self) -> None:
         """Execute the experiment."""
         logger.info("Starting split inference experiment...")
-        total_layers = self.model.layer_count
-        logger.info(f"Total layers to test: {total_layers}")
-
-        performance_records = []
-        for split_layer in range(1, total_layers):
-            times = self.test_split_performance(split_layer)
-            performance_records.append((split_layer, *times))
-
+        performance_records = [
+            self.test_split_performance(split_layer)
+            for split_layer in range(1, self.model.layer_count)
+        ]
         self.save_results(performance_records)
 
-    def test_split_performance(
-        self, split_layer: int
-    ) -> Tuple[float, float, float, float]:
-        """Test performance for a specific split layer."""
-        raise NotImplementedError("Subclasses must implement test_split_performance")
-
     def save_results(
-        self, results: List[Tuple[int, float, float, float, float]]
+        self, results: List[Tuple[int, float, float, float]]
     ) -> None:
-        """Save experiment results."""
+        """Save experiment results to Excel file."""
+        # First create DataFrame with the actual data we have
         df = pd.DataFrame(
             results,
             columns=[
@@ -133,175 +121,204 @@ class BaseExperiment(ExperimentInterface):
                 "Host Time",
                 "Travel Time",
                 "Server Time",
-                "Total Processing Time",
-            ],
+            ]
         )
+        
+        # Then add the calculated column
+        df["Total Processing Time"] = df["Host Time"] + df["Travel Time"] + df["Server Time"]
+        
+        # Save to Excel
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        output_file = self.model_dir / f"split_layer_times_{timestamp}.xlsx"
-        df.to_excel(output_file, index=False)
-        logger.info(f"Results saved to {output_file}")
+        output_file = self.paths.model_dir / f"split_layer_times_{timestamp}.xlsx"
+        
+        try:
+            df.to_excel(output_file, index=False)
+            logger.info(f"Results saved to {output_file}")
+        except Exception as e:
+            logger.error(f"Failed to save results: {e}")
+
+
+@dataclass
+class ProcessingTimes:
+    """Container for processing time measurements."""
+
+    host_time: float
+    travel_time: float
+    server_time: float
+
+    @property
+    def total_time(self) -> float:
+        """Calculate total processing time."""
+        return self.host_time + self.travel_time + self.server_time
 
 
 class NetworkedExperiment(BaseExperiment):
     """Experiment implementation for networked split computing."""
 
-    def __init__(self, config: Dict[str, Any], host: str, port: int):
+    def __init__(self, config: Dict[str, Any], host: str, port: int) -> None:
+        """Initialize networked experiment."""
         super().__init__(config, host, port)
         self.network_client = create_network_client(config, host, port)
         self.compress_data = DataCompression(config.get("compression"))
-        self.task = config["dataset"]["task"]
 
     def process_single_image(
         self,
         inputs: torch.Tensor,
-        class_idx: int,
+        class_idx: Any,
         image_file: str,
         split_layer: int,
         output_dir: Path,
-    ) -> Optional[Tuple[float, float, float]]:
+    ) -> Optional[ProcessingTimes]:
         """Process a single image and return timing information."""
         try:
-            # Host processing
             host_start = time.time()
-            input_tensor = inputs.to(self.device)
-            output = self.model(input_tensor, end=split_layer)
-
-            # Get original image for visualization
-            original_image = self.data_loader.dataset.get_original_image(image_file)
-            if original_image is None:
-                logger.warning(f"Could not load original image for {image_file}")
-                original_image = Image.fromarray(
-                    (inputs.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255).astype(
-                        "uint8"
-                    )
-                )
-
-            if self.task == "detection":
-                data_to_send = (
-                    output,
-                    original_image.size,
-                )  # take this imagesize from config or original_image.size
-            else:  # classification
-                data_to_send = (output, (224, 224))  # Standard ImageNet size
-
+            output = self._get_model_output(inputs, split_layer)
+            original_image = self._get_original_image(inputs, image_file)
+            data_to_send = self._prepare_data_for_transfer(output, original_image)
             compressed_output, _ = self.compress_data.compress_data(data=data_to_send)
             host_time = time.time() - host_start
 
-            # Network transfer and server processing
             travel_start = time.time()
             server_response = self.network_client.process_split_computation(
                 split_layer, compressed_output
             )
             travel_time = time.time() - travel_start
 
-            if not server_response:
-                logger.warning("No response from server")
-                return None
-
-            # Extract server processing time and result
-            if not isinstance(server_response, tuple) or len(server_response) != 2:
-                logger.warning("Unexpected server response format")
+            if not server_response or not isinstance(server_response, tuple):
+                logger.warning("Invalid server response")
                 return None
 
             processed_result, server_time = server_response
             travel_time -= server_time
 
-            if self.task == "classification":
-                if not isinstance(processed_result, dict):
-                    logger.warning("Unexpected classification result format")
-                    return None
+            if self.config["default"].get("save_layer_images"):
+                self._save_intermediate_results(
+                    processed_result,
+                    original_image,
+                    class_idx,
+                    image_file,
+                    output_dir
+                )
 
-                class_name = processed_result.get("class_name")
-                confidence = processed_result.get("confidence", 0.0)
-                expected_class = self.ml_utils.class_names[class_idx]
-
-                if self.config["default"].get("save_layer_images"):
-                    try:
-                        img = self.ml_utils.draw_prediction_with_truth(
-                            image=original_image.copy(),
-                            predicted_class=class_name,
-                            confidence=confidence,
-                            true_class=expected_class,
-                        )
-                        output_path = output_dir / f"{Path(image_file).stem}_pred.jpg"
-                        img.save(output_path)
-                        logger.debug(f"Saved prediction image to {output_path}")
-                    except Exception as e:
-                        logger.error(
-                            f"Error saving classification image: {e}", exc_info=True
-                        )
-
-            else:  # detection
-                detections = processed_result
-                if self.config["default"].get("save_layer_images"):
-                    try:
-                        # Draw and save detection visualization
-                        img = self.ml_utils.draw_detections(
-                            image=original_image.copy(), detections=detections
-                        )
-                        output_path = output_dir / f"{Path(image_file).stem}_pred.jpg"
-                        img.save(output_path)
-                        logger.debug(
-                            f"Found {len(detections)} detections in {image_file}"
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Error saving detection image: {e}", exc_info=True
-                        )
-
-            return host_time, travel_time, server_time
+            return ProcessingTimes(host_time, travel_time, server_time)
 
         except Exception as e:
             logger.error(f"Error processing image: {e}", exc_info=True)
             return None
 
+    def _get_model_output(self, inputs: torch.Tensor, split_layer: int) -> torch.Tensor:
+        """Get model output for given inputs and split layer."""
+        with torch.no_grad():
+            return self.model(inputs.to(self.device), end=split_layer)
+
+    def _get_original_image(self, inputs: torch.Tensor, image_file: str) -> Image.Image:
+        """Get original image for visualization."""
+        original_image = self.data_loader.dataset.get_original_image(image_file)
+        if original_image is None:
+            return Image.fromarray(
+                (inputs.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255).astype("uint8")
+            )
+        return original_image
+
+    def _prepare_data_for_transfer(
+        self, output: torch.Tensor, original_image: Image.Image
+    ) -> Tuple[torch.Tensor, Tuple[int, int]]:
+        """Prepare data for network transfer."""
+        return output, self.post_processor.get_input_size(original_image)
+
+    def _save_intermediate_results(
+        self,
+        processed_result: Any,
+        original_image: Image.Image,
+        class_idx: Optional[int],
+        image_file: str,
+        output_dir: Path,
+    ) -> None:
+        """Save intermediate visualization results."""
+        try:
+            # Use the model's processor to visualize results
+            img = self.post_processor.visualize_result(
+                image=original_image.copy(),
+                result=processed_result,
+                true_class=class_idx,
+            )
+
+            # Save the visualization
+            output_path = output_dir / f"{Path(image_file).stem}_pred.jpg"
+            img.save(output_path)
+            logger.debug(f"Saved visualization to {output_path}")
+
+            # Log detection count if applicable
+            if isinstance(processed_result, list):
+                logger.debug(f"Found {len(processed_result)} detections in {image_file}")
+
+        except Exception as e:
+            logger.error(f"Error saving visualization: {e}", exc_info=True)
+
     def test_split_performance(
         self, split_layer: int
-    ) -> Tuple[float, float, float, float]:
+    ) -> Tuple[int, float, float, float]:
         """Test networked split computing performance."""
-        host_times, travel_times, server_times = [], [], []
-        split_dir = self.images_dir / f"split_{split_layer}"
+        times = []
+        split_dir = self.paths.images_dir / f"split_{split_layer}"
         split_dir.mkdir(exist_ok=True)
 
-        task_name = "detections" if self.task == "detection" else "classifications"
-
         with torch.no_grad():
-            for inputs, class_indices, image_files in tqdm(
-                self.data_loader, desc=f"Processing {task_name} at split {split_layer}"
+            for batch in tqdm(
+                self.data_loader, desc=f"Processing at split {split_layer}"
             ):
-                for input_tensor, class_idx, image_file in zip(
-                    inputs, class_indices, image_files
-                ):
-                    times = self.process_single_image(
-                        input_tensor.unsqueeze(0),
-                        class_idx,
-                        image_file,
-                        split_layer,
-                        split_dir,
-                    )
-                    if times:
-                        host_times.append(times[0])
-                        travel_times.append(times[1])
-                        server_times.append(times[2])
+                times.extend(self._process_batch(batch, split_layer, split_dir))
 
-        total_host = sum(host_times)
-        total_travel = sum(travel_times)
-        total_server = sum(server_times)
-        total = total_host + total_travel + total_server
+        # Calculate totals
+        if times:
+            total_host = sum(t.host_time for t in times)
+            total_travel = sum(t.travel_time for t in times)
+            total_server = sum(t.server_time for t in times)
+            
+            self._log_performance_summary(total_host, total_travel, total_server)
+            return split_layer, total_host, total_travel, total_server
+        
+        return split_layer, 0.0, 0.0, 0.0
 
+    def _process_batch(
+        self,
+        batch: Tuple[torch.Tensor, torch.Tensor, List[str]],
+        split_layer: int,
+        split_dir: Path,
+    ) -> List[ProcessingTimes]:
+        """Process a batch of images."""
+        inputs, class_indices, image_files = batch
+        times = []
+
+        for input_tensor, class_idx, image_file in zip(
+            inputs, class_indices, image_files
+        ):
+            result = self.process_single_image(
+                input_tensor.unsqueeze(0), class_idx, image_file, split_layer, split_dir
+            )
+            if result:
+                times.append(result)
+
+        return times
+
+    def _log_performance_summary(
+        self,
+        host_time: float,
+        travel_time: float,
+        server_time: float,
+    ) -> None:
+        """Log performance summary."""
         logger.info(
             f"\n{'='*50}\n"
-            f"Performance Summary - Split Layer {split_layer}\n"
+            f"Performance Summary\n"
             f"{'='*50}\n"
-            f"Host Processing Time:   {total_host:.2f}s\n"
-            f"Network Transfer Time:  {total_travel:.2f}s\n"
-            f"Server Processing Time: {total_server:.2f}s\n"
+            f"Host Processing Time:   {host_time:.2f}s\n"
+            f"Network Transfer Time:  {travel_time:.2f}s\n"
+            f"Server Processing Time: {server_time:.2f}s\n"
             f"{'='*30}\n"
-            f"Total Time:            {total:.2f}s\n"
+            f"Total Time:            {host_time + travel_time + server_time:.2f}s\n"
             f"{'='*50}\n"
         )
-
-        return total_host, total_travel, total_server, total
 
 
 class ExperimentManager:

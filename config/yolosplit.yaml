@@ -32,7 +32,6 @@ model:
 dataset:
   module: onion
   class: OnionDataset
-  task: detection
   args:
     root: data/onion
     class_names: ["with_weeds", "without_weeds"]

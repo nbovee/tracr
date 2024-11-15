@@ -78,6 +78,7 @@ class ModelRegistry:
             name, dataset_name
         )
 
+        logger.info(f"Loading YOLO model from {weights_path}")
         model = YOLO(weights_path).model
         if num_classes and num_classes != model.nc:
             model.nc = num_classes
@@ -94,6 +95,7 @@ class ModelRegistry:
         num_classes: Optional[int],
     ) -> nn.Module:
         """Create torchvision model instance with specified configuration."""
+        logger.info(f"Creating torchvision model: {name}")
         torchvision_models = importlib.import_module("torchvision.models")
         model_fn = getattr(torchvision_models, name)
 

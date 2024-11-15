@@ -32,7 +32,6 @@ model:
 dataset:
   module: imagenet
   class: ImageNetDataset
-  task: classification
   args:
     root: data/imagenet
     class_names: data/imagenet/imagenet_classes.txt

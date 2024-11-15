@@ -42,7 +42,6 @@ model:
 dataset:
   module: <module>              # REQUIRED: Python module name for dataset. Examples: 'imagenet', 'onion'. Defined in src/experiment_design/datasets/
   class: <class>                # REQUIRED: Dataset class name. Examples: 'ImageNetDataset', 'OnionDataset'.
-  task: <task>                  # REQUIRED: Dataset task. Examples: 'classification', 'detection'.
   args:
     root: <root>                # REQUIRED: Dataset root directory. Example: 'data/imagenet', 'data/onion'.
     class_names: <class_names>  # Class names or path to class names file. Examples: 'data/imagenet/imagenet_classes.txt', ["with_weeds", "without_weeds"].

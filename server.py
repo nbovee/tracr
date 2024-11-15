@@ -85,44 +85,18 @@ class Server:
         self,
         experiment: Any,
         output: torch.Tensor,
-        original_image_size: Tuple[int, int],
+        original_size: Tuple[int, int],
         split_layer_index: int,
-        task: str,
     ) -> Tuple[Any, float]:
-        """Process received data and return results with timing."""
+        """Process received data through model and return results."""
         server_start_time = time.time()
-
-        with torch.no_grad():
-            if hasattr(output, "inner_dict"):
-                inner_dict = output.inner_dict
-                for key, value in inner_dict.items():
-                    if isinstance(value, torch.Tensor):
-                        inner_dict[key] = value.to(experiment.model.device)
-            elif isinstance(output, torch.Tensor):
-                output = output.to(experiment.model.device)
-
-            if task == "detection":
-                result, _ = experiment.model(output, start=split_layer_index)
-                processed_result = experiment.ml_utils.postprocess(
-                    result, original_image_size
-                )
-                logger.info(f"Processed detections: {len(processed_result)} found")
-            else:  # classification
-                result = experiment.model(output, start=split_layer_index)
-                logger.debug(f"Raw model output shape: {result.shape}")
-                logger.debug(f"Output range: [{result.min():.2f}, {result.max():.2f}]")
-
-                class_name, confidence = experiment.ml_utils.postprocess(result)
-                processed_result = {
-                    "class_name": class_name,
-                    "confidence": confidence,
-                }
-                logger.info(
-                    f"\nFinal classification: {class_name} ({confidence:.2%} confidence)"
-                )
-
-        server_processing_time = time.time() - server_start_time
-        return processed_result, server_processing_time
+        processed_result = experiment.process_data(
+            {
+                "input": (output, original_size),
+                "split_layer": split_layer_index
+            }
+        )
+        return processed_result, time.time() - server_start_time
 
     def handle_connection(self, conn: socket.socket) -> None:
         """Handle an individual client connection."""
@@ -155,7 +129,7 @@ class Server:
                 compressed_data = self.compress_data.receive_full_message(
                     conn=conn, expected_length=expected_length
                 )
-                output, original_image_size = self.compress_data.decompress_data(
+                output, original_size = self.compress_data.decompress_data(
                     compressed_data=compressed_data
                 )
 
@@ -163,9 +137,8 @@ class Server:
                 processed_result, processing_time = self._process_data(
                     experiment=experiment,
                     output=output,
-                    original_image_size=original_image_size,
+                    original_size=original_size,
                     split_layer_index=split_layer_index,
-                    task=config["dataset"]["task"],
                 )
 
                 # Send back results
