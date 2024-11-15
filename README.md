@@ -1,4 +1,4 @@
-# tracr
+# SplitTracr: An Experimental Test-bed for Cooperative Inference using Split Computing
 
 An experimental framework for distributed AI experiments, enabling split inference between **server** and **host** devices. `tracr` allows you to distribute deep learning model computations across multiple devices, optimizing resource utilization and enabling edge computing scenarios.
 
@@ -422,7 +422,7 @@ This project uses the DejaVu Sans font for detection and classification overlays
 ```bibtex
 @software{tracr2024,
   author = {Nick Bovee, Izhar Ali, Suraj Bitla, Gopi Patapanchala, Shen-Shyang Ho},
-  title = {tracr: Remote Adaptive Collaborative Research for AI},
+  title = {SplitTracr: An Experimental Test-bed for Cooperative Inference using Split Computing},
   year = {2024},
   url = {https://github.com/nbovee/tracr}
 }
