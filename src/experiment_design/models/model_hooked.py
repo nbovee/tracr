@@ -5,7 +5,7 @@ import copy
 import logging
 import time
 from contextlib import nullcontext
-from typing import Any, Dict, Optional, Union, List, ClassVar
+from typing import Any, Dict, Optional, Union, ClassVar
 
 import numpy as np
 import torch
@@ -149,7 +149,7 @@ class WrappedModel(BaseModel, ModelInterface):
         """Execute forward pass with optional slicing and logging."""
         start_time = self.timer()
         end = self.layer_count if end == np.inf else end
-        logger.debug(f"Starting forward pass: id={inference_id}, start={start}, end={end}")
+        logger.info(f"Starting forward pass: id={inference_id}, start={start}, end={end}")
 
         # Configure forward pass
         self.log = log
