@@ -127,8 +127,13 @@ class YOLOProcessor(ModelProcessor):
         """Process detection output."""
         detections = self.detector.process_detections(output, original_size)
         logger.info(f"{len(detections)} detections found")
+        logger.info(f"Detections: {detections}")
         return [
-            {"box": box, "confidence": score, "class_name": self.class_names[class_id]}
+            {
+                "box": box,  # [x1, y1, w, h]
+                "confidence": float(score),  # Ensure score is a float
+                "class_name": self.class_names[int(class_id)]  # Ensure class_id is int
+            }
             for box, score, class_id in detections
         ]
 
@@ -261,16 +266,12 @@ class PredictionVisualizer:
         """Draw classification results on image."""
         draw = ImageDraw.Draw(image)
 
-        texts = [f"Pred: {pred_class} ({confidence:.1%})"]
+        # Prepare prediction and truth texts
+        pred_text = f"Pred: {pred_class} ({confidence:.1%})"
+        texts = [pred_text]
         if true_class:
             texts.append(f"True: {true_class}")
 
-        return self._draw_text_box(image, draw, texts)
-
-    def _draw_text_box(
-        self, image: Image.Image, draw: ImageDraw.ImageDraw, texts: List[str]
-    ) -> Image.Image:
-        """Draw text box with background on image."""
         # Calculate text dimensions
         text_boxes = [draw.textbbox((0, 0), text, font=self.font) for text in texts]
         text_widths = [box[2] - box[0] for box in text_boxes]
@@ -279,22 +280,17 @@ class PredictionVisualizer:
         max_width = max(text_widths)
         total_height = sum(text_heights) + self.config.padding * (len(texts) - 1)
 
-        # Calculate position
+        # Calculate positions
         x = image.width - max_width - 2 * self.config.padding
         y = self.config.padding
 
         # Draw background
         background = Image.new(
             "RGBA",
-            (
-                max_width + 2 * self.config.padding,
-                total_height + 2 * self.config.padding,
-            ),
+            (max_width + 2 * self.config.padding, total_height + 2 * self.config.padding),
             self.config.bg_color,
         )
-        image.paste(
-            background, (x - self.config.padding, y - self.config.padding), background
-        )
+        image.paste(background, (x - self.config.padding, y - self.config.padding), background)
 
         # Draw texts
         current_y = y
@@ -313,61 +309,93 @@ class YOLODetector:
         self.class_names = class_names
         self.config = config
 
+    def _scale_box(self, box: np.ndarray, x_factor: float, y_factor: float) -> List[int]:
+        """Scale detection box to original image size."""
+        # YOLO format is [x_center, y_center, width, height]
+        x_center, y_center, width, height = box
+        
+        # Convert from center coordinates to top-left coordinates
+        x1 = (x_center - width/2) * x_factor
+        y1 = (y_center - height/2) * y_factor
+        w = width * x_factor
+        h = height * y_factor
+        
+        # Return [x1, y1, width, height] format
+        return [
+            int(max(0, x1)),  # ensure non-negative
+            int(max(0, y1)),
+            int(w),
+            int(h)
+        ]
+
     def process_detections(
         self, outputs: torch.Tensor, original_img_size: Tuple[int, int]
     ) -> List[Tuple[List[int], float, int]]:
         """Process YOLO detection outputs to bounding boxes."""
         outputs = self._prepare_outputs(outputs)
-        return self._filter_boxes(outputs, original_img_size)
+        
+        # Get scaling factors
+        img_w, img_h = original_img_size
+        x_factor = img_w / self.config.input_size[0]
+        y_factor = img_h / self.config.input_size[1]
+
+        boxes, scores, class_ids = [], [], []
+        
+        # Process each detection
+        for detection in outputs:
+            # Get confidence scores for each class
+            class_scores = detection[4:]
+            class_id = np.argmax(class_scores)
+            confidence = class_scores[class_id]
+            
+            # Ensure class_id is within valid range
+            if class_id >= len(self.class_names):
+                logger.warning(f"Invalid class id {class_id}, skipping detection")
+                continue
+                
+            if confidence >= self.config.conf_threshold:
+                # Scale box coordinates
+                box = self._scale_box(detection[:4], x_factor, y_factor)
+                
+                # Skip invalid boxes
+                if any(coord < 0 or coord > max(img_w, img_h) * 2 for coord in box):
+                    logger.warning(f"Invalid box coordinates {box}, skipping detection")
+                    continue
+                    
+                boxes.append(box)
+                scores.append(float(confidence))
+                class_ids.append(int(class_id))
+
+        # Apply NMS
+        if boxes:
+            try:
+                indices = cv2.dnn.NMSBoxes(
+                    boxes, scores, self.config.conf_threshold, self.config.iou_threshold
+                ).flatten()
+                
+                return [(boxes[i], scores[i], class_ids[i]) for i in indices]
+            except Exception as e:
+                logger.error(f"Error during NMS: {e}")
+                return []
+        
+        return []
 
     def _prepare_outputs(self, outputs: torch.Tensor) -> np.ndarray:
         """Prepare model outputs for processing."""
         if isinstance(outputs, tuple):
             outputs = outputs[0]
         outputs = outputs.detach().cpu().numpy()
-        outputs = outputs[np.newaxis, :] if outputs.ndim == 1 else outputs
-        return np.transpose(np.squeeze(outputs))
-
-    def _filter_boxes(
-        self, outputs: np.ndarray, original_img_size: Tuple[int, int]
-    ) -> List[Tuple[List[int], float, int]]:
-        """Filter and process detection boxes."""
-        img_w, img_h = original_img_size
-        x_factor = img_w / self.config.input_size[1]
-        y_factor = img_h / self.config.input_size[0]
-
-        boxes, scores, class_ids = [], [], []
-
-        for detection in outputs:
-            class_scores = detection[4:]
-            max_score = np.max(class_scores)
-
-            if max_score >= self.config.conf_threshold:
-                class_id = np.argmax(class_scores)
-                box = self._scale_box(detection[:4], x_factor, y_factor)
-                boxes.append(box)
-                scores.append(max_score)
-                class_ids.append(class_id)
-
-        if not boxes:
-            return []
-
-        indices = cv2.dnn.NMSBoxes(
-            boxes, scores, self.config.conf_threshold, self.config.iou_threshold
-        )
-
-        return [(boxes[i], scores[i], class_ids[i]) for i in indices.flatten()]
-
-    @staticmethod
-    def _scale_box(box: np.ndarray, x_factor: float, y_factor: float) -> List[int]:
-        """Scale detection box to original image size."""
-        x, y, w, h = box
-        return [
-            int((x - w / 2) * x_factor),  # left
-            int((y - h / 2) * y_factor),  # top
-            int(w * x_factor),  # width
-            int(h * y_factor),  # height
-        ]
+        if outputs.ndim == 1:
+            outputs = outputs[np.newaxis, :]
+        
+        # Ensure outputs have the correct shape
+        outputs = np.squeeze(outputs)
+        if outputs.ndim == 1:
+            outputs = outputs[np.newaxis, :]
+            
+        # Log shape for debugging
+        logger.debug(f"Output shape after preparation: {outputs.shape}")
+        return outputs
 
 
 class DetectionVisualizer:
@@ -399,55 +427,48 @@ class DetectionVisualizer:
             class_name = detection["class_name"]
 
             if isinstance(box, (list, tuple)) and len(box) == 4:
-                self._draw_single_detection(draw, image, box, score, class_name)
+                x1, y1, w, h = box
+                x2, y2 = x1 + w, y1 + h
+
+                # Ensure coordinates are within image bounds
+                x1 = max(0, min(x1, image.width))
+                y1 = max(0, min(y1, image.height))
+                x2 = max(0, min(x2, image.width))
+                y2 = max(0, min(y2, image.height))
+
+                # Draw box with thicker width
+                draw.rectangle([x1, y1, x2, y2], outline=self.config.box_color, width=3)
+
+                # Draw label
+                label = f"{class_name}: {score:.2f}"
+                
+                # Calculate label dimensions
+                bbox = draw.textbbox((0, 0), label, font=self.font)
+                text_w = bbox[2] - bbox[0]
+                text_h = bbox[3] - bbox[1]
+
+                # Position label
+                label_x = max(x1 + self.config.padding, 0)
+                label_y = max(y1 + self.config.padding, 0)
+
+                # Draw label background
+                background = Image.new(
+                    "RGBA",
+                    (text_w + 2 * self.config.padding, text_h + 2 * self.config.padding),
+                    self.config.bg_color,
+                )
+                image.paste(
+                    background,
+                    (label_x - self.config.padding, label_y - self.config.padding),
+                    background,
+                )
+
+                # Draw label text
+                draw.text(
+                    (label_x, label_y),
+                    label,
+                    fill=self.config.text_color,
+                    font=self.font
+                )
 
         return image
-
-    def _draw_single_detection(
-        self,
-        draw: ImageDraw.ImageDraw,
-        image: Image.Image,
-        box: List[int],
-        score: float,
-        class_name: str,
-    ) -> None:
-        """Draw single detection box and label."""
-        x1, y1, w, h = box
-        x2, y2 = x1 + w, y1 + h
-
-        # Draw box
-        draw.rectangle([x1, y1, x2, y2], outline=self.config.box_color, width=2)
-
-        # Draw label
-        label = f"{class_name}: {score:.2f}"
-        self._draw_label(draw, image, label, (x1, y1))
-
-    def _draw_label(
-        self,
-        draw: ImageDraw.ImageDraw,
-        image: Image.Image,
-        label: str,
-        position: Tuple[int, int],
-    ) -> None:
-        """Draw label with background."""
-        x, y = position
-        bbox = draw.textbbox((0, 0), label, font=self.font)
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
-
-        label_x = max(x + self.config.padding, 0)
-        label_y = max(y + self.config.padding, 0)
-
-        background = Image.new(
-            "RGBA",
-            (text_w + 2 * self.config.padding, text_h + 2 * self.config.padding),
-            self.config.bg_color,
-        )
-        image.paste(
-            background,
-            (label_x - self.config.padding, label_y - self.config.padding),
-            background,
-        )
-        draw.text(
-            (label_x, label_y), label, fill=self.config.text_color, font=self.font
-        )

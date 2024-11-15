@@ -236,24 +236,41 @@ class NetworkedExperiment(BaseExperiment):
     ) -> None:
         """Save intermediate visualization results."""
         try:
+            # Convert class_idx to class name if available
+            true_class = None
+            if class_idx is not None and isinstance(class_idx, (int, np.integer)):
+                class_names = self._load_class_names()
+                true_class = class_names[class_idx]
+
             # Use the model's processor to visualize results
             img = self.post_processor.visualize_result(
                 image=original_image.copy(),
                 result=processed_result,
-                true_class=class_idx,
+                true_class=true_class,
             )
 
-            # Save the visualization
+            # Create output filename
             output_path = output_dir / f"{Path(image_file).stem}_pred.jpg"
-            img.save(output_path)
+            
+            # Ensure image is in RGB mode before saving
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Save with high quality
+            img.save(output_path, 'JPEG', quality=95)
             logger.debug(f"Saved visualization to {output_path}")
 
-            # Log detection count if applicable
-            if isinstance(processed_result, list):
+            # Log additional info based on result type
+            if isinstance(processed_result, dict):  # ImageNet result
+                logger.debug(f"Classification: {processed_result['class_name']} "
+                           f"({processed_result['confidence']:.2%})")
+            elif isinstance(processed_result, list):  # YOLO result
                 logger.debug(f"Found {len(processed_result)} detections in {image_file}")
 
         except Exception as e:
             logger.error(f"Error saving visualization: {e}", exc_info=True)
+            import traceback
+            logger.error(traceback.format_exc())
 
     def test_split_performance(
         self, split_layer: int
