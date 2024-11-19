@@ -1,14 +1,11 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "tracr"
-version = "0.1.0"
+version = "0.3.0"
 description = "An experimental framework for computational offloading and distributed neural network inference through split computing"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
+    { name = "Nick Bovee", email = "pypi.blizzard606@passmail.com"},
     { name = "Izhar Ali", email = "izharali.skt@gmail.com" }
 ]
 # Core dependencies that are absolutely required
@@ -31,6 +28,10 @@ full = [
     "black>=24.8.0",
     "torchinfo>=1.8.0"
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project.scripts]
 tracr-server = "server:main"
