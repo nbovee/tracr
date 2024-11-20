@@ -43,7 +43,7 @@ Please follow these steps to have your contribution considered by the maintainer
 
 ```bash
 # Clone the repository
-git clone https://github.com/ali-izhar/tracr.git
+git clone https://github.com/nbovee/tracr.git
 cd tracr
 
 # Create virtual environment
