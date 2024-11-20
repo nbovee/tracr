@@ -8,26 +8,96 @@ authors = [
     { name = "Nick Bovee", email = "pypi.blizzard606@passmail.com"},
     { name = "Izhar Ali", email = "izharali.skt@gmail.com" }
 ]
-# Core dependencies that are absolutely required
 dependencies = [
-    "tomli>=2.0.0",
-    "paramiko>=3.5.0",
-    "rpyc>=6.0.1",
-    "loguru>=0.7.2",
-    "blosc2>=2.7.1",
+  "tomli>=2.0.0",
+  "paramiko>=3.5.0",
+  "rpyc>=6.0.1",
+  "loguru>=0.7.2",
+  "blosc2>=2.7.1",
+  "torch>=2.5.1",
+  "torchvision>=0.20.1",
+  "torchaudio>=2.5",
 ]
 
-# Dependencies that should be already installed in user's environment
 [project.optional-dependencies]
+cpu = [
+  "torch>=2.5",
+  "torchvision>=0.20",
+  "torchaudio>=2.5"
+]
+cu118 =[
+  "torch>=2.5",
+  "torchvision>=0.20",
+  "torchaudio>=2.5"
+]
+
+cu121 =[  
+  "torch>=2.5",
+  "torchvision>=0.20",
+  "torchaudio>=2.5"
+]
+cu124 = [
+  "torch>=2.5",
+  "torchvision>=0.20",
+  "torchaudio>=2.5"
+]
 full = [
-    "torch>=2.0.0",
-    "torchvision",
-    "torchaudio",
     "ultralytics>=8.3.28",
     "rich>=13.9.1",
     "black>=24.8.0",
     "torchinfo>=1.8.0"
 ]
+
+[tool.uv]
+conflicts = [
+  [
+    { extra = "cpu" },
+    { extra = "cu118" },
+    { extra = "cu121" },
+    { extra = "cu124" },
+  ],
+]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", extra = "cpu", marker = "platform_system != 'Darwin'" },
+  { index = "pytorch-cu118", extra = "cu118" },
+  { index = "pytorch-cu121", extra = "cu121" },
+  { index = "pytorch-cu124", extra = "cu124" },
+]
+torchvision = [
+  { index = "pytorch-cpu", extra = "cpu", marker = "platform_system != 'Darwin'" },
+  { index = "pytorch-cu118", extra = "cu118" },
+  { index = "pytorch-cu121", extra = "cu121" },
+  { index = "pytorch-cu124", extra = "cu124" },
+]
+
+torchaudio = [
+  { index = "pytorch-cpu", extra = "cpu", marker = "platform_system != 'Darwin'" },
+  { index = "pytorch-cu118", extra = "cu118" },
+  { index = "pytorch-cu121", extra = "cu121" },
+  { index = "pytorch-cu124", extra = "cu124" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu118"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
 
 [build-system]
 requires = ["hatchling"]
