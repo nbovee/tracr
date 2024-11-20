@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 authors = [
     { name = "Nick Bovee", email = "pypi.blizzard606@passmail.com"},
-    { name = "Izhar Ali", email = "izharali.skt@gmail.com" }
+    { name = "Izhar Ali", email = "izharali.skt@gmail.com" },
 ]
 dependencies = [
   "tomli>=2.0.0",
@@ -14,41 +14,42 @@ dependencies = [
   "rpyc>=6.0.1",
   "loguru>=0.7.2",
   "blosc2>=2.7.1",
-  "torch>=2.5.1",
-  "torchvision>=0.20.1",
-  "torchaudio>=2.5",
+  "torchinfo>=1.8.0",
+  "rich>=13.9.1",
 ]
 
 [project.optional-dependencies]
 cpu = [
   "torch>=2.5",
   "torchvision>=0.20",
-  "torchaudio>=2.5"
+  "torchaudio>=2.5",
 ]
 cu118 =[
   "torch>=2.5",
   "torchvision>=0.20",
-  "torchaudio>=2.5"
+  "torchaudio>=2.5",
 ]
 
 cu121 =[  
   "torch>=2.5",
   "torchvision>=0.20",
-  "torchaudio>=2.5"
+  "torchaudio>=2.5",
 ]
 cu124 = [
   "torch>=2.5",
   "torchvision>=0.20",
-  "torchaudio>=2.5"
+  "torchaudio>=2.5",
 ]
 full = [
-    "ultralytics>=8.3.28",
-    "rich>=13.9.1",
-    "black>=24.8.0",
-    "torchinfo>=1.8.0"
+  "ultralytics>=8.3.28",
+]
+dev = [
+  "black>=24.8.0",
 ]
 
+
 [tool.uv]
+default-groups = ["cpu", "full", "dev"]
 conflicts = [
   [
     { extra = "cpu" },
@@ -111,7 +112,7 @@ tracr-client = "host:main"
 packages = ["src"]
 include = [
     "server.py",
-    "host.py"
+    "host.py",
 ]
 exclude = [
     "data/",
