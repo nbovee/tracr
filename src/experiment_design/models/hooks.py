@@ -88,15 +88,15 @@ def create_forward_prehook(
 
         # Log metrics if needed
         if wrapped_model.log and layer_index >= wrapped_model.model_start_i:
-            wrapped_model.forward_info[layer_index][
-                "completed_by_node"
-            ] = wrapped_model.node_name
+            wrapped_model.forward_info[layer_index]["completed_by_node"] = (
+                wrapped_model.node_name
+            )
             wrapped_model.forward_info[layer_index][
                 "inference_time"
             ] = -wrapped_model.timer()
-            wrapped_model.forward_info[layer_index][
-                "start_energy"
-            ] = wrapped_model.power_meter.get_energy()
+            wrapped_model.forward_info[layer_index]["start_energy"] = (
+                wrapped_model.power_meter.get_energy()
+            )
 
         logger.debug(f"End prehook {layer_index} - {layer_name}")
         return hook_output
@@ -121,9 +121,9 @@ def create_forward_posthook(
 
         # Log metrics if needed
         if wrapped_model.log and layer_index >= wrapped_model.model_start_i:
-            wrapped_model.forward_info[layer_index][
-                "inference_time"
-            ] += wrapped_model.timer()
+            wrapped_model.forward_info[layer_index]["inference_time"] += (
+                wrapped_model.timer()
+            )
             end_energy = wrapped_model.power_meter.get_energy()
             energy_used = (
                 end_energy - wrapped_model.forward_info[layer_index]["start_energy"]
