@@ -43,13 +43,9 @@ cu124 = [
 full = [
   "ultralytics>=8.3.28",
 ]
-dev = [
-  "black>=24.8.0",
-]
 
 
 [tool.uv]
-default-groups = ["cpu", "full", "dev"]
 conflicts = [
   [
     { extra = "cpu" },

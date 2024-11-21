@@ -2593,11 +2593,11 @@ wheels = [
 
 [[package]]
 name = "setuptools"
-version = "75.5.0"
+version = "75.6.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c8/db/722a42ffdc226e950c4757b3da7b56ff5c090bb265dccd707f7b8a3c6fee/setuptools-75.5.0.tar.gz", hash = "sha256:5c4ccb41111392671f02bb5f8436dfc5a9a7185e80500531b133f5775c4163ef", size = 1336032 }
+sdist = { url = "https://files.pythonhosted.org/packages/43/54/292f26c208734e9a7f067aea4a7e282c080750c4546559b58e2e45413ca0/setuptools-75.6.0.tar.gz", hash = "sha256:8199222558df7c86216af4f84c30e9b34a61d8ba19366cc914424cdbd28252f6", size = 1337429 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fe/df/88ccbee85aefbca071db004fdc8f8d2507d55d5a9dc27ebb93c92edb1bd8/setuptools-75.5.0-py3-none-any.whl", hash = "sha256:87cb777c3b96d638ca02031192d40390e0ad97737e27b6b4fa831bea86f2f829", size = 1222710 },
+    { url = "https://files.pythonhosted.org/packages/55/21/47d163f615df1d30c094f6c8bbb353619274edccf0327b185cc2493c2c33/setuptools-75.6.0-py3-none-any.whl", hash = "sha256:ce74b49e8f7110f9bf04883b730f4765b774ef3ef28f722cce7c273d253aaf7d", size = 1224032 },
 ]
 
 [[package]]
@@ -2790,6 +2790,7 @@ dependencies = [
     { name = "nvidia-nvtx-cu12", version = "12.4.127", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'x86_64' and platform_system == 'Linux'" },
     { name = "setuptools", marker = "python_full_version >= '3.12'" },
     { name = "sympy" },
+    { name = "triton", marker = "python_full_version < '3.13' and platform_machine == 'x86_64' and platform_system == 'Linux'" },
     { name = "typing-extensions" },
 ]
 wheels = [
@@ -4832,8 +4833,10 @@ dependencies = [
     { name = "blosc2" },
     { name = "loguru" },
     { name = "paramiko" },
+    { name = "rich" },
     { name = "rpyc" },
     { name = "tomli" },
+    { name = "torchinfo" },
 ]
 
 [package.optional-dependencies]
@@ -4860,20 +4863,20 @@ cu124 = [
     { name = "torchaudio", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" } },
     { name = "torchvision", version = "0.20.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" } },
 ]
-full = [
+dev = [
     { name = "black" },
-    { name = "rich" },
-    { name = "torchinfo" },
+]
+full = [
     { name = "ultralytics" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "black", marker = "extra == 'full'", specifier = ">=24.8.0" },
+    { name = "black", marker = "extra == 'dev'", specifier = ">=24.8.0" },
     { name = "blosc2", specifier = ">=2.7.1" },
     { name = "loguru", specifier = ">=0.7.2" },
     { name = "paramiko", specifier = ">=3.5.0" },
-    { name = "rich", marker = "extra == 'full'", specifier = ">=13.9.1" },
+    { name = "rich", specifier = ">=13.9.1" },
     { name = "rpyc", specifier = ">=6.0.1" },
     { name = "tomli", specifier = ">=2.0.0" },
     { name = "torch", marker = "platform_system == 'Darwin' and extra == 'cpu'", specifier = ">=2.5" },
@@ -4886,7 +4889,7 @@ requires-dist = [
     { name = "torchaudio", marker = "extra == 'cu118'", specifier = ">=2.5", index = "https://download.pytorch.org/whl/cu118", conflict = { package = "tracr", extra = "cu118" } },
     { name = "torchaudio", marker = "extra == 'cu121'", specifier = ">=2.5", index = "https://download.pytorch.org/whl/cu121", conflict = { package = "tracr", extra = "cu121" } },
     { name = "torchaudio", marker = "extra == 'cu124'", specifier = ">=2.5", index = "https://download.pytorch.org/whl/cu124", conflict = { package = "tracr", extra = "cu124" } },
-    { name = "torchinfo", marker = "extra == 'full'", specifier = ">=1.8.0" },
+    { name = "torchinfo", specifier = ">=1.8.0" },
     { name = "torchvision", marker = "platform_system == 'Darwin' and extra == 'cpu'", specifier = ">=0.20" },
     { name = "torchvision", marker = "platform_system != 'Darwin' and extra == 'cpu'", specifier = ">=0.20", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "tracr", extra = "cpu" } },
     { name = "torchvision", marker = "extra == 'cu118'", specifier = ">=0.20", index = "https://download.pytorch.org/whl/cu118", conflict = { package = "tracr", extra = "cu118" } },
@@ -4928,7 +4931,7 @@ wheels = [
 
 [[package]]
 name = "ultralytics"
-version = "8.3.34"
+version = "8.3.35"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "matplotlib" },
@@ -4955,9 +4958,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "ultralytics-thop" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2f/a6/f0ef18ced44d9d9088dae5ab09c0d58945911b14f813e587369e462054fb/ultralytics-8.3.34.tar.gz", hash = "sha256:1a292da87f8df7f5b71146c660adb8581f07ba46164005900c489657c5afb211", size = 768098 }
+sdist = { url = "https://files.pythonhosted.org/packages/7a/2b/125cc59c5cbddedf460624fc922127dbd30ee12e4e16280c3ec38232837b/ultralytics-8.3.35.tar.gz", hash = "sha256:26d5e867033a118a908e93c6e2ecce4989f181f82e20fd8643e0f1edc92c37f1", size = 768135 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/fc/3c21431dd1a70747e43b410c835f05ad78c7cb9969d100b2dbd8598b8e3f/ultralytics-8.3.34-py3-none-any.whl", hash = "sha256:944c8a9c96b59e303060967e0abd57333ab911220d88a773a8d152a5bfdbbb0b", size = 887355 },
+    { url = "https://files.pythonhosted.org/packages/95/b8/bc538605d26ba9454ce76d08ed4f33dc6c4c8b928259460976f20cb16304/ultralytics-8.3.35-py3-none-any.whl", hash = "sha256:aa8a2dcdde2bb57044c39467a6e096b5c0b83010d65823a35886d1c7650fff31", size = 887378 },
 ]
 
 [[package]]
