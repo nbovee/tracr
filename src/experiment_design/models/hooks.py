@@ -11,8 +11,8 @@ logger = logging.getLogger("split_computing_logger")
 
 
 @dataclass
-class NotDict:
-    """Wrapper class to bypass Ultralytics forward pass handling."""
+class EarlyOutput:
+    """Wrapper class to bypass Ultralytics or other forward pass handling."""
 
     inner_dict: Union[Dict[str, Any], Tensor]
 

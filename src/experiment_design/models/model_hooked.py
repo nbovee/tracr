@@ -16,7 +16,7 @@ from .base import BaseModel
 from .hooks import (
     create_forward_prehook,
     create_forward_posthook,
-    NotDict,
+    EarlyOutput,
     HookExitException,
 )
 from .templates import LAYER_TEMPLATE
@@ -189,9 +189,9 @@ class WrappedModel(BaseModel, ModelInterface):
         with context:
             return self.model(x)
 
-    def _handle_early_exit(self, exception: HookExitException) -> NotDict:
+    def _handle_early_exit(self, exception: HookExitException) -> EarlyOutput:
         """Handle early exit from forward pass."""
-        output = NotDict(exception.result)
+        output = EarlyOutput(exception.result)
         for i in range(self.model_stop_i, self.layer_count):
             self.forward_info.pop(i, None)
         return output
