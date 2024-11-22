@@ -12,7 +12,7 @@ logger = logging.getLogger("split_computing_logger")
 
 @dataclass
 class EarlyOutput:
-    """Wrapper class to bypass Ultralytics or other forward pass handling."""
+    """Wrapper class to bypass Ultralytics or other class based forward pass handling."""
 
     inner_dict: Union[Dict[str, Any], Tensor]
 
@@ -62,7 +62,7 @@ def create_forward_prehook(
 
         # Handle marked layers
         elif (
-            layer_index in wrapped_model.drop_save_dict
+            layer_index in wrapped_model.skip_layers
             or wrapped_model.model_start_i == layer_index
         ):
             if wrapped_model.model_start_i == 0:
@@ -118,7 +118,7 @@ def create_forward_posthook(
 
         # Handle marked layers
         if (
-            layer_index in wrapped_model.drop_save_dict
+            layer_index in wrapped_model.skip_layers
             or wrapped_model.model_start_i == layer_index
         ):
             if wrapped_model.model_start_i == 0:

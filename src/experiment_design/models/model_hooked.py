@@ -53,12 +53,12 @@ class WrappedModel(BaseModel, ModelInterface):
         self.forward_info = {}
         self.forward_hooks = []
         self.forward_post_hooks = []
-        self.drop_save_dict = getattr(self.model, "save", {})
+        self.save_layers = getattr(self.model, "save", {})
 
         # Initialize hook-related attributes
         self.model_start_i: Optional[int] = None
         self.model_stop_i: Optional[int] = None
-        self.banked_input: Optional[Any] = None
+        self.banked_output: Optional[Any] = None
         self.log = False
 
         # Setup model layers and hooks
@@ -211,7 +211,7 @@ class WrappedModel(BaseModel, ModelInterface):
         # Reset state
         self.inference_info.clear()
         self.forward_info = copy.deepcopy(self.forward_info_empty)
-        self.banked_input = None
+        self.banked_output = None
 
     def update_master_dict(self) -> None:
         """Update master dictionary with buffered data."""
