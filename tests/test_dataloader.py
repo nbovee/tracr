@@ -12,7 +12,7 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from src.experiment_design.datasets.dataloader import DataManager
+from src.experiment_design.datasets.dataloader import DataManager  # noqa: E402
 
 # Load configuration
 config_path = os.path.join(parent_dir, "config", "model_config.yaml")

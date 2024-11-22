@@ -19,7 +19,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.utils import get_repo_root
+from src.utils import get_repo_root  # noqa: E402
 
 logger = logging.getLogger("split_computing_logger")
 

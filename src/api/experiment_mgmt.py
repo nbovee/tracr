@@ -22,8 +22,8 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.interface import ExperimentInterface, ModelInterface
-from src.utils.file_manager import load_text_file
+from src.interface import ExperimentInterface, ModelInterface  # noqa: E402
+from src.utils.file_manager import load_text_file  # noqa: E402
 
 logger = logging.getLogger("split_computing_logger")
 

@@ -119,7 +119,7 @@ class BufferedSocketHandler(SocketHandler):
                 self.buffer.append(self.format(record))
                 if len(self.buffer) >= self.buffer_size:
                     self.flush()
-        except Exception as e:
+        except Exception:
             self.handleError(record)
 
     def flush(self) -> None:

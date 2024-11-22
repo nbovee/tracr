@@ -17,6 +17,8 @@ dependencies = [
   "torchinfo>=1.8.0",
   "rich>=13.9.1",
   "pyyaml>=6.0.2",
+  "pandas>=2.2.3",
+  "tqdm>=4.67.0",
 ]
 
 [project.optional-dependencies]
@@ -96,6 +98,10 @@ explicit = true
 name = "pytorch-cu124"
 url = "https://download.pytorch.org/whl/cu124"
 explicit = true
+
+[tool.ruff]
+line-length = 88
+indent-width = 4
 
 # [build-system]
 # requires = ["hatchling"]

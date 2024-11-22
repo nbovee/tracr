@@ -12,13 +12,13 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api import (
+from src.api import (  # noqa: E402
     DeviceType,
     ExperimentManager,
     start_logging_server,
 )
-from src.experiment_design.datasets import DataManager
-from src.utils import read_yaml_file
+from src.experiment_design.datasets import DataManager  # noqa: E402
+from src.utils import read_yaml_file  # noqa: E402
 
 
 class ExperimentHost:

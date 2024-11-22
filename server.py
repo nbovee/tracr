@@ -15,7 +15,7 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api import (
+from src.api import (  # noqa: E402
     DataCompression,
     DeviceManager,
     ExperimentManager,

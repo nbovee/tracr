@@ -12,8 +12,8 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from src.utils.file_manager import read_yaml_file, get_repo_root
-from src.api import (
+from src.utils.file_manager import read_yaml_file, get_repo_root  # noqa: E402
+from src.api import (  # noqa: E402
     DeviceType,
     create_ssh_client,
     start_logging_server,

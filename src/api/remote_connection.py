@@ -106,10 +106,10 @@ class SSHKeyHandler:
                 # Try loading as RSA first, then ED25519 as fallback
                 try:
                     return paramiko.RSAKey.from_private_key_file(str(key_path))
-                except:
+                except Exception:
                     try:
                         return paramiko.Ed25519Key.from_private_key_file(str(key_path))
-                    except:
+                    except Exception:
                         raise SSHError(f"Unsupported key type for file: {key_path}")
 
         except paramiko.PasswordRequiredException:
