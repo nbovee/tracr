@@ -69,7 +69,6 @@ class BaseModel(nn.Module):
         self.model_name = self.model_config["model_name"]
         self.weight_path = self.model_config.get("weight_path")
         self.input_size = tuple(self.model_config["input_size"])
-        self.hook_style = self.model_config.get("hook_style")
         self.save_layers = self.model_config.get("save_layers", [])
         self.depth = self.model_config.get("depth", 2)
         self.mode = self.model_config.get("mode", "eval")

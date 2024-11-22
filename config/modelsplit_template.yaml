@@ -27,7 +27,6 @@ model:
   pretrained: false              # Whether to use pretrained weights. Default is false.
   weight_path: null              # Path to custom weights file; e.g., 'path/to/weights/best.pt' for YOLOv8. Default is null.
   input_size: <input_size>       # REQUIRED: Input tensor dimensions [channels, height, width]. Common sizes: [3, 224, 224] for AlexNet, [3, 640, 640] for YOLOv8.
-  hook_style: <hook_style>       # Where to insert hooks in model layers. Options: 'pre' (before layer execution), 'post' (after layer execution).
   split_layer: <split_layer>     # REQUIRED: Layer index where model will be split. Note: Must be less than total_layers.
   save_layers: <save_layers>     # Layer indices to save intermediate outputs. Useful for debugging and visualization.
   num_classes: <num_classes>     # Number of output classes. null: Use model's default. Example: 1000 for ImageNet, 2 for binary classification.

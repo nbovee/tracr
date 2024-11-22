@@ -18,7 +18,6 @@ model:
   pretrained: false
   weight_path: data/onion/weights/best.pt
   input_size: [3, 224, 224]
-  hook_style: post
   split_layer: 10
   save_layers: [2, 4, 6]
   num_classes: 2

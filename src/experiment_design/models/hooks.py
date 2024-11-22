@@ -48,7 +48,7 @@ def create_forward_prehook(
     logger.debug(f"Creating forward pre-hook for layer {layer_index} - {layer_name}")
 
     def pre_hook(module: torch.nn.Module, layer_input: tuple) -> Any:
-        """Execute pre-hook operations for layer processing."""
+        """Execute pre-nn.Module hook operations such as initializing logging & input reinsertion."""
         logger.debug(f"Start prehook {layer_index} - {layer_name}")
         hook_output = layer_input
 
@@ -56,7 +56,6 @@ def create_forward_prehook(
         if (
             wrapped_model.model_stop_i is not None
             and wrapped_model.model_stop_i <= layer_index < wrapped_model.layer_count
-            and getattr(wrapped_model, "hook_style", "pre") == "pre"
         ):
             logger.info(f"Exit signal: during prehook {layer_index}")
             wrapped_model.banked_input[layer_index - 1] = layer_input[0]
@@ -75,15 +74,9 @@ def create_forward_prehook(
             layer_index in wrapped_model.drop_save_dict
             or wrapped_model.model_start_i == layer_index
         ):
-            if (
-                wrapped_model.model_start_i == 0
-                and getattr(wrapped_model, "hook_style", "pre") == "pre"
-            ):
+            if wrapped_model.model_start_i == 0:
                 wrapped_model.banked_input[layer_index] = layer_input
-            elif (
-                0 < wrapped_model.model_start_i > layer_index
-                and getattr(wrapped_model, "hook_style", "pre") == "pre"
-            ):
+            elif 0 < wrapped_model.model_start_i > layer_index:
                 hook_output = wrapped_model.banked_input[layer_index - 1]
 
         # Log metrics if needed
@@ -116,7 +109,7 @@ def create_forward_posthook(
     logger.debug(f"Creating forward post-hook for layer {layer_index} - {layer_name}")
 
     def post_hook(module: torch.nn.Module, layer_input: tuple, output: Any) -> Any:
-        """Execute post-hook operations for layer processing."""
+        """Execute post-nn.Module hook operations such as finalizing logging & nn.Module output packing."""
         logger.debug(f"Start posthook {layer_index} - {layer_name}")
 
         # Log metrics if needed
@@ -139,17 +132,13 @@ def create_forward_posthook(
         ):
             if wrapped_model.model_start_i == 0:
                 wrapped_model.banked_input[layer_index] = output
-            elif (
-                getattr(wrapped_model, "hook_style", "post") == "post"
-                and wrapped_model.model_start_i >= layer_index
-            ):
+            elif wrapped_model.model_start_i >= layer_index:
                 output = wrapped_model.banked_input[layer_index]
 
         # Handle early exit condition
         if (
             wrapped_model.model_stop_i is not None
             and wrapped_model.model_stop_i <= layer_index < wrapped_model.layer_count
-            and getattr(wrapped_model, "hook_style", "post") == "post"
         ):
             logger.info(f"Exit signal: during posthook {layer_index}")
             wrapped_model.banked_input[layer_index] = output
