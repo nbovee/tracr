@@ -124,7 +124,7 @@ def create_forward_posthook(
 
         # case if we are on the Cloud Device
         else:
-            if layer_index in wrapped_model.banked_output.keys():
+            if layer_index in wrapped_model.banked_output:
                 output = wrapped_model.banked_output[layer_index]
 
         logger.debug(f"End posthook {layer_index} - {layer_name}")
