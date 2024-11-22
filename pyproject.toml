@@ -5,7 +5,7 @@ description = "An experimental framework for computational offloading and distri
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
-    { name = "Nick Bovee", email = "pypi.blizzard606@passmail.com"},
+    { name = "Nick Bovee", email = "contact@nicholas.bov.ee"},
     { name = "Izhar Ali", email = "izharali.skt@gmail.com" },
 ]
 dependencies = [
