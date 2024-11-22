@@ -52,15 +52,6 @@ def create_forward_prehook(
         logger.debug(f"Start prehook {layer_index} - {layer_name}")
         hook_output = layer_input
 
-        # Handle early exit condition
-        if (
-            wrapped_model.model_stop_i is not None
-            and wrapped_model.model_stop_i <= layer_index < wrapped_model.layer_count
-        ):
-            logger.info(f"Exit signal: during prehook {layer_index}")
-            wrapped_model.banked_input[layer_index - 1] = layer_input[0]
-            raise HookExitException(wrapped_model.banked_input)
-
         # Handle first layer
         if layer_index == 0:
             if wrapped_model.model_start_i == 0:
