@@ -100,7 +100,7 @@ def create_forward_posthook(
         """Execute post-nn.Module hook operations such as finalizing logging & nn.Module output packing."""
         logger.debug(f"Start posthook {layer_index} - {layer_name}")
 
-        # Log metrics if needed
+        # Finish logging if needed
         if wrapped_model.log and layer_index >= wrapped_model.model_start_i:
             wrapped_model.forward_info[layer_index]["inference_time"] += (
                 wrapped_model.timer()
@@ -113,24 +113,19 @@ def create_forward_posthook(
                 wrapped_model.forward_info[layer_index]["inference_time"] / 1e9
             )
 
-        # Handle marked layers
-        if (
-            layer_index in wrapped_model.save_layers
-            or wrapped_model.model_start_i == layer_index
-        ):
-            if wrapped_model.model_start_i == 0:
+        # case if we are on the Edge Device
+        if wrapped_model.model_start_i == 0:
+            prepare_exit = wrapped_model.model_stop_i <= layer_index
+            if layer_index in wrapped_model.save_layers or prepare_exit:
                 wrapped_model.banked_output[layer_index] = output
-            elif wrapped_model.model_start_i >= layer_index:
-                output = wrapped_model.banked_output[layer_index]
+            if prepare_exit:
+                logger.info(f"Exit signal: during posthook {layer_index}")
+                raise HookExitException(wrapped_model.banked_output)
 
-        # Handle early exit condition
-        if (
-            wrapped_model.model_stop_i is not None
-            and wrapped_model.model_stop_i <= layer_index < wrapped_model.layer_count
-        ):
-            logger.info(f"Exit signal: during posthook {layer_index}")
-            wrapped_model.banked_output[layer_index] = output
-            raise HookExitException(wrapped_model.banked_output)
+        # case if we are on the Cloud Device
+        else:
+            if layer_index in wrapped_model.banked_output.keys():
+                output = wrapped_model.banked_output[layer_index]
 
         logger.debug(f"End posthook {layer_index} - {layer_name}")
         return output
