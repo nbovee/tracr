@@ -4755,11 +4755,12 @@ wheels = [
 [[package]]
 name = "tracr"
 version = "0.3.0"
-source = { editable = "." }
+source = { virtual = "." }
 dependencies = [
     { name = "blosc2" },
     { name = "loguru" },
     { name = "paramiko" },
+    { name = "pyyaml" },
     { name = "rich" },
     { name = "rpyc" },
     { name = "tomli" },
@@ -4799,6 +4800,7 @@ requires-dist = [
     { name = "blosc2", specifier = ">=2.7.1" },
     { name = "loguru", specifier = ">=0.7.2" },
     { name = "paramiko", specifier = ">=3.5.0" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rich", specifier = ">=13.9.1" },
     { name = "rpyc", specifier = ">=6.0.1" },
     { name = "tomli", specifier = ">=2.0.0" },
