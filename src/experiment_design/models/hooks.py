@@ -52,23 +52,20 @@ def create_forward_prehook(
         logger.debug(f"Start prehook {layer_index} - {layer_name}")
         hook_output = layer_input
 
-        # Handle first layer
-        if layer_index == 0:
-            if wrapped_model.model_start_i == 0:
-                wrapped_model.banked_input = {}
-            else:
-                wrapped_model.banked_input = layer_input[0]()
-                hook_output = torch.randn(1, *wrapped_model.input_size).to(device)
+        # case if we are on the Edge Device
+        if wrapped_model.model_start_i == 0:
+            # Handling for Edge Device first entrance to model
+            if layer_index == 0:
+                wrapped_model.banked_output = {}
 
-        # Handle marked layers
-        elif (
-            layer_index in wrapped_model.skip_layers
-            or wrapped_model.model_start_i == layer_index
-        ):
-            if wrapped_model.model_start_i == 0:
-                wrapped_model.banked_input[layer_index] = layer_input
-            elif 0 < wrapped_model.model_start_i > layer_index:
-                hook_output = wrapped_model.banked_input[layer_index - 1]
+        # case if we are on the Cloud Device
+        else:
+            # Handling for Cloud Device first entrance to model
+            if layer_index == 0:
+                # grab dictionary of saved Edge Device outputs from layer_input
+                wrapped_model.banked_output = layer_input[0]()
+                # create dummy output on device to pass to next layer
+                hook_output = torch.randn(1, *wrapped_model.input_size).to(device)
 
         # Log metrics if needed
         if wrapped_model.log and layer_index >= wrapped_model.model_start_i:
@@ -118,13 +115,13 @@ def create_forward_posthook(
 
         # Handle marked layers
         if (
-            layer_index in wrapped_model.skip_layers
+            layer_index in wrapped_model.save_layers
             or wrapped_model.model_start_i == layer_index
         ):
             if wrapped_model.model_start_i == 0:
-                wrapped_model.banked_input[layer_index] = output
+                wrapped_model.banked_output[layer_index] = output
             elif wrapped_model.model_start_i >= layer_index:
-                output = wrapped_model.banked_input[layer_index]
+                output = wrapped_model.banked_output[layer_index]
 
         # Handle early exit condition
         if (
@@ -132,8 +129,8 @@ def create_forward_posthook(
             and wrapped_model.model_stop_i <= layer_index < wrapped_model.layer_count
         ):
             logger.info(f"Exit signal: during posthook {layer_index}")
-            wrapped_model.banked_input[layer_index] = output
-            raise HookExitException(wrapped_model.banked_input)
+            wrapped_model.banked_output[layer_index] = output
+            raise HookExitException(wrapped_model.banked_output)
 
         logger.debug(f"End posthook {layer_index} - {layer_name}")
         return output
