@@ -56,8 +56,8 @@ class WrappedModel(BaseModel, ModelInterface):
         self.save_layers = getattr(self.model, "save", {})
 
         # Initialize hook-related attributes
-        self.model_start_i: Optional[int] = None
-        self.model_stop_i: Optional[int] = None
+        self.start_i: Optional[int] = None
+        self.stop_i: Optional[int] = None
         self.banked_output: Optional[Any] = None
         self.log = False
 
@@ -159,8 +159,8 @@ class WrappedModel(BaseModel, ModelInterface):
 
         # Configure forward pass
         self.log = log
-        self.model_start_i = start
-        self.model_stop_i = end
+        self.start_i = start
+        self.stop_i = end
         self._setup_inference_id(inference_id)
 
         # Execute forward pass
@@ -192,7 +192,7 @@ class WrappedModel(BaseModel, ModelInterface):
     def _handle_early_exit(self, exception: HookExitException) -> EarlyOutput:
         """Handle early exit from forward pass."""
         output = EarlyOutput(exception.result)
-        for i in range(self.model_stop_i, self.layer_count):
+        for i in range(self.stop_i, self.layer_count):
             self.forward_info.pop(i, None)
         return output
 

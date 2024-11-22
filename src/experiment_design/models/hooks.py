@@ -53,7 +53,7 @@ def create_forward_prehook(
         hook_output = layer_input
 
         # case if we are on the Edge Device
-        if wrapped_model.model_start_i == 0:
+        if wrapped_model.start_i == 0:
             # Handling for Edge Device first entrance to model
             if layer_index == 0:
                 wrapped_model.banked_output = {}
@@ -68,7 +68,7 @@ def create_forward_prehook(
                 hook_output = torch.randn(1, *wrapped_model.input_size).to(device)
 
         # Log metrics if needed
-        if wrapped_model.log and layer_index >= wrapped_model.model_start_i:
+        if wrapped_model.log and layer_index >= wrapped_model.start_i:
             wrapped_model.forward_info[layer_index]["completed_by_node"] = (
                 wrapped_model.node_name
             )
@@ -101,7 +101,7 @@ def create_forward_posthook(
         logger.debug(f"Start posthook {layer_index} - {layer_name}")
 
         # Finish logging if needed
-        if wrapped_model.log and layer_index >= wrapped_model.model_start_i:
+        if wrapped_model.log and layer_index >= wrapped_model.start_i:
             wrapped_model.forward_info[layer_index]["inference_time"] += (
                 wrapped_model.timer()
             )
@@ -114,8 +114,8 @@ def create_forward_posthook(
             )
 
         # case if we are on the Edge Device
-        if wrapped_model.model_start_i == 0:
-            prepare_exit = wrapped_model.model_stop_i <= layer_index
+        if wrapped_model.start_i == 0:
+            prepare_exit = wrapped_model.stop_i <= layer_index
             if layer_index in wrapped_model.save_layers or prepare_exit:
                 wrapped_model.banked_output[layer_index] = output
             if prepare_exit:
