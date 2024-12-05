@@ -10,6 +10,7 @@ import argparse
 from pathlib import Path
 from typing import Optional, Tuple, Any
 import torch
+from typing import Final
 
 # Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parent
@@ -29,6 +30,10 @@ from src.utils import read_yaml_file  # noqa: E402
 default_config = {"logging": {"log_file": "logs/server.log", "log_level": "INFO"}}
 logging_server = start_logging_server(device=DeviceType.SERVER, config=default_config)
 logger = logging.getLogger("split_computing_logger")
+
+# At the top after imports
+HIGHEST_PROTOCOL = pickle.HIGHEST_PROTOCOL
+LENGTH_PREFIX_SIZE: Final[int] = 4
 
 
 class Server:
@@ -165,7 +170,7 @@ class Server:
 
     def _receive_config(self, conn: socket.socket) -> dict:
         """Receive and parse configuration from client."""
-        config_length = int.from_bytes(conn.recv(4), "big")
+        config_length = int.from_bytes(conn.recv(LENGTH_PREFIX_SIZE), "big")
         config_data = self.compress_data.receive_full_message(
             conn=conn, expected_length=config_length
         )
@@ -196,37 +201,41 @@ class Server:
             self.experiment_manager = ExperimentManager(config)
             experiment = self.experiment_manager.setup_experiment()
             experiment.model.eval()
+            
+            # Cache torch.no_grad() context
+            no_grad_context = torch.no_grad()
 
             # Send acknowledgment
             conn.sendall(b"OK")
 
             # Process incoming data
             while True:
-                # Receive split layer index
-                split_layer_bytes = conn.recv(4)
-                if not split_layer_bytes:
+                # Receive split layer index and data length in one recv
+                header = conn.recv(LENGTH_PREFIX_SIZE * 2)
+                if not header or len(header) != LENGTH_PREFIX_SIZE * 2:
                     break
-                split_layer_index = int.from_bytes(split_layer_bytes, "big")
+                    
+                split_layer_index = int.from_bytes(header[:LENGTH_PREFIX_SIZE], "big")
+                expected_length = int.from_bytes(header[LENGTH_PREFIX_SIZE:], "big")
 
                 # Receive data
-                length_data = conn.recv(4)
-                if not length_data:
-                    break
-                expected_length = int.from_bytes(length_data, "big")
                 compressed_data = self.compress_data.receive_full_message(
                     conn=conn, expected_length=expected_length
                 )
-                output, original_size = self.compress_data.decompress_data(
-                    compressed_data=compressed_data
-                )
+                
+                # Process data with no_grad context
+                with no_grad_context:
+                    output, original_size = self.compress_data.decompress_data(
+                        compressed_data=compressed_data
+                    )
 
-                # Process data
-                processed_result, processing_time = self._process_data(
-                    experiment=experiment,
-                    output=output,
-                    original_size=original_size,
-                    split_layer_index=split_layer_index,
-                )
+                    # Process data
+                    processed_result, processing_time = self._process_data(
+                        experiment=experiment,
+                        output=output,
+                        original_size=original_size,
+                        split_layer_index=split_layer_index,
+                    )
 
                 # Send back results
                 response = (processed_result, processing_time)
