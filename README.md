@@ -5,6 +5,30 @@ An experimental framework for distributed AI experiments, enabling split inferen
 > [!Warning]
 > `tracr` is currently an experimental framework intended to explore distributed AI inference patterns. While functional, it is primarily for research and educational purposes.
 
+## Table of Contents
+- [Key Features](#key-features)
+- [Install](#install)
+- [Prerequisites](#prerequisites)
+  - [System Requirements](#system-requirements)
+  - [Software Installation](#software-installation)
+    - [For Linux/Ubuntu](#for-linuxubuntu)
+    - [For Windows](#for-windows)
+- [Quick Start Guide](#quick-start-guide)
+  - [Basic Setup](#1-basic-setup)
+  - [Pre-configured Experiments](#2-pre-configured-experiments)
+- [Detailed Setup Guide](#detailed-setup-guide)
+  - [Project Structure](#1-project-structure)
+  - [Device Configuration](#2-device-configuration)
+  - [Windows WSL Setup](#windows-wsl-setup)
+- [Extending `tracr`](#extending-tracr)
+  - [Adding Custom Models](#adding-custom-models)
+  - [Adding Custom Datasets](#adding-custom-datasets)
+  - [Configuration Files](#configuration-files)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+- [Acknowledgements](#acknowledgements)
+- [Citation](#citation)
+
 ## Key Features
 
 - **Split Inference**: Distribute model computations between server and edge devices
@@ -90,17 +114,35 @@ python server.py --local --config config/alexnetsplit.yaml
 
 We provide ready-to-use configurations for common scenarios:
 
-#### ImageNet Classification
+#### Classification Models
 ```bash
 # Run AlexNet split inference
 python host.py --config config/alexnetsplit.yaml
+
+# Run ResNet split inference
+python host.py --config config/resnetsplit.yaml
+
+# Run VGG split inference
+python host.py --config config/vggsplit.yaml
+
+# Run EfficientNet split inference
+python host.py --config config/efficientnet_split.yaml
+
+# Run MobileNet split inference
+python host.py --config config/mobilenetsplit.yaml
 ```
 
-#### Object Detection
+#### Object Detection Models
 ```bash
 # Run YOLOv8 split inference
-python host.py --config config/yolosplit.yaml
+python host.py --config config/yolov8split.yaml
+
+# Run YOLOv5 split inference
+python host.py --config config/yolov5split.yaml
 ```
+
+> [!Note]
+> Each configuration file contains optimized settings for the specific model and dataset combination. You can use these as templates for creating your own configurations.
 
 ## Detailed Setup Guide
 
