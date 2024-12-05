@@ -18,7 +18,6 @@ model:
   pretrained: true
   weight_path: null
   input_size: [3, 224, 224]
-  hook_style: post
   split_layer: 16  # Split after 4th max pooling layer
   save_layers: [4, 8, 16]
   num_classes: 1000
@@ -28,6 +27,7 @@ model:
   warmup_iterations: 10
   log_file: logs/vggsplit.log
 
+# DATASET CONFIGURATIONS
 dataset:
   module: imagenet
   class: ImageNetDataset
@@ -38,12 +38,14 @@ dataset:
     transform: null
     max_samples: -1
 
+# DATALOADER CONFIGURATIONS
 dataloader:
   batch_size: 1
   shuffle: false
   num_workers: 4
   collate_fn: imagenet_collate
 
+# COMPRESSION CONFIGURATIONS
 compression:
   clevel: 3
   filter: SHUFFLE

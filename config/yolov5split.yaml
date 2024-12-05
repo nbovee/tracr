@@ -1,19 +1,23 @@
+# config/yolov5split.yaml
+
+# DEFAULT CONFIGURATIONS
 default:
   device: cuda
   font_path: config/fonts/DejaVuSans-Bold.ttf
-  save_layer_images: true
+  save_layer_images: false
 
+# LOGGING CONFIGURATIONS
 logging:
   log_level: INFO
   log_file: logs/app.log
 
+# MODEL CONFIGURATIONS
 model:
   model_name: yolov5s
   version: null
   pretrained: false
   weight_path: data/onion/weights/best.pt
   input_size: [3, 224, 224]
-  hook_style: post
   split_layer: 8
   save_layers: [2, 4, 8]
   num_classes: 2
@@ -23,6 +27,7 @@ model:
   warmup_iterations: 10
   log_file: logs/yolov5split.log
 
+# DATASET CONFIGURATIONS
 dataset:
   module: onion
   class: OnionDataset
@@ -33,12 +38,14 @@ dataset:
     transform: null
     max_samples: -1
 
+# DATALOADER CONFIGURATIONS
 dataloader:
   batch_size: 1
   shuffle: false
   num_workers: 4
   collate_fn: onion_collate
 
+# COMPRESSION CONFIGURATIONS
 compression:
   clevel: 3
   filter: SHUFFLE
