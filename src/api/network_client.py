@@ -13,9 +13,10 @@ logger = logging.getLogger("split_computing_logger")
 HEADER_SIZE: Final[int] = 4
 BUFFER_SIZE: Final[int] = 4096
 ACK_MESSAGE: Final[bytes] = b"OK"
+HIGHEST_PROTOCOL = pickle.HIGHEST_PROTOCOL
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class NetworkConfig:
     """Configuration for network connection."""
 
@@ -39,7 +40,9 @@ class SplitComputeClient:
         self.host = network_config.host
         self.port = network_config.port
         self.socket: Optional[socket.socket] = None
-        self.compressor = DataCompression(self.config.get("compression"))
+        compression_config = self.config.get("compression", {})
+        self.compressor = DataCompression(compression_config)
+        self._header_size_bytes = HEADER_SIZE.to_bytes(HEADER_SIZE, "big")
 
     def connect(self) -> None:
         """Establish connection to server and send initial configuration."""
@@ -50,9 +53,9 @@ class SplitComputeClient:
 
             # Send configuration
             if self.socket:
-                config_bytes = pickle.dumps(self.config)
-                self.socket.sendall(len(config_bytes).to_bytes(HEADER_SIZE, "big"))
-                self.socket.sendall(config_bytes)
+                config_bytes = pickle.dumps(self.config, protocol=HIGHEST_PROTOCOL)
+                size_bytes = len(config_bytes).to_bytes(HEADER_SIZE, "big")
+                self.socket.sendall(size_bytes + config_bytes)
 
                 # Verify connection
                 ack = self.socket.recv(len(ACK_MESSAGE))
@@ -71,10 +74,12 @@ class SplitComputeClient:
             if not self.socket:
                 raise NetworkError("No active connection")
 
-            # Send computation data
-            self.socket.sendall(split_index.to_bytes(HEADER_SIZE, "big"))
-            self.socket.sendall(len(intermediate_output).to_bytes(HEADER_SIZE, "big"))
-            self.socket.sendall(intermediate_output)
+            # Combine all sends into one operation
+            header = (
+                split_index.to_bytes(HEADER_SIZE, "big") +
+                len(intermediate_output).to_bytes(HEADER_SIZE, "big")
+            )
+            self.socket.sendall(header + intermediate_output)
 
             # Receive result
             response_length = int.from_bytes(self.socket.recv(HEADER_SIZE), "big")

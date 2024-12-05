@@ -19,9 +19,10 @@ logger = logging.getLogger("split_computing_logger")
 # Constants
 CHUNK_SIZE: Final[int] = 4096
 LENGTH_PREFIX_SIZE: Final[int] = 4
+HIGHEST_PROTOCOL = pickle.HIGHEST_PROTOCOL
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CompressionConfig:
     """Configuration settings for Blosc2 compression."""
 
@@ -67,16 +68,18 @@ class DataCompression:
             filter=config.get("filter", "NOSHUFFLE"),
             codec=config.get("codec", "ZSTD"),
         )
+        self._filter = blosc2.Filter[self.config.filter]
+        self._codec = blosc2.Codec[self.config.codec]
 
     def compress_data(self, data: Any) -> Tuple[bytes, int]:
         """Compress pickle-serializable data using Blosc2 with configured parameters."""
         try:
-            serialized_data = pickle.dumps(data)
+            serialized_data = pickle.dumps(data, protocol=HIGHEST_PROTOCOL)
             compressed_data = blosc2.compress(
                 serialized_data,
                 clevel=self.config.clevel,
-                filter=blosc2.Filter[self.config.filter],
-                codec=blosc2.Codec[self.config.codec],
+                filter=self._filter,
+                codec=self._codec,
             )
             return compressed_data, len(compressed_data)
         except Exception as e:
@@ -102,7 +105,10 @@ class DataCompression:
 
     def receive_full_message(self, conn: socket.socket, expected_length: int) -> bytes:
         """Receive a complete message of specified length from a socket."""
-        data_chunks = []
+        if expected_length <= CHUNK_SIZE:
+            return self._receive_chunk(conn, expected_length)
+            
+        data_chunks = bytearray(expected_length)
         bytes_received = 0
 
         while bytes_received < expected_length:
@@ -111,12 +117,12 @@ class DataCompression:
 
             try:
                 chunk = self._receive_chunk(conn, chunk_size)
-                data_chunks.append(chunk)
+                data_chunks[bytes_received:bytes_received + len(chunk)] = chunk
                 bytes_received += len(chunk)
             except Exception as e:
                 raise NetworkError(f"Failed to receive message: {e}") from e
 
-        return b"".join(data_chunks)
+        return bytes(data_chunks)
 
     def receive_data(self, conn: socket.socket) -> Optional[Dict[str, Any]]:
         """Receive and decompress length-prefixed data from a socket."""
