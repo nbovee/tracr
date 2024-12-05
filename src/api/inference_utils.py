@@ -210,31 +210,24 @@ class ImageNetPredictor:
         """Initialize predictor with class names and visualization settings."""
         self.class_names = class_names
         self.vis_config = vis_config
+        self._softmax = torch.nn.Softmax(dim=0)
 
     def predict_top_k(
         self, output: torch.Tensor, k: int = 5
     ) -> List[Tuple[str, float]]:
         """Get top-k predictions from model output."""
-        if output.dim() > 2:
-            output = output.squeeze()
-        logits = output[0] if output.dim() == 2 else output
-
-        probabilities = torch.nn.functional.softmax(logits, dim=0)
+        logits = output.squeeze(0) if output.dim() > 1 else output
+        probabilities = self._softmax(logits)
         top_prob, top_catid = torch.topk(probabilities, k)
-
+        
         if max(top_catid) >= len(self.class_names):
             logger.error(
                 f"Invalid class index {max(top_catid)} for {len(self.class_names)} classes"
             )
             return [("unknown", 0.0)]
 
-        predictions = []
-        for prob, catid in zip(top_prob, top_catid):
-            class_name = self.class_names[catid.item()]
-            prob_value = prob.item()
-            predictions.append((class_name, prob_value))
-
-        return predictions
+        return [(self.class_names[catid.item()], prob.item()) 
+                for prob, catid in zip(top_prob, top_catid)]
 
     def log_predictions(self, predictions: List[Tuple[str, float]]) -> None:
         """Log top predictions with formatting."""
@@ -347,45 +340,48 @@ class YOLODetector:
     ) -> List[Tuple[List[int], float, int]]:
         """Process YOLO detection outputs to bounding boxes."""
         outputs = self._prepare_outputs(outputs)
-        rows = outputs.shape[0]
-
-        # Get scaling factors
+        
+        # Calculate scaling factors once
         img_w, img_h = original_img_size
         input_h, input_w = self.config.input_size
-        x_factor = float(img_w) / float(input_w)
-        y_factor = float(img_h) / float(input_h)
-        boxes, scores, class_ids = [], [], []
+        scale_factors = (float(img_w) / float(input_w), 
+                        float(img_h) / float(input_h))
+        
+        # Use numpy operations instead of loops where possible
+        class_scores = outputs[:, 4:]
+        class_ids = np.argmax(class_scores, axis=1)
+        confidences = class_scores[np.arange(len(class_scores)), class_ids]
+        mask = confidences >= self.config.conf_threshold
+        
+        if not np.any(mask):
+            return []
+        
+        # Filter detections using mask
+        filtered_outputs = outputs[mask]
+        filtered_confidences = confidences[mask]
+        filtered_class_ids = class_ids[mask]
+        
+        # Vectorize box scaling
+        boxes = np.array([self._scale_box(det[:4], *scale_factors) 
+                         for det in filtered_outputs])
+        
+        # Filter invalid boxes
+        valid_mask = (boxes[:, 2] > 0) & (boxes[:, 3] > 0)
+        if not np.any(valid_mask):
+            return []
+        
+        boxes = boxes[valid_mask].tolist()
+        scores = filtered_confidences[valid_mask].tolist()
+        class_ids = filtered_class_ids[valid_mask].tolist()
 
-        for i in range(rows):
-            detection = outputs[i]
-            class_scores = detection[4:]
-            class_id = np.argmax(class_scores)
-            confidence = class_scores[class_id]
-
-            if confidence >= self.config.conf_threshold:
-                box = self._scale_box(detection[:4], x_factor, y_factor)
-
-                # Basic validation
-                if box[2] > 0 and box[3] > 0:  # width and height must be positive
-                    boxes.append(box)
-                    scores.append(float(confidence))
-                    class_ids.append(int(class_id))
-                else:
-                    logger.debug(f"Skipping invalid box {box}")
-
-        # Apply NMS
-        if boxes:
-            try:
-                indices = cv2.dnn.NMSBoxes(
-                    boxes, scores, self.config.conf_threshold, self.config.iou_threshold
-                ).flatten()
-
-                return [(boxes[i], scores[i], class_ids[i]) for i in indices]
-            except Exception as e:
-                logger.error(f"Error during NMS: {e}")
-                return []
-
-        return []
+        try:
+            indices = cv2.dnn.NMSBoxes(
+                boxes, scores, self.config.conf_threshold, self.config.iou_threshold
+            ).flatten()
+            return [(boxes[i], scores[i], class_ids[i]) for i in indices]
+        except Exception as e:
+            logger.error(f"Error during NMS: {e}")
+            return []
 
     def _prepare_outputs(self, outputs: torch.Tensor) -> np.ndarray:
         """Prepare model outputs for processing."""
