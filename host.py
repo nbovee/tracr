@@ -150,9 +150,12 @@ class ExperimentHost:
         """Establish connection to the server with detailed logging."""
         logger.debug("Setting up network connection...")
         try:
-            server_device = self.experiment_manager.device_manager.get_device_by_type(
-                "SERVER"
-            )
+            server_device = self.experiment_manager.device_manager.get_device_by_type("SERVER")
+            
+            if not server_device or not server_device.is_reachable():
+                logger.info("No server device configured or unreachable - running locally")
+                return
+
             logger.debug(
                 f"Server device info - Host: {server_device.get_host()}, Port: {server_device.get_port()}"
             )
@@ -164,18 +167,11 @@ class ExperimentHost:
                     f"Successfully connected to server at {server_device.get_host()}:{server_device.get_port()}"
                 )
             else:
-                logger.error("Network manager not found in experiment")
-                raise RuntimeError("Network manager not initialized in experiment")
+                logger.debug("No network client found - running locally")
 
-        except ConnectionRefusedError:
-            logger.error(
-                "Connection refused. Make sure the server is running and accessible"
-            )
-            raise
         except Exception as e:
-            logger.error(f"Failed to establish network connection: {str(e)}")
+            logger.warning(f"Network connection failed, falling back to local execution: {str(e)}")
             logger.debug("Connection error details:", exc_info=True)
-            raise
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional, Union
 
 import pandas as pd
 import torch
@@ -139,6 +139,69 @@ class BaseExperiment(ExperimentInterface):
         except Exception as e:
             logger.error(f"Failed to save results: {e}")
 
+    def _get_original_image(self, inputs: torch.Tensor, image_file: str) -> Image.Image:
+        """Get original image for visualization."""
+        original_image = self.data_loader.dataset.get_original_image(image_file)
+        if original_image is None:
+            return Image.fromarray(
+                (inputs.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255).astype("uint8")
+            )
+        return original_image
+
+    def _save_intermediate_results(
+        self,
+        processed_result: Any,
+        original_image: Image.Image,
+        class_idx: Optional[int],
+        image_file: str,
+        output_dir: Path,
+    ) -> None:
+        """Save intermediate visualization results."""
+        try:
+            # Convert class_idx to class name if available
+            true_class = None
+            if class_idx is not None and isinstance(class_idx, (int, np.integer)):
+                class_names = self._load_class_names()
+                true_class = class_names[class_idx]
+
+            # Use the model's processor to visualize results
+            img = self.post_processor.visualize_result(
+                image=original_image.copy(),
+                result=processed_result,
+                true_class=true_class,
+            )
+
+            output_path = output_dir / f"{Path(image_file).stem}_pred.jpg"
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+
+            img.save(output_path, "JPEG", quality=95)
+            logger.debug(f"Saved visualization to {output_path}")
+
+        except Exception as e:
+            logger.error(f"Error saving visualization: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+    def _log_performance_summary(
+        self,
+        host_time: float,
+        travel_time: float,
+        server_time: float,
+    ) -> None:
+        """Log performance summary."""
+        logger.info(
+            f"\n{'='*50}\n"
+            f"Performance Summary\n"
+            f"{'='*50}\n"
+            f"Host Processing Time:   {host_time:.2f}s\n"
+            f"Network Transfer Time:  {travel_time:.2f}s\n"
+            f"Server Processing Time: {server_time:.2f}s\n"
+            f"{'='*30}\n"
+            f"Total Time:            {host_time + travel_time + server_time:.2f}s\n"
+            f"{'='*50}\n"
+        )
+
 
 @dataclass
 class ProcessingTimes:
@@ -209,56 +272,11 @@ class NetworkedExperiment(BaseExperiment):
         with torch.no_grad():
             return self.model(inputs.to(self.device), end=split_layer)
 
-    def _get_original_image(self, inputs: torch.Tensor, image_file: str) -> Image.Image:
-        """Get original image for visualization."""
-        original_image = self.data_loader.dataset.get_original_image(image_file)
-        if original_image is None:
-            return Image.fromarray(
-                (inputs.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255).astype("uint8")
-            )
-        return original_image
-
     def _prepare_data_for_transfer(
         self, output: torch.Tensor, original_image: Image.Image
     ) -> Tuple[torch.Tensor, Tuple[int, int]]:
         """Prepare data for network transfer."""
         return output, self.post_processor.get_input_size(original_image)
-
-    def _save_intermediate_results(
-        self,
-        processed_result: Any,
-        original_image: Image.Image,
-        class_idx: Optional[int],
-        image_file: str,
-        output_dir: Path,
-    ) -> None:
-        """Save intermediate visualization results."""
-        try:
-            # Convert class_idx to class name if available
-            true_class = None
-            if class_idx is not None and isinstance(class_idx, (int, np.integer)):
-                class_names = self._load_class_names()
-                true_class = class_names[class_idx]
-
-            # Use the model's processor to visualize results
-            img = self.post_processor.visualize_result(
-                image=original_image.copy(),
-                result=processed_result,
-                true_class=true_class,
-            )
-
-            output_path = output_dir / f"{Path(image_file).stem}_pred.jpg"
-            if img.mode != "RGB":
-                img = img.convert("RGB")
-
-            img.save(output_path, "JPEG", quality=95)
-            logger.debug(f"Saved visualization to {output_path}")
-
-        except Exception as e:
-            logger.error(f"Error saving visualization: {e}", exc_info=True)
-            import traceback
-
-            logger.error(traceback.format_exc())
 
     def test_split_performance(
         self, split_layer: int
@@ -306,36 +324,92 @@ class NetworkedExperiment(BaseExperiment):
 
         return times
 
-    def _log_performance_summary(
+
+class LocalExperiment(BaseExperiment):
+    """Experiment implementation for local (non-networked) computing."""
+
+    def __init__(self, config: Dict[str, Any], host: str = None, port: int = None) -> None:
+        """Initialize local experiment."""
+        super().__init__(config, host, port)
+        self.post_processor = self._initialize_post_processor()
+
+    def process_single_image(
         self,
-        host_time: float,
-        travel_time: float,
-        server_time: float,
-    ) -> None:
-        """Log performance summary."""
-        logger.info(
-            f"\n{'='*50}\n"
-            f"Performance Summary\n"
-            f"{'='*50}\n"
-            f"Host Processing Time:   {host_time:.2f}s\n"
-            f"Network Transfer Time:  {travel_time:.2f}s\n"
-            f"Server Processing Time: {server_time:.2f}s\n"
-            f"{'='*30}\n"
-            f"Total Time:            {host_time + travel_time + server_time:.2f}s\n"
-            f"{'='*50}\n"
-        )
+        inputs: torch.Tensor,
+        class_idx: Any,
+        image_file: str,
+        split_layer: int,
+        output_dir: Path,
+    ) -> Optional[ProcessingTimes]:
+        """Process a single image locally."""
+        try:
+            # Time the full model inference
+            start_time = time.time()
+            with torch.no_grad():
+                output = self.model(inputs.to(self.device))
+            
+            original_image = self._get_original_image(inputs, image_file)
+            processed_result = self.post_processor.process_output(
+                output, self.post_processor.get_input_size(original_image)
+            )
+            total_time = time.time() - start_time
+
+            if self.config["default"].get("save_layer_images"):
+                self._save_intermediate_results(
+                    processed_result, original_image, class_idx, image_file, output_dir
+                )
+
+            # For local processing, we consider all time as "host time"
+            return ProcessingTimes(total_time, 0.0, 0.0)
+
+        except Exception as e:
+            logger.error(f"Error processing image: {e}", exc_info=True)
+            return None
+
+    def test_split_performance(self, split_layer: int) -> Tuple[int, float, float, float]:
+        """Test local computing performance."""
+        times = []
+        split_dir = self.paths.images_dir / f"split_{split_layer}"
+        split_dir.mkdir(exist_ok=True)
+
+        with torch.no_grad():
+            for batch in tqdm(self.data_loader, desc=f"Processing locally"):
+                inputs, class_indices, image_files = batch
+                for input_tensor, class_idx, image_file in zip(inputs, class_indices, image_files):
+                    result = self.process_single_image(
+                        input_tensor.unsqueeze(0), class_idx, image_file, split_layer, split_dir
+                    )
+                    if result:
+                        times.append(result)
+
+        if times:
+            total_time = sum(t.total_time for t in times)
+            self._log_performance_summary(total_time, 0.0, 0.0)
+            return split_layer, total_time, 0.0, 0.0
+
+        return split_layer, 0.0, 0.0, 0.0
 
 
 class ExperimentManager:
     """Factory class for creating and managing experiments."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], force_local: bool = False):
         self.config = config
         self.device_manager = DeviceManager()
         self.server_device = self.device_manager.get_device_by_type("SERVER")
-        self.host = self.server_device.get_host()
-        self.port = self.server_device.get_port()
+        self.is_networked = bool(self.server_device and self.server_device.is_reachable()) and not force_local
+        
+        if self.is_networked:
+            self.host = self.server_device.get_host()
+            self.port = self.server_device.get_port()
+            logger.info("Network devices configured - using networked experiment")
+        else:
+            self.host = None
+            self.port = None
+            logger.info("Using local experiment")
 
-    def setup_experiment(self) -> ExperimentInterface:
+    def setup_experiment(self) -> Union[NetworkedExperiment, LocalExperiment]:
         """Create and return an experiment instance."""
-        return NetworkedExperiment(self.config, self.host, self.port)
+        if self.is_networked:
+            return NetworkedExperiment(self.config, self.host, self.port)
+        return LocalExperiment(self.config)

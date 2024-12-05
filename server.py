@@ -6,6 +6,7 @@ import pickle
 import socket
 import sys
 import time
+import argparse
 from pathlib import Path
 from typing import Optional, Tuple, Any
 import torch
@@ -23,6 +24,7 @@ from src.api import (  # noqa: E402
     start_logging_server,
     shutdown_logging_server,
 )
+from src.utils import read_yaml_file  # noqa: E402
 
 default_config = {"logging": {"log_file": "logs/server.log", "log_level": "INFO"}}
 logging_server = start_logging_server(device=DeviceType.SERVER, config=default_config)
@@ -32,14 +34,20 @@ logger = logging.getLogger("split_computing_logger")
 class Server:
     """Handles server operations for managing connections and processing data."""
 
-    def __init__(self) -> None:
+    def __init__(self, local_mode: bool = False, config_path: Optional[str] = None) -> None:
         """Initialize the Server with device manager and placeholders."""
         logger.debug("Initializing server...")
         self.device_manager = DeviceManager()
         self.experiment_manager: Optional[ExperimentManager] = None
         self.server_socket: Optional[socket.socket] = None
-        self._setup_compression()
-        logger.debug("Server initialized")
+        self.local_mode = local_mode
+        self.config_path = config_path
+        
+        if not local_mode:
+            self._setup_compression()
+            logger.debug("Server initialized in network mode")
+        else:
+            logger.debug("Server initialized in local mode")
 
     def _setup_compression(self) -> None:
         """Initialize compression with minimal settings."""
@@ -52,15 +60,96 @@ class Server:
         )
         logger.debug("Initialized compression with minimal settings")
 
-    def _update_compression(self, config: dict) -> None:
-        """Update compression settings from received configuration."""
-        if "compression" in config:
-            logger.debug("Updating compression settings from received config")
-            self.compress_data = DataCompression(config["compression"])
+    def start(self) -> None:
+        """Start the server in either networked or local mode."""
+        if self.local_mode:
+            self._run_local_experiment()
         else:
-            logger.warning(
-                "No compression settings in config, keeping minimal settings"
+            self._run_networked_server()
+
+    def _run_local_experiment(self) -> None:
+        """Run experiment locally on the server."""
+        if not self.config_path:
+            logger.error("Config path required for local mode")
+            return
+
+        try:
+            logger.info("Starting local experiment...")
+            config = read_yaml_file(self.config_path)
+            
+            # Import required components for local execution
+            from src.experiment_design.datasets import DataManager
+            import torch.utils.data
+            
+            # Setup experiment with force_local=True
+            self.experiment_manager = ExperimentManager(config, force_local=True)
+            experiment = self.experiment_manager.setup_experiment()
+            
+            # Setup data loader
+            logger.debug("Setting up data loader...")
+            dataset_config = config.get("dataset", {})
+            dataloader_config = config.get("dataloader", {})
+
+            # Import collate function if specified
+            collate_fn = None
+            if dataloader_config.get("collate_fn"):
+                try:
+                    from src.experiment_design.datasets.collate_fns import COLLATE_FUNCTIONS
+                    collate_fn = COLLATE_FUNCTIONS[dataloader_config["collate_fn"]]
+                    logger.debug(f"Using custom collate function: {dataloader_config['collate_fn']}")
+                except KeyError:
+                    logger.warning(
+                        f"Collate function '{dataloader_config['collate_fn']}' not found. "
+                        "Using default collation."
+                    )
+
+            # Create dataset and data loader
+            dataset = DataManager.get_dataset(
+                {"dataset": dataset_config, "dataloader": dataloader_config}
             )
+            data_loader = torch.utils.data.DataLoader(
+                dataset,
+                batch_size=dataloader_config.get("batch_size"),
+                shuffle=dataloader_config.get("shuffle"),
+                num_workers=dataloader_config.get("num_workers"),
+                collate_fn=collate_fn,
+            )
+            
+            # Attach data loader to experiment
+            experiment.data_loader = data_loader
+            
+            # Run experiment
+            experiment.run()
+            logger.info("Local experiment completed successfully")
+        except Exception as e:
+            logger.error(f"Error running local experiment: {e}", exc_info=True)
+
+    def _run_networked_server(self) -> None:
+        """Run server in networked mode."""
+        server_device = self.device_manager.get_device_by_type("SERVER")
+        if not server_device:
+            logger.error("No SERVER device configured. Cannot start server.")
+            return
+
+        if not server_device.is_reachable():
+            logger.error("SERVER device is not reachable. Check network connection.")
+            return
+
+        port = server_device.get_port()
+        logger.info(f"Starting networked server on port {port}...")
+
+        try:
+            self._setup_socket(port)
+            while True:
+                conn, addr = self.server_socket.accept()
+                logger.info(f"Connected by {addr}")
+                self.handle_connection(conn)
+        except KeyboardInterrupt:
+            logger.info("Server shutdown requested...")
+        except Exception as e:
+            logger.error(f"Server error: {e}", exc_info=True)
+        finally:
+            self.cleanup()
 
     def _setup_socket(self, port: int) -> None:
         """Set up server socket with proper error handling."""
@@ -148,32 +237,15 @@ class Server:
         finally:
             conn.close()
 
-    def start(self) -> None:
-        """Start the server to listen for incoming connections."""
-        server_device = self.device_manager.get_device_by_type("SERVER")
-        if not server_device:
-            logger.error("No SERVER device configured. Cannot start server.")
-            return
-
-        if not server_device.is_reachable():
-            logger.error("SERVER device is not reachable. Check network connection.")
-            return
-
-        port = server_device.get_port()
-        logger.info(f"Starting server on port {port}...")
-
-        try:
-            self._setup_socket(port)
-            while True:
-                conn, addr = self.server_socket.accept()
-                logger.info(f"Connected by {addr}")
-                self.handle_connection(conn)
-        except KeyboardInterrupt:
-            logger.info("Server shutdown requested...")
-        except Exception as e:
-            logger.error(f"Server error: {e}", exc_info=True)
-        finally:
-            self.cleanup()
+    def _update_compression(self, config: dict) -> None:
+        """Update compression settings from received configuration."""
+        if "compression" in config:
+            logger.debug("Updating compression settings from received config")
+            self.compress_data = DataCompression(config["compression"])
+        else:
+            logger.warning(
+                "No compression settings in config, keeping minimal settings"
+            )
 
     def cleanup(self) -> None:
         """Clean up server resources and close the socket."""
@@ -192,7 +264,24 @@ class Server:
 
 
 if __name__ == "__main__":
-    server = Server()
+    parser = argparse.ArgumentParser(description="Run server for split computing")
+    parser.add_argument(
+        "--local", 
+        action="store_true", 
+        help="Run experiment locally instead of as a network server"
+    )
+    parser.add_argument(
+        "--config",
+        type=str,
+        help="Path to configuration file (required for local mode)",
+        required=False
+    )
+    args = parser.parse_args()
+
+    if args.local and not args.config:
+        parser.error("--config is required when running in local mode")
+
+    server = Server(local_mode=args.local, config_path=args.config)
     try:
         server.start()
     except KeyboardInterrupt:
