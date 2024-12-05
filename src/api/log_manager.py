@@ -14,7 +14,6 @@ from rich.logging import RichHandler
 
 from src.utils.file_manager import get_repo_root
 
-# Constants
 LOGS_DIR = Path(get_repo_root()) / "logs"
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 

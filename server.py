@@ -31,7 +31,6 @@ default_config = {"logging": {"log_file": "logs/server.log", "log_level": "INFO"
 logging_server = start_logging_server(device=DeviceType.SERVER, config=default_config)
 logger = logging.getLogger("split_computing_logger")
 
-# At the top after imports
 HIGHEST_PROTOCOL = pickle.HIGHEST_PROTOCOL
 LENGTH_PREFIX_SIZE: Final[int] = 4
 
@@ -39,7 +38,9 @@ LENGTH_PREFIX_SIZE: Final[int] = 4
 class Server:
     """Handles server operations for managing connections and processing data."""
 
-    def __init__(self, local_mode: bool = False, config_path: Optional[str] = None) -> None:
+    def __init__(
+        self, local_mode: bool = False, config_path: Optional[str] = None
+    ) -> None:
         """Initialize the Server with device manager and placeholders."""
         logger.debug("Initializing server...")
         self.device_manager = DeviceManager()
@@ -47,7 +48,7 @@ class Server:
         self.server_socket: Optional[socket.socket] = None
         self.local_mode = local_mode
         self.config_path = config_path
-        
+
         if not local_mode:
             self._setup_compression()
             logger.debug("Server initialized in network mode")
@@ -81,34 +82,34 @@ class Server:
         try:
             logger.info("Starting local experiment...")
             config = read_yaml_file(self.config_path)
-            
-            # Import required components for local execution
+
             from src.experiment_design.datasets import DataManager
             import torch.utils.data
-            
-            # Setup experiment with force_local=True
+
             self.experiment_manager = ExperimentManager(config, force_local=True)
             experiment = self.experiment_manager.setup_experiment()
-            
-            # Setup data loader
+
             logger.debug("Setting up data loader...")
             dataset_config = config.get("dataset", {})
             dataloader_config = config.get("dataloader", {})
 
-            # Import collate function if specified
             collate_fn = None
             if dataloader_config.get("collate_fn"):
                 try:
-                    from src.experiment_design.datasets.collate_fns import COLLATE_FUNCTIONS
+                    from src.experiment_design.datasets.collate_fns import (
+                        COLLATE_FUNCTIONS,
+                    )
+
                     collate_fn = COLLATE_FUNCTIONS[dataloader_config["collate_fn"]]
-                    logger.debug(f"Using custom collate function: {dataloader_config['collate_fn']}")
+                    logger.debug(
+                        f"Using custom collate function: {dataloader_config['collate_fn']}"
+                    )
                 except KeyError:
                     logger.warning(
                         f"Collate function '{dataloader_config['collate_fn']}' not found. "
                         "Using default collation."
                     )
 
-            # Create dataset and data loader
             dataset = DataManager.get_dataset(
                 {"dataset": dataset_config, "dataloader": dataloader_config}
             )
@@ -119,11 +120,9 @@ class Server:
                 num_workers=dataloader_config.get("num_workers"),
                 collate_fn=collate_fn,
             )
-            
+
             # Attach data loader to experiment
             experiment.data_loader = data_loader
-            
-            # Run experiment
             experiment.run()
             logger.info("Local experiment completed successfully")
         except Exception as e:
@@ -201,7 +200,7 @@ class Server:
             self.experiment_manager = ExperimentManager(config)
             experiment = self.experiment_manager.setup_experiment()
             experiment.model.eval()
-            
+
             # Cache torch.no_grad() context
             no_grad_context = torch.no_grad()
 
@@ -214,7 +213,7 @@ class Server:
                 header = conn.recv(LENGTH_PREFIX_SIZE * 2)
                 if not header or len(header) != LENGTH_PREFIX_SIZE * 2:
                     break
-                    
+
                 split_layer_index = int.from_bytes(header[:LENGTH_PREFIX_SIZE], "big")
                 expected_length = int.from_bytes(header[LENGTH_PREFIX_SIZE:], "big")
 
@@ -222,7 +221,7 @@ class Server:
                 compressed_data = self.compress_data.receive_full_message(
                     conn=conn, expected_length=expected_length
                 )
-                
+
                 # Process data with no_grad context
                 with no_grad_context:
                     output, original_size = self.compress_data.decompress_data(
@@ -275,15 +274,15 @@ class Server:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run server for split computing")
     parser.add_argument(
-        "--local", 
-        action="store_true", 
-        help="Run experiment locally instead of as a network server"
+        "--local",
+        action="store_true",
+        help="Run experiment locally instead of as a network server",
     )
     parser.add_argument(
         "--config",
         type=str,
         help="Path to configuration file (required for local mode)",
-        required=False
+        required=False,
     )
     args = parser.parse_args()
 

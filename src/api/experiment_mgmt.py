@@ -114,7 +114,6 @@ class BaseExperiment(ExperimentInterface):
 
     def save_results(self, results: List[Tuple[int, float, float, float]]) -> None:
         """Save experiment results to Excel file."""
-        # First create DataFrame with the actual data we have
         df = pd.DataFrame(
             results,
             columns=[
@@ -125,12 +124,10 @@ class BaseExperiment(ExperimentInterface):
             ],
         )
 
-        # Then add the calculated column
         df["Total Processing Time"] = (
             df["Host Time"] + df["Travel Time"] + df["Server Time"]
         )
 
-        # Save to Excel
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         output_file = self.paths.model_dir / f"split_layer_times_{timestamp}.xlsx"
 
@@ -165,7 +162,6 @@ class BaseExperiment(ExperimentInterface):
                 class_names = self._load_class_names()
                 true_class = class_names[class_idx]
 
-            # Use the model's processor to visualize results
             img = self.post_processor.visualize_result(
                 image=original_image.copy(),
                 result=processed_result,
@@ -182,6 +178,7 @@ class BaseExperiment(ExperimentInterface):
         except Exception as e:
             logger.error(f"Error saving visualization: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
 
     def _log_performance_summary(
@@ -296,7 +293,6 @@ class NetworkedExperiment(BaseExperiment):
             ):
                 times.extend(self._process_batch(batch, split_layer, split_dir))
 
-        # Calculate totals
         if times:
             total_host = sum(t.host_time for t in times)
             total_travel = sum(t.travel_time for t in times)
@@ -315,21 +311,30 @@ class NetworkedExperiment(BaseExperiment):
     ) -> List[ProcessingTimes]:
         """Process a batch of images."""
         inputs, class_indices, image_files = batch
-        # Use list comprehension instead of append in loop
         return [
-            result for result in (
+            result
+            for result in (
                 self.process_single_image(
-                    input_tensor.unsqueeze(0), class_idx, image_file, split_layer, split_dir
+                    input_tensor.unsqueeze(0),
+                    class_idx,
+                    image_file,
+                    split_layer,
+                    split_dir,
                 )
-                for input_tensor, class_idx, image_file in zip(inputs, class_indices, image_files)
-            ) if result is not None
+                for input_tensor, class_idx, image_file in zip(
+                    inputs, class_indices, image_files
+                )
+            )
+            if result is not None
         ]
 
 
 class LocalExperiment(BaseExperiment):
     """Experiment implementation for local (non-networked) computing."""
 
-    def __init__(self, config: Dict[str, Any], host: str = None, port: int = None) -> None:
+    def __init__(
+        self, config: Dict[str, Any], host: str = None, port: int = None
+    ) -> None:
         """Initialize local experiment."""
         super().__init__(config, host, port)
         self.post_processor = self._initialize_post_processor()
@@ -344,11 +349,10 @@ class LocalExperiment(BaseExperiment):
     ) -> Optional[ProcessingTimes]:
         """Process a single image locally."""
         try:
-            # Time the full model inference
             start_time = time.time()
             with torch.no_grad():
                 output = self.model(inputs.to(self.device))
-            
+
             original_image = self._get_original_image(inputs, image_file)
             processed_result = self.post_processor.process_output(
                 output, self.post_processor.get_input_size(original_image)
@@ -367,26 +371,32 @@ class LocalExperiment(BaseExperiment):
             logger.error(f"Error processing image: {e}", exc_info=True)
             return None
 
-    def test_split_performance(self, split_layer: int) -> Tuple[int, float, float, float]:
+    def test_split_performance(
+        self, split_layer: int
+    ) -> Tuple[int, float, float, float]:
         """Test local computing performance."""
         split_dir = self.paths.images_dir / f"split_{split_layer}"
         split_dir.mkdir(exist_ok=True)
-
-        # Pre-allocate device tensor
         device = self.device
 
-        with torch.no_grad(), torch.cuda.amp.autocast(enabled=torch.cuda.is_available()):
+        with (
+            torch.no_grad(),
+            torch.cuda.amp.autocast(enabled=torch.cuda.is_available()),
+        ):
             times = [
                 result
                 for batch in tqdm(self.data_loader, desc="Processing locally")
                 for input_tensor, class_idx, image_file in zip(*batch)
-                if (result := self.process_single_image(
-                    input_tensor.unsqueeze(0).to(device, non_blocking=True),
-                    class_idx,
-                    image_file,
-                    split_layer,
-                    split_dir
-                )) is not None
+                if (
+                    result := self.process_single_image(
+                        input_tensor.unsqueeze(0).to(device, non_blocking=True),
+                        class_idx,
+                        image_file,
+                        split_layer,
+                        split_dir,
+                    )
+                )
+                is not None
             ]
 
         if times:
@@ -404,8 +414,11 @@ class ExperimentManager:
         self.config = config
         self.device_manager = DeviceManager()
         self.server_device = self.device_manager.get_device_by_type("SERVER")
-        self.is_networked = bool(self.server_device and self.server_device.is_reachable()) and not force_local
-        
+        self.is_networked = (
+            bool(self.server_device and self.server_device.is_reachable())
+            and not force_local
+        )
+
         if self.is_networked:
             self.host = self.server_device.get_host()
             self.port = self.server_device.get_port()

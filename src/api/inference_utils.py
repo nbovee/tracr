@@ -12,7 +12,6 @@ import cv2  # type: ignore
 
 logger = logging.getLogger("split_computing_logger")
 
-# Constants
 DEFAULT_FONT_SIZE: Final[int] = 10
 DEFAULT_CONF_THRESHOLD: Final[float] = 0.25
 DEFAULT_IOU_THRESHOLD: Final[float] = 0.45
@@ -133,8 +132,8 @@ class YOLOProcessor(ModelProcessor):
         return [
             {
                 "box": box,  # [x1, y1, w, h]
-                "confidence": float(score),  # Ensure score is a float
-                "class_name": self.class_names[int(class_id)],  # Ensure class_id is int
+                "confidence": float(score),
+                "class_name": self.class_names[int(class_id)],
             }
             for box, score, class_id in detections
         ]
@@ -181,7 +180,9 @@ class ModelProcessorFactory:
                 break
 
         if not processor_class:
-            logger.warning(f"No specific processor found for {model_name}, using ImageNetProcessor as default")
+            logger.warning(
+                f"No specific processor found for {model_name}, using ImageNetProcessor as default"
+            )
             processor_class = ImageNetProcessor
 
         # Create configuration objects
@@ -219,15 +220,17 @@ class ImageNetPredictor:
         logits = output.squeeze(0) if output.dim() > 1 else output
         probabilities = self._softmax(logits)
         top_prob, top_catid = torch.topk(probabilities, k)
-        
+
         if max(top_catid) >= len(self.class_names):
             logger.error(
                 f"Invalid class index {max(top_catid)} for {len(self.class_names)} classes"
             )
             return [("unknown", 0.0)]
 
-        return [(self.class_names[catid.item()], prob.item()) 
-                for prob, catid in zip(top_prob, top_catid)]
+        return [
+            (self.class_names[catid.item()], prob.item())
+            for prob, catid in zip(top_prob, top_catid)
+        ]
 
     def log_predictions(self, predictions: List[Tuple[str, float]]) -> None:
         """Log top predictions with formatting."""
@@ -340,36 +343,36 @@ class YOLODetector:
     ) -> List[Tuple[List[int], float, int]]:
         """Process YOLO detection outputs to bounding boxes."""
         outputs = self._prepare_outputs(outputs)
-        
+
         # Calculate scaling factors once
         img_w, img_h = original_img_size
         input_h, input_w = self.config.input_size
-        scale_factors = (float(img_w) / float(input_w), 
-                        float(img_h) / float(input_h))
-        
+        scale_factors = (float(img_w) / float(input_w), float(img_h) / float(input_h))
+
         # Use numpy operations instead of loops where possible
         class_scores = outputs[:, 4:]
         class_ids = np.argmax(class_scores, axis=1)
         confidences = class_scores[np.arange(len(class_scores)), class_ids]
         mask = confidences >= self.config.conf_threshold
-        
+
         if not np.any(mask):
             return []
-        
+
         # Filter detections using mask
         filtered_outputs = outputs[mask]
         filtered_confidences = confidences[mask]
         filtered_class_ids = class_ids[mask]
-        
+
         # Vectorize box scaling
-        boxes = np.array([self._scale_box(det[:4], *scale_factors) 
-                         for det in filtered_outputs])
-        
+        boxes = np.array(
+            [self._scale_box(det[:4], *scale_factors) for det in filtered_outputs]
+        )
+
         # Filter invalid boxes
         valid_mask = (boxes[:, 2] > 0) & (boxes[:, 3] > 0)
         if not np.any(valid_mask):
             return []
-        
+
         boxes = boxes[valid_mask].tolist()
         scores = filtered_confidences[valid_mask].tolist()
         class_ids = filtered_class_ids[valid_mask].tolist()

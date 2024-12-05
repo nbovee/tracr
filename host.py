@@ -22,9 +22,11 @@ from src.api import (  # noqa: E402
 from src.experiment_design.datasets import DataManager  # noqa: E402
 from src.utils import read_yaml_file  # noqa: E402
 
-# Constants
 DEFAULT_SOURCE_DIR: Final[str] = "results"
+
+# Destination directory on server to copy results over to from host when experiment is complete
 DEFAULT_DEST_DIR: Final[str] = "/mnt/d/github/RACR_AI/results"
+
 
 class ExperimentHost:
     """Manages the experiment setup and execution."""
@@ -33,8 +35,6 @@ class ExperimentHost:
         """Initialize with configuration and set up components."""
         self.config = self._load_config(config_path)
         self._setup_logger(config_path)
-
-        # Cache experiment manager and experiment
         self.experiment_manager = ExperimentManager(self.config)
         self.experiment = self.experiment_manager.setup_experiment()
         self._setup_network_connection()
@@ -70,11 +70,7 @@ class ExperimentHost:
         logger.debug("Setting up data loader...")
         dataset_config = self.config.get("dataset", {})
         dataloader_config = self.config.get("dataloader", {})
-
-        # Cache collate function lookup
         collate_fn = self._get_collate_fn(dataloader_config)
-
-        # Pre-fetch dataloader configs
         batch_size = dataloader_config.get("batch_size")
         shuffle = dataloader_config.get("shuffle")
         num_workers = dataloader_config.get("num_workers")
@@ -82,7 +78,7 @@ class ExperimentHost:
         dataset = DataManager.get_dataset(
             {"dataset": dataset_config, "dataloader": dataloader_config}
         )
-        
+
         # Create dataloader with pre-fetched configs
         self.data_loader = torch.utils.data.DataLoader(
             dataset,
@@ -99,6 +95,7 @@ class ExperimentHost:
         if collate_fn_name := dataloader_config.get("collate_fn"):
             try:
                 from src.experiment_design.datasets.collate_fns import COLLATE_FUNCTIONS
+
                 return COLLATE_FUNCTIONS[collate_fn_name]
             except KeyError:
                 logger.warning(
@@ -116,12 +113,13 @@ class ExperimentHost:
         try:
             from src.api import SSHSession
 
-            server_device = self.experiment_manager.device_manager.get_device_by_type("SERVER")
+            server_device = self.experiment_manager.device_manager.get_device_by_type(
+                "SERVER"
+            )
             if not server_device:
                 logger.error("No server device found for copying results")
                 return
 
-            # Pre-compute paths and config
             ssh_config = {
                 "host": server_device.get_host(),
                 "user": server_device.get_username(),
@@ -131,12 +129,20 @@ class ExperimentHost:
 
             results_config = self.config.get("results", {})
             source_dir = Path(results_config.get("source_dir", DEFAULT_SOURCE_DIR))
-            destination_dir = Path(results_config.get("destination_dir", DEFAULT_DEST_DIR))
+            destination_dir = Path(
+                results_config.get("destination_dir", DEFAULT_DEST_DIR)
+            )
 
-            logger.info(f"Establishing SSH connection to server {ssh_config['host']}...")
+            logger.info(
+                f"Establishing SSH connection to server {ssh_config['host']}..."
+            )
             with SSHSession(**ssh_config) as ssh:
-                if ssh.copy_results_to_server(source_dir=source_dir, destination_dir=destination_dir):
-                    logger.info(f"Results successfully copied to {destination_dir} on server")
+                if ssh.copy_results_to_server(
+                    source_dir=source_dir, destination_dir=destination_dir
+                ):
+                    logger.info(
+                        f"Results successfully copied to {destination_dir} on server"
+                    )
                 else:
                     logger.error("Failed to copy results to server")
 
@@ -159,10 +165,14 @@ class ExperimentHost:
         """Establish connection to the server with detailed logging."""
         logger.debug("Setting up network connection...")
         try:
-            server_device = self.experiment_manager.device_manager.get_device_by_type("SERVER")
-            
+            server_device = self.experiment_manager.device_manager.get_device_by_type(
+                "SERVER"
+            )
+
             if not server_device or not server_device.is_reachable():
-                logger.info("No server device configured or unreachable - running locally")
+                logger.info(
+                    "No server device configured or unreachable - running locally"
+                )
                 return
 
             logger.debug(
@@ -179,7 +189,9 @@ class ExperimentHost:
                 logger.debug("No network client found - running locally")
 
         except Exception as e:
-            logger.warning(f"Network connection failed, falling back to local execution: {str(e)}")
+            logger.warning(
+                f"Network connection failed, falling back to local execution: {str(e)}"
+            )
             logger.debug("Connection error details:", exc_info=True)
 
 

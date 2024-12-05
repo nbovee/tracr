@@ -16,7 +16,6 @@ import socket
 
 logger = logging.getLogger("split_computing_logger")
 
-# Constants
 CHUNK_SIZE: Final[int] = 4096
 LENGTH_PREFIX_SIZE: Final[int] = 4
 HIGHEST_PROTOCOL = pickle.HIGHEST_PROTOCOL
@@ -107,7 +106,7 @@ class DataCompression:
         """Receive a complete message of specified length from a socket."""
         if expected_length <= CHUNK_SIZE:
             return self._receive_chunk(conn, expected_length)
-            
+
         data_chunks = bytearray(expected_length)
         bytes_received = 0
 
@@ -117,7 +116,7 @@ class DataCompression:
 
             try:
                 chunk = self._receive_chunk(conn, chunk_size)
-                data_chunks[bytes_received:bytes_received + len(chunk)] = chunk
+                data_chunks[bytes_received : bytes_received + len(chunk)] = chunk
                 bytes_received += len(chunk)
             except Exception as e:
                 raise NetworkError(f"Failed to receive message: {e}") from e

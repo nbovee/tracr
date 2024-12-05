@@ -11,7 +11,6 @@ from functools import wraps
 
 logger = logging.getLogger("split_computing_logger")
 
-# Constants
 DEFAULT_PORT: Final[int] = 22
 DEFAULT_TIMEOUT: Final[float] = 10.0
 CHUNK_SIZE: Final[int] = 1024

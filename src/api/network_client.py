@@ -75,10 +75,9 @@ class SplitComputeClient:
                 raise NetworkError("No active connection")
 
             # Combine all sends into one operation
-            header = (
-                split_index.to_bytes(HEADER_SIZE, "big") +
-                len(intermediate_output).to_bytes(HEADER_SIZE, "big")
-            )
+            header = split_index.to_bytes(HEADER_SIZE, "big") + len(
+                intermediate_output
+            ).to_bytes(HEADER_SIZE, "big")
             self.socket.sendall(header + intermediate_output)
 
             # Receive result
