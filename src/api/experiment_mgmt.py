@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional, Union
+import functools
 
 import pandas as pd
 import torch
@@ -203,7 +204,7 @@ class BaseExperiment(ExperimentInterface):
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProcessingTimes:
     """Container for processing time measurements."""
 
@@ -212,6 +213,7 @@ class ProcessingTimes:
     server_time: float
 
     @property
+    @functools.lru_cache
     def total_time(self) -> float:
         """Calculate total processing time."""
         return self.host_time + self.travel_time + self.server_time
@@ -243,6 +245,7 @@ class NetworkedExperiment(BaseExperiment):
             compressed_output, _ = self.compress_data.compress_data(data=data_to_send)
             host_time = time.time() - host_start
 
+            # Network operations
             travel_start = time.time()
             server_response = self.network_client.process_split_computation(
                 split_layer, compressed_output
@@ -256,6 +259,7 @@ class NetworkedExperiment(BaseExperiment):
             processed_result, server_time = server_response
             travel_time -= server_time
 
+            # Optional visualization
             if self.config["default"].get("save_layer_images"):
                 self._save_intermediate_results(
                     processed_result, original_image, class_idx, image_file, output_dir
@@ -311,18 +315,15 @@ class NetworkedExperiment(BaseExperiment):
     ) -> List[ProcessingTimes]:
         """Process a batch of images."""
         inputs, class_indices, image_files = batch
-        times = []
-
-        for input_tensor, class_idx, image_file in zip(
-            inputs, class_indices, image_files
-        ):
-            result = self.process_single_image(
-                input_tensor.unsqueeze(0), class_idx, image_file, split_layer, split_dir
-            )
-            if result:
-                times.append(result)
-
-        return times
+        # Use list comprehension instead of append in loop
+        return [
+            result for result in (
+                self.process_single_image(
+                    input_tensor.unsqueeze(0), class_idx, image_file, split_layer, split_dir
+                )
+                for input_tensor, class_idx, image_file in zip(inputs, class_indices, image_files)
+            ) if result is not None
+        ]
 
 
 class LocalExperiment(BaseExperiment):
@@ -368,19 +369,25 @@ class LocalExperiment(BaseExperiment):
 
     def test_split_performance(self, split_layer: int) -> Tuple[int, float, float, float]:
         """Test local computing performance."""
-        times = []
         split_dir = self.paths.images_dir / f"split_{split_layer}"
         split_dir.mkdir(exist_ok=True)
 
-        with torch.no_grad():
-            for batch in tqdm(self.data_loader, desc=f"Processing locally"):
-                inputs, class_indices, image_files = batch
-                for input_tensor, class_idx, image_file in zip(inputs, class_indices, image_files):
-                    result = self.process_single_image(
-                        input_tensor.unsqueeze(0), class_idx, image_file, split_layer, split_dir
-                    )
-                    if result:
-                        times.append(result)
+        # Pre-allocate device tensor
+        device = self.device
+
+        with torch.no_grad(), torch.cuda.amp.autocast(enabled=torch.cuda.is_available()):
+            times = [
+                result
+                for batch in tqdm(self.data_loader, desc="Processing locally")
+                for input_tensor, class_idx, image_file in zip(*batch)
+                if (result := self.process_single_image(
+                    input_tensor.unsqueeze(0).to(device, non_blocking=True),
+                    class_idx,
+                    image_file,
+                    split_layer,
+                    split_dir
+                )) is not None
+            ]
 
         if times:
             total_time = sum(t.total_time for t in times)
@@ -402,7 +409,7 @@ class ExperimentManager:
         if self.is_networked:
             self.host = self.server_device.get_host()
             self.port = self.server_device.get_port()
-            logger.info("Network devices configured - using networked experiment")
+            logger.info("Using networked experiment")
         else:
             self.host = None
             self.port = None
