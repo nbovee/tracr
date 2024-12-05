@@ -153,3 +153,6 @@ logs/*
 
 # .tex files
 *.tex
+
+# NOTES.md
+NOTES.md

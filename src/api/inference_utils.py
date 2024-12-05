@@ -159,9 +159,11 @@ class ModelProcessorFactory:
     _PROCESSORS: Dict[str, Type[ModelProcessor]] = {
         "alexnet": ImageNetProcessor,
         "yolo": YOLOProcessor,
-        # "resnet": ImageNetProcessor,
-        # "vgg": ImageNetProcessor,
-        # map your model names to the appropriate processors
+        "resnet": ImageNetProcessor,
+        "vgg": ImageNetProcessor,
+        "mobilenet": ImageNetProcessor,
+        "efficientnet": ImageNetProcessor,
+        # Add mappings for model families
     }
 
     @classmethod
@@ -179,7 +181,8 @@ class ModelProcessorFactory:
                 break
 
         if not processor_class:
-            raise ValueError(f"No processor found for model: {model_name}")
+            logger.warning(f"No specific processor found for {model_name}, using ImageNetProcessor as default")
+            processor_class = ImageNetProcessor
 
         # Create configuration objects
         vis_config = VisualizationConfig(

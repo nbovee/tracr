@@ -1,0 +1,50 @@
+# config/vggsplit.yaml
+
+# DEFAULT CONFIGURATIONS
+default:
+  device: cuda
+  font_path: config/fonts/DejaVuSans-Bold.ttf
+  save_layer_images: false
+
+# LOGGING CONFIGURATIONS
+logging:
+  log_level: INFO
+  log_file: logs/app.log
+
+# MODEL CONFIGURATIONS
+model:
+  model_name: vgg16
+  version: null
+  pretrained: true
+  weight_path: null
+  input_size: [3, 224, 224]
+  hook_style: post
+  split_layer: 16  # Split after 4th max pooling layer
+  save_layers: [4, 8, 16]
+  num_classes: 1000
+  mode: eval
+  depth: 2
+  flush_buffer_size: 100
+  warmup_iterations: 10
+  log_file: logs/vggsplit.log
+
+dataset:
+  module: imagenet
+  class: ImageNetDataset
+  args:
+    root: data/imagenet
+    class_names: data/imagenet/imagenet_classes.txt
+    img_directory: data/imagenet/sample_images
+    transform: null
+    max_samples: -1
+
+dataloader:
+  batch_size: 1
+  shuffle: false
+  num_workers: 4
+  collate_fn: imagenet_collate
+
+compression:
+  clevel: 3
+  filter: SHUFFLE
+  codec: ZSTD 
