@@ -65,7 +65,10 @@ sudo apt install openssh-server openssh-client
 
 ### 1. Basic Setup
 
-Start with a simple server-host configuration:
+`tracr` can be run in two modes: distributed (server-host) or local.
+
+#### Option A: Distributed Mode (Server-Host)
+Run the experiment across two devices:
 
 1. On the server machine:
 ```bash
@@ -75,6 +78,12 @@ python server.py
 2. On the host machine:
 ```bash
 python host.py --config config/alexnetsplit.yaml
+```
+
+#### Option B: Local Mode
+Run the entire experiment on a single device:
+```bash
+python server.py --local --config config/alexnetsplit.yaml
 ```
 
 ### 2. Pre-configured Experiments
