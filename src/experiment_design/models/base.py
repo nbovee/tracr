@@ -113,17 +113,6 @@ class BaseModel(nn.Module):
             logger.error(f"Failed to load model '{self.model_name}': {e}")
             raise
 
-    def to_device(self, device: Optional[str] = None) -> None:
-        """Move model to specified device."""
-        target_device = device or self.device
-        device_obj = (
-            torch.device(target_device)
-            if isinstance(target_device, str)
-            else target_device
-        )
-        self.model.to(device_obj)
-        self.device = target_device
-
     def set_mode(self, mode: str) -> None:
         """Set model to training or evaluation mode."""
         if not mode or mode.lower() not in self.VALID_MODES:

@@ -122,7 +122,6 @@ class BaseExperiment(ExperimentInterface):
     def run(self) -> None:
         """Execute the experiment."""
         split_layer = int(self.config["model"]["split_layer"])
-        # Use list comprehension with conditional logic
         split_layers = (
             [split_layer] if split_layer != -1 
             else range(1, self.model.layer_count)
