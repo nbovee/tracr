@@ -2,7 +2,7 @@
 
 # DEFAULT CONFIGURATIONS
 default:
-  device: cuda
+  device: cpu
   font_path: config/fonts/DejaVuSans-Bold.ttf
   save_layer_images: true
 

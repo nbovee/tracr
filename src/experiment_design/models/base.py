@@ -48,7 +48,15 @@ class BaseModel(nn.Module):
         """Set up model components and configurations."""
         self._extract_configurations()
         self.model = self._load_model()
-        self.to_device()
+        
+        # Set device based on availability
+        if torch.cuda.is_available() and self.device == "cuda":
+            self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu")
+        
+        # Move model to device before any operations
+        self.model.to(self.device)
         self.set_mode(self.mode)
 
     def _extract_configurations(self) -> None:
@@ -147,11 +155,11 @@ class BaseModel(nn.Module):
 
     def warmup(self, iterations: Optional[int] = None) -> None:
         """Perform model warmup iterations."""
-        logger.info(
-            f"Performing {iterations or self.warmup_iterations} warmup iterations"
-        )
+        logger.info(f"Performing {iterations or self.warmup_iterations} warmup iterations")
         iters = iterations or self.warmup_iterations
-        dummy_input = torch.randn(1, *self.input_size, device=self.device)
+        
+        # Create dummy input on the same device as model
+        dummy_input = torch.randn(1, *self.input_size).to(self.device)
 
         original_mode = self.mode
         self.set_mode("eval")

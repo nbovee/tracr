@@ -57,7 +57,16 @@ class BaseExperiment(ExperimentInterface):
         self.paths = ExperimentPaths()
         self.paths.setup_directories(self.config["model"]["model_name"])
 
+        # Set device based on availability
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        logger.info(f"Using device: {self.device}")
+        
+        # Update config with device information
+        if "default" not in self.config:
+            self.config["default"] = {}
+        self.config["default"]["device"] = str(self.device)
+        
+        # Initialize model
         self.model = self.initialize_model()
         self.post_processor = self._initialize_post_processor()
 
@@ -91,17 +100,23 @@ class BaseExperiment(ExperimentInterface):
         """Process input data and return results."""
         output, original_size = data["input"]
         with torch.no_grad():
+            # Ensure data is on correct device
             if hasattr(output, "inner_dict"):
                 inner_dict = output.inner_dict
                 for key, value in inner_dict.items():
                     if isinstance(value, torch.Tensor):
-                        inner_dict[key] = value.to(self.model.device)
+                        inner_dict[key] = value.to(self.device, non_blocking=True)
             elif isinstance(output, torch.Tensor):
-                output = output.to(self.model.device)
+                output = output.to(self.device, non_blocking=True)
 
             result = self.model(output, start=data["split_layer"])
             if isinstance(result, tuple):
                 result, _ = result
+            
+            # Move result back to CPU for post-processing if needed
+            if isinstance(result, torch.Tensor) and result.device != torch.device('cpu'):
+                result = result.cpu()
+            
             return self.post_processor.process_output(result, original_size)
 
     def run(self) -> None:
@@ -243,8 +258,12 @@ class NetworkedExperiment(BaseExperiment):
         """Process a single image and return timing information."""
         try:
             host_start = time.time()
+            # Move inputs to device
+            inputs = inputs.to(self.device, non_blocking=True)
             output = self._get_model_output(inputs, split_layer)
-            original_image = self._get_original_image(inputs, image_file)
+            
+            # Move inputs back to CPU for image processing
+            original_image = self._get_original_image(inputs.cpu(), image_file)
             data_to_send = self._prepare_data_for_transfer(output, original_image)
             compressed_output, _ = self.compress_data.compress_data(data=data_to_send)
             host_time = time.time() - host_start
@@ -278,7 +297,9 @@ class NetworkedExperiment(BaseExperiment):
     def _get_model_output(self, inputs: torch.Tensor, split_layer: int) -> torch.Tensor:
         """Get model output for given inputs and split layer."""
         with torch.no_grad():
-            return self.model(inputs.to(self.device), end=split_layer)
+            inputs = inputs.to(self.device, non_blocking=True)
+            output = self.model(inputs, end=split_layer)
+            return output
 
     def _prepare_data_for_transfer(
         self, output: torch.Tensor, original_image: Image.Image
