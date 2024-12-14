@@ -18,7 +18,7 @@ from .data_compression import DataCompression
 from .device_mgmt import DeviceManager
 from .inference_utils import ModelProcessorFactory, ModelProcessor
 from .network_client import create_network_client
-from .power_monitor import PowerMeter
+from .power_monitor import PowerMeter, PowerAnalyzer
 
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
@@ -28,6 +28,21 @@ from src.interface import ExperimentInterface, ModelInterface  # noqa: E402
 from src.utils.file_manager import load_text_file  # noqa: E402
 
 logger = logging.getLogger("split_computing_logger")
+
+
+@dataclass(frozen=True)
+class ProcessingTimes:
+    """Container for processing time measurements."""
+
+    host_time: float
+    travel_time: float
+    server_time: float
+
+    @property
+    @functools.lru_cache
+    def total_time(self) -> float:
+        """Calculate total processing time."""
+        return self.host_time + self.travel_time + self.server_time
 
 
 @dataclass
@@ -134,158 +149,6 @@ class BaseExperiment(ExperimentInterface):
 
         self.save_results(performance_records)
 
-    def save_results(self, results: List[Tuple[int, float, float, float]]) -> None:
-        """Save experiment results and power metrics to Excel file."""
-        # Create performance DataFrame
-        df = pd.DataFrame(
-            results,
-            columns=[
-                "Split Layer Index",
-                "Host Time",
-                "Travel Time",
-                "Server Time",
-            ],
-        )
-        df["Total Processing Time"] = (
-            df["Host Time"] + df["Travel Time"] + df["Server Time"]
-        )
-
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        output_file = self.paths.model_dir / f"split_layer_times_{timestamp}.xlsx"
-
-        # Create power metrics DataFrame and analysis
-        if self.power_metrics:
-            power_df = pd.DataFrame(self.power_metrics)
-
-            # Calculate power analysis metrics
-            power_analysis = {}
-
-            try:
-                # Power metrics
-                power_analysis["avg_power_watts"] = sum(
-                    m["gpu"]["power"]["current"] for m in self.power_metrics
-                ) / len(self.power_metrics)
-
-                # Efficiency metrics
-                efficiency_metrics = [
-                    m["gpu"].get("efficiency", {}).get("ops_per_watt", 0)
-                    for m in self.power_metrics
-                ]
-                power_analysis["avg_efficiency"] = (
-                    sum(efficiency_metrics) / len(self.power_metrics)
-                    if efficiency_metrics
-                    else 0
-                )
-
-                # Memory utilization
-                memory_utils = [
-                    m["gpu"]["memory"]["utilization"] for m in self.power_metrics
-                ]
-                power_analysis["max_memory_util"] = max(memory_utils)
-                power_analysis["avg_memory_util"] = sum(memory_utils) / len(
-                    memory_utils
-                )
-
-                # GPU utilization pattern
-                gpu_utils = [
-                    (m["timestamp"], m["gpu"]["utilization"]["gpu"])
-                    for m in self.power_metrics
-                ]
-                power_analysis["gpu_util_pattern"] = gpu_utils
-
-                # Temperature pattern
-                temp_pattern = [
-                    (m["timestamp"], m["gpu"]["temperature"]["current"])
-                    for m in self.power_metrics
-                ]
-                power_analysis["temp_pattern"] = temp_pattern
-
-                # Additional derived metrics
-                power_analysis["peak_power"] = max(
-                    m["gpu"]["power"]["current"] for m in self.power_metrics
-                )
-                power_analysis["peak_temperature"] = max(
-                    m["gpu"]["temperature"]["current"] for m in self.power_metrics
-                )
-                power_analysis["avg_gpu_util"] = sum(
-                    m["gpu"]["utilization"]["gpu"] for m in self.power_metrics
-                ) / len(self.power_metrics)
-
-                # Create analysis DataFrame
-                analysis_df = pd.DataFrame(
-                    {
-                        "Metric": [
-                            "Average Power (W)",
-                            "Peak Power (W)",
-                            "Power Efficiency (util%/W)",
-                            "Maximum Memory Utilization (%)",
-                            "Average Memory Utilization (%)",
-                            "Average GPU Utilization (%)",
-                            "Peak Temperature (°C)",
-                        ],
-                        "Value": [
-                            round(power_analysis["avg_power_watts"], 2),
-                            round(power_analysis["peak_power"], 2),
-                            round(power_analysis["avg_efficiency"], 2),
-                            round(power_analysis["max_memory_util"], 1),
-                            round(power_analysis["avg_memory_util"], 1),
-                            round(power_analysis["avg_gpu_util"], 1),
-                            power_analysis["peak_temperature"],
-                        ],
-                    }
-                )
-
-                # Create time series DataFrames
-                gpu_util_df = pd.DataFrame(
-                    power_analysis["gpu_util_pattern"],
-                    columns=["Timestamp", "GPU Utilization (%)"],
-                )
-                temp_df = pd.DataFrame(
-                    power_analysis["temp_pattern"],
-                    columns=["Timestamp", "Temperature (°C)"],
-                )
-
-                # Save all to Excel with multiple sheets
-                with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
-                    df.to_excel(writer, sheet_name="Performance", index=False)
-                    power_df.to_excel(
-                        writer, sheet_name="Raw_Power_Metrics", index=False
-                    )
-                    analysis_df.to_excel(
-                        writer, sheet_name="Power_Analysis", index=False
-                    )
-                    gpu_util_df.to_excel(
-                        writer, sheet_name="GPU_Utilization_Timeline", index=False
-                    )
-                    temp_df.to_excel(
-                        writer, sheet_name="Temperature_Timeline", index=False
-                    )
-
-                logger.info(f"Results and power analysis saved to {output_file}")
-
-                # Log key metrics
-                logger.info(f"Average Power: {power_analysis['avg_power_watts']:.2f}W")
-                logger.info(
-                    f"Power Efficiency: {power_analysis['avg_efficiency']:.2f} util%/W"
-                )
-                logger.info(
-                    f"Average GPU Utilization: {power_analysis['avg_gpu_util']:.1f}%"
-                )
-                logger.info(f"Peak Temperature: {power_analysis['peak_temperature']}°C")
-
-            except Exception as e:
-                logger.error(f"Error during power analysis: {e}")
-                # Save raw data if analysis fails
-                with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
-                    df.to_excel(writer, sheet_name="Performance", index=False)
-                    power_df.to_excel(
-                        writer, sheet_name="Raw_Power_Metrics", index=False
-                    )
-        else:
-            # Original save behavior if no power metrics
-            df.to_excel(output_file, index=False)
-            logger.info(f"Results saved to {output_file}")
-
     def _get_original_image(self, inputs: torch.Tensor, image_file: str) -> Image.Image:
         """Get original image for visualization."""
         original_image = self.data_loader.dataset.get_original_image(image_file)
@@ -349,20 +212,60 @@ class BaseExperiment(ExperimentInterface):
             f"{'='*50}\n"
         )
 
+    def save_results(self, results: List[Tuple[int, float, float, float]]) -> None:
+        """Save experiment results and power metrics to Excel file."""
+        df = pd.DataFrame(
+            results,
+            columns=[
+                "Split Layer Index",
+                "Host Time",
+                "Travel Time",
+                "Server Time",
+            ],
+        )
+        df["Total Processing Time"] = (
+            df["Host Time"] + df["Travel Time"] + df["Server Time"]
+        )
 
-@dataclass(frozen=True)
-class ProcessingTimes:
-    """Container for processing time measurements."""
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        output_file = self.paths.model_dir / f"analysis_{timestamp}.xlsx"
 
-    host_time: float
-    travel_time: float
-    server_time: float
+        if self.power_metrics:
+            power_df = pd.DataFrame(self.power_metrics)
 
-    @property
-    @functools.lru_cache
-    def total_time(self) -> float:
-        """Calculate total processing time."""
-        return self.host_time + self.travel_time + self.server_time
+            try:
+                power_analysis = PowerAnalyzer.analyze_metrics(self.power_metrics)
+                analysis_df, gpu_util_df, temp_df = (
+                    PowerAnalyzer.create_analysis_dataframes(power_analysis)
+                )
+
+                with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+                    df.to_excel(writer, sheet_name="Performance", index=False)
+                    power_df.to_excel(
+                        writer, sheet_name="Raw_Power_Metrics", index=False
+                    )
+                    analysis_df.to_excel(
+                        writer, sheet_name="Power_Analysis", index=False
+                    )
+                    gpu_util_df.to_excel(
+                        writer, sheet_name="GPU_Utilization_Timeline", index=False
+                    )
+                    temp_df.to_excel(
+                        writer, sheet_name="Temperature_Timeline", index=False
+                    )
+
+                logger.info(f"Results and power analysis saved to {output_file}")
+
+            except Exception as e:
+                logger.error(f"Error during power analysis: {e}")
+                with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+                    df.to_excel(writer, sheet_name="Performance", index=False)
+                    power_df.to_excel(
+                        writer, sheet_name="Raw_Power_Metrics", index=False
+                    )
+        else:
+            df.to_excel(output_file, index=False)
+            logger.info(f"Results saved to {output_file}")
 
 
 class NetworkedExperiment(BaseExperiment):

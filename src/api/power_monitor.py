@@ -2,11 +2,12 @@
 
 import time
 import logging
-from typing import Union, Optional, Dict, Any
+from typing import Union, Optional, Dict, Any, List, Tuple
 from pathlib import Path
 
 import psutil  # type: ignore
 import torch
+import pandas as pd
 
 logger = logging.getLogger("split_computing_logger")
 
@@ -108,8 +109,12 @@ class PowerMeter:
 
     def get_power_metrics(self) -> Dict[str, Any]:
         """Get comprehensive power and resource usage metrics."""
+        current_time = time.time()
         metrics = {
-            "timestamp": time.time() - self.start_time,
+            "timestamp": current_time - self.start_time,
+            "datetime": time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime(current_time)
+            ),
             "platform": self.platform,
             "cpu": self._get_cpu_metrics(),
             "memory": self._get_memory_metrics(),
@@ -260,3 +265,125 @@ class PowerMeter:
     def __del__(self):
         """Cleanup on deletion."""
         self.cleanup()
+
+
+class PowerAnalyzer:
+    """Analyzes and formats power monitoring data."""
+
+    @staticmethod
+    def analyze_metrics(power_metrics: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Analyze power metrics and return summary statistics."""
+        if not power_metrics:
+            return {}
+
+        try:
+            # Calculate total power consumption
+            total_power = sum(m["gpu"]["power"]["current"] for m in power_metrics)
+
+            power_analysis = {
+                # Store original metrics for timestamp reference
+                "metrics": power_metrics,
+                # Power metrics
+                "total_power": total_power,  # Add total power
+                "avg_power_watts": total_power / len(power_metrics),
+                # Efficiency metrics
+                "avg_efficiency": sum(
+                    m["gpu"].get("efficiency", {}).get("ops_per_watt", 0)
+                    for m in power_metrics
+                )
+                / len(power_metrics),
+                # Memory utilization
+                "memory_utils": [
+                    m["gpu"]["memory"]["utilization"] for m in power_metrics
+                ],
+                "max_memory_util": max(
+                    m["gpu"]["memory"]["utilization"] for m in power_metrics
+                ),
+                "avg_memory_util": sum(
+                    m["gpu"]["memory"]["utilization"] for m in power_metrics
+                )
+                / len(power_metrics),
+                # GPU utilization pattern (keep relative time)
+                "gpu_util_pattern": [
+                    (m["timestamp"], m["gpu"]["utilization"]["gpu"])
+                    for m in power_metrics
+                ],
+                # Temperature pattern (keep relative time)
+                "temp_pattern": [
+                    (m["timestamp"], m["gpu"]["temperature"]["current"])
+                    for m in power_metrics
+                ],
+                # Additional derived metrics
+                "peak_power": max(m["gpu"]["power"]["current"] for m in power_metrics),
+                "peak_temperature": max(
+                    m["gpu"]["temperature"]["current"] for m in power_metrics
+                ),
+                "avg_gpu_util": sum(
+                    m["gpu"]["utilization"]["gpu"] for m in power_metrics
+                )
+                / len(power_metrics),
+            }
+            return power_analysis
+        except Exception as e:
+            logger.error(f"Error analyzing power metrics: {e}")
+            return {}
+
+    @staticmethod
+    def create_analysis_dataframes(
+        power_analysis: Dict[str, Any]
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """Create DataFrames for power analysis results."""
+        # Create analysis DataFrame
+        analysis_df = pd.DataFrame(
+            {
+                "Metric": [
+                    "Total Power (W)",  # Add Total Power metric
+                    "Average Power (W)",
+                    "Peak Power (W)",
+                    "Power Efficiency (util%/W)",
+                    "Maximum Memory Utilization (%)",
+                    "Average Memory Utilization (%)",
+                    "Average GPU Utilization (%)",
+                    "Peak Temperature (°C)",
+                ],
+                "Value": [
+                    round(power_analysis["total_power"], 2),  # Add total power value
+                    round(power_analysis["avg_power_watts"], 2),
+                    round(power_analysis["peak_power"], 2),
+                    round(power_analysis["avg_efficiency"], 2),
+                    round(power_analysis["max_memory_util"], 1),
+                    round(power_analysis["avg_memory_util"], 1),
+                    round(power_analysis["avg_gpu_util"], 1),
+                    power_analysis["peak_temperature"],
+                ],
+            }
+        )
+
+        # Create time series DataFrames with both relative and absolute time
+        gpu_util_df = pd.DataFrame(
+            [
+                {
+                    "Relative Time (s)": timestamp,
+                    "Datetime": m["datetime"],
+                    "GPU Utilization (%)": util,
+                }
+                for (timestamp, util), m in zip(
+                    power_analysis["gpu_util_pattern"], power_analysis["metrics"]
+                )
+            ]
+        )
+
+        temp_df = pd.DataFrame(
+            [
+                {
+                    "Relative Time (s)": timestamp,
+                    "Datetime": m["datetime"],
+                    "Temperature (°C)": temp,
+                }
+                for (timestamp, temp), m in zip(
+                    power_analysis["temp_pattern"], power_analysis["metrics"]
+                )
+            ]
+        )
+
+        return analysis_df, gpu_util_df, temp_df
