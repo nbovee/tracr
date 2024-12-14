@@ -9,8 +9,6 @@ LAYER_TEMPLATE = {
     "inference_time": None,
     "output_bytes": None,
     "completed_by_node": None,
-    "watts_used": None,
-    "start_energy": None,
 }
 
 # Dataset-specific weight mappings

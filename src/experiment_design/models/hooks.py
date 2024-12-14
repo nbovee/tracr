@@ -105,13 +105,6 @@ def create_forward_posthook(
             wrapped_model.forward_info[layer_index][
                 "inference_time"
             ] += wrapped_model.timer()
-            end_energy = wrapped_model.power_meter.get_energy()
-            energy_used = (
-                end_energy - wrapped_model.forward_info[layer_index]["start_energy"]
-            )
-            wrapped_model.forward_info[layer_index]["watts_used"] = energy_used / (
-                wrapped_model.forward_info[layer_index]["inference_time"] / 1e9
-            )
 
         # case if we are on the Edge Device
         if wrapped_model.start_i == 0:

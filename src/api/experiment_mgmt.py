@@ -18,6 +18,7 @@ from .data_compression import DataCompression
 from .device_mgmt import DeviceManager
 from .inference_utils import ModelProcessorFactory, ModelProcessor
 from .network_client import create_network_client
+from .power_monitor import PowerMeter
 
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
@@ -66,6 +67,8 @@ class BaseExperiment(ExperimentInterface):
 
         self.model = self.initialize_model()
         self.post_processor = self._initialize_post_processor()
+        self.power_meter = PowerMeter(self.device)
+        self.power_metrics = []
 
     def initialize_model(self) -> ModelInterface:
         """Initialize and configure the model."""
@@ -132,7 +135,8 @@ class BaseExperiment(ExperimentInterface):
         self.save_results(performance_records)
 
     def save_results(self, results: List[Tuple[int, float, float, float]]) -> None:
-        """Save experiment results to Excel file."""
+        """Save experiment results and power metrics to Excel file."""
+        # Create performance DataFrame
         df = pd.DataFrame(
             results,
             columns=[
@@ -142,7 +146,6 @@ class BaseExperiment(ExperimentInterface):
                 "Server Time",
             ],
         )
-
         df["Total Processing Time"] = (
             df["Host Time"] + df["Travel Time"] + df["Server Time"]
         )
@@ -150,11 +153,138 @@ class BaseExperiment(ExperimentInterface):
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         output_file = self.paths.model_dir / f"split_layer_times_{timestamp}.xlsx"
 
-        try:
+        # Create power metrics DataFrame and analysis
+        if self.power_metrics:
+            power_df = pd.DataFrame(self.power_metrics)
+
+            # Calculate power analysis metrics
+            power_analysis = {}
+
+            try:
+                # Power metrics
+                power_analysis["avg_power_watts"] = sum(
+                    m["gpu"]["power"]["current"] for m in self.power_metrics
+                ) / len(self.power_metrics)
+
+                # Efficiency metrics
+                efficiency_metrics = [
+                    m["gpu"].get("efficiency", {}).get("ops_per_watt", 0)
+                    for m in self.power_metrics
+                ]
+                power_analysis["avg_efficiency"] = (
+                    sum(efficiency_metrics) / len(self.power_metrics)
+                    if efficiency_metrics
+                    else 0
+                )
+
+                # Memory utilization
+                memory_utils = [
+                    m["gpu"]["memory"]["utilization"] for m in self.power_metrics
+                ]
+                power_analysis["max_memory_util"] = max(memory_utils)
+                power_analysis["avg_memory_util"] = sum(memory_utils) / len(
+                    memory_utils
+                )
+
+                # GPU utilization pattern
+                gpu_utils = [
+                    (m["timestamp"], m["gpu"]["utilization"]["gpu"])
+                    for m in self.power_metrics
+                ]
+                power_analysis["gpu_util_pattern"] = gpu_utils
+
+                # Temperature pattern
+                temp_pattern = [
+                    (m["timestamp"], m["gpu"]["temperature"]["current"])
+                    for m in self.power_metrics
+                ]
+                power_analysis["temp_pattern"] = temp_pattern
+
+                # Additional derived metrics
+                power_analysis["peak_power"] = max(
+                    m["gpu"]["power"]["current"] for m in self.power_metrics
+                )
+                power_analysis["peak_temperature"] = max(
+                    m["gpu"]["temperature"]["current"] for m in self.power_metrics
+                )
+                power_analysis["avg_gpu_util"] = sum(
+                    m["gpu"]["utilization"]["gpu"] for m in self.power_metrics
+                ) / len(self.power_metrics)
+
+                # Create analysis DataFrame
+                analysis_df = pd.DataFrame(
+                    {
+                        "Metric": [
+                            "Average Power (W)",
+                            "Peak Power (W)",
+                            "Power Efficiency (util%/W)",
+                            "Maximum Memory Utilization (%)",
+                            "Average Memory Utilization (%)",
+                            "Average GPU Utilization (%)",
+                            "Peak Temperature (°C)",
+                        ],
+                        "Value": [
+                            round(power_analysis["avg_power_watts"], 2),
+                            round(power_analysis["peak_power"], 2),
+                            round(power_analysis["avg_efficiency"], 2),
+                            round(power_analysis["max_memory_util"], 1),
+                            round(power_analysis["avg_memory_util"], 1),
+                            round(power_analysis["avg_gpu_util"], 1),
+                            power_analysis["peak_temperature"],
+                        ],
+                    }
+                )
+
+                # Create time series DataFrames
+                gpu_util_df = pd.DataFrame(
+                    power_analysis["gpu_util_pattern"],
+                    columns=["Timestamp", "GPU Utilization (%)"],
+                )
+                temp_df = pd.DataFrame(
+                    power_analysis["temp_pattern"],
+                    columns=["Timestamp", "Temperature (°C)"],
+                )
+
+                # Save all to Excel with multiple sheets
+                with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+                    df.to_excel(writer, sheet_name="Performance", index=False)
+                    power_df.to_excel(
+                        writer, sheet_name="Raw_Power_Metrics", index=False
+                    )
+                    analysis_df.to_excel(
+                        writer, sheet_name="Power_Analysis", index=False
+                    )
+                    gpu_util_df.to_excel(
+                        writer, sheet_name="GPU_Utilization_Timeline", index=False
+                    )
+                    temp_df.to_excel(
+                        writer, sheet_name="Temperature_Timeline", index=False
+                    )
+
+                logger.info(f"Results and power analysis saved to {output_file}")
+
+                # Log key metrics
+                logger.info(f"Average Power: {power_analysis['avg_power_watts']:.2f}W")
+                logger.info(
+                    f"Power Efficiency: {power_analysis['avg_efficiency']:.2f} util%/W"
+                )
+                logger.info(
+                    f"Average GPU Utilization: {power_analysis['avg_gpu_util']:.1f}%"
+                )
+                logger.info(f"Peak Temperature: {power_analysis['peak_temperature']}°C")
+
+            except Exception as e:
+                logger.error(f"Error during power analysis: {e}")
+                # Save raw data if analysis fails
+                with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+                    df.to_excel(writer, sheet_name="Performance", index=False)
+                    power_df.to_excel(
+                        writer, sheet_name="Raw_Power_Metrics", index=False
+                    )
+        else:
+            # Original save behavior if no power metrics
             df.to_excel(output_file, index=False)
             logger.info(f"Results saved to {output_file}")
-        except Exception as e:
-            logger.error(f"Failed to save results: {e}")
 
     def _get_original_image(self, inputs: torch.Tensor, image_file: str) -> Image.Image:
         """Get original image for visualization."""
@@ -254,37 +384,56 @@ class NetworkedExperiment(BaseExperiment):
     ) -> Optional[ProcessingTimes]:
         """Process a single image and return timing information."""
         try:
-            host_start = time.time()
-            inputs = inputs.to(self.device, non_blocking=True)
-            output = self._get_model_output(inputs, split_layer)
+            with self.power_meter as pm:
+                host_start = time.time()
+                inputs = inputs.to(self.device, non_blocking=True)
+                output = self._get_model_output(inputs, split_layer)
 
-            # Move inputs back to CPU for image processing
-            original_image = self._get_original_image(inputs.cpu(), image_file)
-            data_to_send = self._prepare_data_for_transfer(output, original_image)
-            compressed_output, _ = self.compress_data.compress_data(data=data_to_send)
-            host_time = time.time() - host_start
-
-            # Network operations
-            travel_start = time.time()
-            server_response = self.network_client.process_split_computation(
-                split_layer, compressed_output
-            )
-            travel_time = time.time() - travel_start
-
-            if not server_response or not isinstance(server_response, tuple):
-                logger.warning("Invalid server response")
-                return None
-
-            processed_result, server_time = server_response
-            travel_time -= server_time
-
-            # Optional visualization
-            if self.config["default"].get("save_layer_images"):
-                self._save_intermediate_results(
-                    processed_result, original_image, class_idx, image_file, output_dir
+                # Move inputs back to CPU for image processing
+                original_image = self._get_original_image(inputs.cpu(), image_file)
+                data_to_send = self._prepare_data_for_transfer(output, original_image)
+                compressed_output, _ = self.compress_data.compress_data(
+                    data=data_to_send
                 )
+                host_time = time.time() - host_start
 
-            return ProcessingTimes(host_time, travel_time, server_time)
+                # Network operations
+                travel_start = time.time()
+                server_response = self.network_client.process_split_computation(
+                    split_layer, compressed_output
+                )
+                travel_time = time.time() - travel_start
+
+                if not server_response or not isinstance(server_response, tuple):
+                    logger.warning("Invalid server response")
+                    return None
+
+                processed_result, server_time = server_response
+                travel_time -= server_time
+
+                # Collect power metrics
+                metrics = pm.get_power_metrics()
+                metrics.update(
+                    {
+                        "split_layer": split_layer,
+                        "host_time": host_time,
+                        "travel_time": travel_time,
+                        "server_time": server_time,
+                    }
+                )
+                self.power_metrics.append(metrics)
+
+                # Optional visualization
+                if self.config["default"].get("save_layer_images"):
+                    self._save_intermediate_results(
+                        processed_result,
+                        original_image,
+                        class_idx,
+                        image_file,
+                        output_dir,
+                    )
+
+                return ProcessingTimes(host_time, travel_time, server_time)
 
         except Exception as e:
             logger.error(f"Error processing image: {e}", exc_info=True)
@@ -373,26 +522,36 @@ class LocalExperiment(BaseExperiment):
     ) -> Optional[ProcessingTimes]:
         """Process a single image locally."""
         try:
-            start_time = time.time()
-            with torch.no_grad():
-                inputs = inputs.to(self.device, non_blocking=True)
-                output = self.model(inputs)
-                inputs = inputs.cpu()
+            with self.power_meter as pm:
+                start_time = time.time()
+                with torch.no_grad():
+                    inputs = inputs.to(self.device, non_blocking=True)
+                    output = self.model(inputs)
+                    if isinstance(output, tuple):
+                        output = output[0]
 
-            original_image = self._get_original_image(inputs, image_file)
-            processed_result = self.post_processor.process_output(
-                output.cpu() if output.device != torch.device("cpu") else output,
-                self.post_processor.get_input_size(original_image),
-            )
-            total_time = time.time() - start_time
-
-            if self.config["default"].get("save_layer_images"):
-                self._save_intermediate_results(
-                    processed_result, original_image, class_idx, image_file, output_dir
+                original_image = self._get_original_image(inputs.cpu(), image_file)
+                processed_result = self.post_processor.process_output(
+                    output.cpu() if output.device != torch.device("cpu") else output,
+                    self.post_processor.get_input_size(original_image),
                 )
+                total_time = time.time() - start_time
 
-            # For local processing, we consider all time as "host time"
-            return ProcessingTimes(total_time, 0.0, 0.0)
+                # Collect power metrics
+                metrics = pm.get_power_metrics()
+                metrics.update({"split_layer": split_layer, "total_time": total_time})
+                self.power_metrics.append(metrics)
+
+                if self.config["default"].get("save_layer_images"):
+                    self._save_intermediate_results(
+                        processed_result,
+                        original_image,
+                        class_idx,
+                        image_file,
+                        output_dir,
+                    )
+
+                return ProcessingTimes(total_time, 0.0, 0.0)
 
         except Exception as e:
             logger.error(f"Error processing image: {e}", exc_info=True)
