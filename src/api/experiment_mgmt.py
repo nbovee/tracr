@@ -56,17 +56,14 @@ class BaseExperiment(ExperimentInterface):
         self.port = port
         self.paths = ExperimentPaths()
         self.paths.setup_directories(self.config["model"]["model_name"])
+        self.device = self.config["default"]["device"]
 
-        # Set device based on availability
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if self.device == "cuda" and not torch.cuda.is_available():
+            logger.warning("CUDA is not available, falling back to CPU")
+            self.device = "cpu"
+
         logger.info(f"Using device: {self.device}")
-        
-        # Update config with device information
-        if "default" not in self.config:
-            self.config["default"] = {}
-        self.config["default"]["device"] = str(self.device)
-        
-        # Initialize model
+
         self.model = self.initialize_model()
         self.post_processor = self._initialize_post_processor()
 
@@ -112,24 +109,24 @@ class BaseExperiment(ExperimentInterface):
             result = self.model(output, start=data["split_layer"])
             if isinstance(result, tuple):
                 result, _ = result
-            
+
             # Move result back to CPU for post-processing if needed
-            if isinstance(result, torch.Tensor) and result.device != torch.device('cpu'):
+            if isinstance(result, torch.Tensor) and result.device != torch.device(
+                "cpu"
+            ):
                 result = result.cpu()
-            
+
             return self.post_processor.process_output(result, original_size)
 
     def run(self) -> None:
         """Execute the experiment."""
         split_layer = int(self.config["model"]["split_layer"])
         split_layers = (
-            [split_layer] if split_layer != -1 
-            else range(1, self.model.layer_count)
+            [split_layer] if split_layer != -1 else range(1, self.model.layer_count)
         )
-        
+
         performance_records = [
-            self.test_split_performance(split_layer=layer)
-            for layer in split_layers
+            self.test_split_performance(split_layer=layer) for layer in split_layers
         ]
 
         self.save_results(performance_records)
@@ -258,10 +255,9 @@ class NetworkedExperiment(BaseExperiment):
         """Process a single image and return timing information."""
         try:
             host_start = time.time()
-            # Move inputs to device
             inputs = inputs.to(self.device, non_blocking=True)
             output = self._get_model_output(inputs, split_layer)
-            
+
             # Move inputs back to CPU for image processing
             original_image = self._get_original_image(inputs.cpu(), image_file)
             data_to_send = self._prepare_data_for_transfer(output, original_image)
@@ -379,11 +375,14 @@ class LocalExperiment(BaseExperiment):
         try:
             start_time = time.time()
             with torch.no_grad():
-                output = self.model(inputs.to(self.device))
+                inputs = inputs.to(self.device, non_blocking=True)
+                output = self.model(inputs)
+                inputs = inputs.cpu()
 
             original_image = self._get_original_image(inputs, image_file)
             processed_result = self.post_processor.process_output(
-                output, self.post_processor.get_input_size(original_image)
+                output.cpu() if output.device != torch.device("cpu") else output,
+                self.post_processor.get_input_size(original_image),
             )
             total_time = time.time() - start_time
 
@@ -405,7 +404,6 @@ class LocalExperiment(BaseExperiment):
         """Test local computing performance."""
         split_dir = self.paths.images_dir / f"split_{split_layer}"
         split_dir.mkdir(exist_ok=True)
-        device = self.device
 
         with (
             torch.no_grad(),
@@ -417,7 +415,7 @@ class LocalExperiment(BaseExperiment):
                 for input_tensor, class_idx, image_file in zip(*batch)
                 if (
                     result := self.process_single_image(
-                        input_tensor.unsqueeze(0).to(device, non_blocking=True),
+                        input_tensor.unsqueeze(0),
                         class_idx,
                         image_file,
                         split_layer,

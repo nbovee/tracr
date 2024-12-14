@@ -30,6 +30,10 @@ class BaseModel(nn.Module):
         """Initialize model with configuration settings."""
         super().__init__()
         self.config = self._load_config(config)
+        self._setup_default_configs()
+        self._setup_model_configs()
+        self._setup_dataset_configs()
+        self._setup_dataloader_configs()
         self._initialize_model()
 
     def _load_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -44,32 +48,13 @@ class BaseModel(nn.Module):
 
         return read_yaml_file(self.DEFAULT_CONFIG_PATH)
 
-    def _initialize_model(self) -> None:
-        """Set up model components and configurations."""
-        self._extract_configurations()
-        self.model = self._load_model()
-        
-        # Set device based on availability
-        if torch.cuda.is_available() and self.device == "cuda":
-            self.device = torch.device("cuda")
-        else:
-            self.device = torch.device("cpu")
-        
-        # Move model to device before any operations
-        self.model.to(self.device)
-        self.set_mode(self.mode)
-
-    def _extract_configurations(self) -> None:
-        """Extract and validate all configuration parameters."""
-        self._setup_default_configs()
-        self._setup_model_configs()
-        self._setup_dataset_configs()
-        self._setup_dataloader_configs()
-
     def _setup_default_configs(self) -> None:
         """Set up default configuration parameters."""
         self.default_configs = self.config.get("default", {})
         self.device = self.default_configs.get("device", "cpu")
+        if self.device == "cuda" and not torch.cuda.is_available():
+            logger.warning("CUDA is not available, falling back to CPU")
+            self.device = "cpu"
 
     def _setup_model_configs(self) -> None:
         """Set up model-specific configuration parameters."""
@@ -100,6 +85,12 @@ class BaseModel(nn.Module):
         self.batch_size = self.dataloader_config.get("batch_size", 1)
         self.shuffle = self.dataloader_config.get("shuffle", False)
         self.num_workers = self.dataloader_config.get("num_workers", 4)
+
+    def _initialize_model(self) -> None:
+        """Set up model components and configurations."""
+        self.model = self._load_model()
+        self.model.to(self.device)
+        self.set_mode(self.mode)
 
     def _load_model(self) -> nn.Module:
         """Load and return model instance using registry."""
@@ -144,9 +135,11 @@ class BaseModel(nn.Module):
 
     def warmup(self, iterations: Optional[int] = None) -> None:
         """Perform model warmup iterations."""
-        logger.info(f"Performing {iterations or self.warmup_iterations} warmup iterations")
+        logger.info(
+            f"Performing {iterations or self.warmup_iterations} warmup iterations"
+        )
         iters = iterations or self.warmup_iterations
-        
+
         # Create dummy input on the same device as model
         dummy_input = torch.randn(1, *self.input_size).to(self.device)
 

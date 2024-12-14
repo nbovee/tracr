@@ -67,8 +67,9 @@ class WrappedModel(BaseModel, ModelInterface):
 
     def _setup_model(self) -> None:
         """Set up model layers, hooks, and initialize state."""
-        # Get model summary and layer count
-        self.torchinfo_summary = summary(self.model, (1, *self.input_size), verbose=0)
+        self.torchinfo_summary = summary(
+            self.model, (1, *self.input_size), device=self.device, verbose=0
+        )
         self.layer_count = self._walk_modules(self.model.children(), depth=1, walk_i=0)
         del self.torchinfo_summary
 
