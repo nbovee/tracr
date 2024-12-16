@@ -8,6 +8,8 @@ from pathlib import Path
 import psutil  # type: ignore
 import torch
 import pandas as pd
+import platform
+import subprocess
 
 logger = logging.getLogger("split_computing_logger")
 
@@ -28,6 +30,13 @@ except ImportError:
     JTOP_AVAILABLE = False
     logger.debug("Jetson monitoring not available")
 
+# Add these constants
+WINDOWS_BATTERY_CMD = (
+    "WMIC PATH Win32_Battery Get EstimatedChargeRemaining,EstimatedRunTime /Format:CSV"
+)
+LINUX_BATTERY_PATH = "/sys/class/power_supply"
+MACOS_BATTERY_CMD = "pmset -g batt"
+
 
 class PowerMeter:
     """Generic power meter for different computing devices."""
@@ -39,21 +48,30 @@ class PowerMeter:
             device: Device to monitor ('cpu', 'cuda', or torch.device)
         """
         self.device = torch.device(device) if isinstance(device, str) else device
+        self.os_type = platform.system().lower()
         self.platform = self._detect_platform()
         self._nvml_initialized = False
+        self.battery_metrics = {}
+        self.initial_battery_info = None  # Store initial battery info
 
         self.reset()
         self._setup_monitors()
-        logger.info(f"Initialized power monitoring for {self.platform} platform")
+        logger.info(
+            f"Initialized power monitoring for {self.platform} platform on {self.os_type}"
+        )
 
     def _detect_platform(self) -> str:
-        """Detect the computing platform."""
+        """Detect the computing platform and OS."""
         if JTOP_AVAILABLE and self._is_jetson():
             return "jetson"
         elif NVIDIA_AVAILABLE and self.device.type == "cuda":
             return "nvidia"
-        elif self.device.type == "cpu":
-            return "cpu"
+        elif self.os_type == "windows":
+            return "windows"
+        elif self.os_type == "linux":
+            return "linux"
+        elif self.os_type == "darwin":
+            return "macos"
         return "unknown"
 
     def _is_jetson(self) -> bool:
@@ -103,6 +121,10 @@ class PowerMeter:
         self.start_cpu_percent = psutil.cpu_percent(interval=None)
         self.start_memory = psutil.Process().memory_info().rss
 
+        # Store initial battery info
+        self.initial_battery_info = self._get_battery_info()
+        logger.debug(f"Initial battery info: {self.initial_battery_info}")
+
         if self.device.type == "cuda":
             torch.cuda.reset_peak_memory_stats(self.device)
             self.start_gpu_memory = torch.cuda.max_memory_allocated(self.device)
@@ -110,28 +132,63 @@ class PowerMeter:
     def get_power_metrics(self) -> Dict[str, Any]:
         """Get comprehensive power and resource usage metrics."""
         current_time = time.time()
+        current_battery_info = self._get_battery_info()
+
+        # Calculate time-based power consumption
+        if self.initial_battery_info and current_battery_info:
+            initial_charge = self.initial_battery_info.get("charge_remaining", 0)
+            current_charge = current_battery_info.get("charge_remaining", 0)
+            time_diff = current_battery_info.get(
+                "timestamp", current_time
+            ) - self.initial_battery_info.get("timestamp", self.start_time)
+
+            if time_diff > 0:
+                charge_rate = (
+                    initial_charge - current_charge
+                ) / time_diff  # % per second
+                power_draw = (
+                    charge_rate * 3600 / 100
+                )  # Convert to watts (assuming 100% = 1 hour of battery life)
+                current_battery_info["power_draw"] = abs(power_draw)
+
         metrics = {
             "timestamp": current_time - self.start_time,
             "datetime": time.strftime(
                 "%Y-%m-%d %H:%M:%S", time.localtime(current_time)
             ),
             "platform": self.platform,
+            "os_type": self.os_type,
             "cpu": self._get_cpu_metrics(),
             "memory": self._get_memory_metrics(),
+            "battery": {
+                "current": current_battery_info,
+                "initial": self.initial_battery_info,
+                "elapsed_time": current_time - self.start_time,
+            },
         }
 
+        # Add GPU metrics if available
         if self.device.type == "cuda":
-            metrics["gpu"] = self._get_gpu_metrics()
+            gpu_metrics = self._get_gpu_metrics()
+            if gpu_metrics:
+                metrics["gpu"] = gpu_metrics
 
         return metrics
 
     def _get_cpu_metrics(self) -> Dict[str, Any]:
         """Get CPU-related metrics."""
-        return {
+        metrics = {
             "percent": psutil.cpu_percent(interval=None),
             "frequency": psutil.cpu_freq().current if psutil.cpu_freq() else None,
             "temperature": self._get_cpu_temperature(),
+            "power": self._get_cpu_power(),
         }
+
+        # Add per-core metrics
+        per_core = psutil.cpu_percent(interval=None, percpu=True)
+        metrics["per_core_percent"] = per_core
+
+        return metrics
 
     def _get_memory_metrics(self) -> Dict[str, Any]:
         """Get memory usage metrics."""
@@ -236,6 +293,91 @@ class PowerMeter:
         except Exception:
             return None
 
+    def _get_cpu_power(self) -> Optional[float]:
+        """Get CPU power consumption if available."""
+        try:
+            if self.platform == "linux":
+                # Try reading from RAPL (Running Average Power Limit) interface
+                rapl_path = Path("/sys/class/powercap/intel-rapl")
+                if rapl_path.exists():
+                    for domain in rapl_path.glob("intel-rapl:*"):
+                        energy_uj = float((domain / "energy_uj").read_text())
+                        return energy_uj / 1_000_000  # Convert to watts
+
+            elif self.platform == "windows":
+                # Use Windows Management Instrumentation (WMI)
+                import wmi  # type: ignore
+
+                w = wmi.WMI()
+                for processor in w.Win32_Processor():
+                    return processor.CurrentVoltage * processor.CurrentClockSpeed / 1000
+
+        except Exception as e:
+            logger.debug(f"Error getting CPU power: {e}")
+        return None
+
+    def _get_battery_info(self) -> Dict[str, Any]:
+        """Get battery information based on OS."""
+        try:
+            if self.os_type == "windows":
+                return self._get_windows_battery_info()
+            elif self.os_type == "linux":
+                return self._get_linux_battery_info()
+            elif self.os_type == "darwin":
+                return self._get_macos_battery_info()
+        except Exception as e:
+            logger.debug(f"Error getting battery info: {e}")
+        return {}
+
+    def _get_windows_battery_info(self) -> Dict[str, Any]:
+        """Get battery information on Windows."""
+        try:
+            result = subprocess.check_output(WINDOWS_BATTERY_CMD, shell=True).decode()
+            lines = result.strip().split("\n")
+            if len(lines) >= 2:  # Header + data
+                data = lines[1].split(",")
+                # Add timestamp to track when measurement was taken
+                return {
+                    "charge_remaining": float(data[1]),
+                    "time_remaining": float(data[2]) if data[2] != "65535" else None,
+                    "timestamp": time.time(),
+                }
+        except Exception as e:
+            logger.debug(f"Error getting Windows battery info: {e}")
+        return {}
+
+    def _get_linux_battery_info(self) -> Dict[str, Any]:
+        """Get battery information on Linux."""
+        try:
+            battery_path = Path(LINUX_BATTERY_PATH)
+            for bat_dir in battery_path.glob("BAT*"):
+                energy_now = float((bat_dir / "energy_now").read_text())
+                energy_full = float((bat_dir / "energy_full").read_text())
+                power_now = float((bat_dir / "power_now").read_text())
+
+                return {
+                    "charge_remaining": (energy_now / energy_full) * 100,
+                    "power_draw": power_now / 1000000,  # Convert to watts
+                    "energy_remaining": energy_now / 1000000,  # Convert to watt-hours
+                    "timestamp": time.time(),
+                }
+        except Exception as e:
+            logger.debug(f"Error getting Linux battery info: {e}")
+        return {}
+
+    def _get_macos_battery_info(self) -> Dict[str, Any]:
+        """Get battery information on macOS."""
+        try:
+            result = subprocess.check_output(MACOS_BATTERY_CMD, shell=True).decode()
+            if "InternalBattery" in result:
+                percentage = float(result.split("\t")[1].split(";")[0].rstrip("%"))
+                return {
+                    "charge_remaining": percentage,
+                }
+        except Exception as e:
+            logger.debug(f"Error getting macOS battery info: {e}")
+        return {}
+
     def __enter__(self):
         """Context manager entry."""
         self.reset()
@@ -277,55 +419,104 @@ class PowerAnalyzer:
             return {}
 
         try:
-            # Calculate total power consumption
-            total_power = sum(m["gpu"]["power"]["current"] for m in power_metrics)
-
-            power_analysis = {
-                # Store original metrics for timestamp reference
+            analysis = {
                 "metrics": power_metrics,
-                # Power metrics
-                "total_power": total_power,  # Add total power
-                "avg_power_watts": total_power / len(power_metrics),
-                # Efficiency metrics
-                "avg_efficiency": sum(
-                    m["gpu"].get("efficiency", {}).get("ops_per_watt", 0)
-                    for m in power_metrics
-                )
+                "avg_cpu_percent": sum(m["cpu"]["percent"] for m in power_metrics)
                 / len(power_metrics),
-                # Memory utilization
-                "memory_utils": [
-                    m["gpu"]["memory"]["utilization"] for m in power_metrics
-                ],
-                "max_memory_util": max(
-                    m["gpu"]["memory"]["utilization"] for m in power_metrics
+                "peak_cpu_percent": max(m["cpu"]["percent"] for m in power_metrics),
+                "avg_memory_percent": sum(m["memory"]["percent"] for m in power_metrics)
+                / len(power_metrics),
+                "peak_memory_percent": max(
+                    m["memory"]["percent"] for m in power_metrics
                 ),
-                "avg_memory_util": sum(
-                    m["gpu"]["memory"]["utilization"] for m in power_metrics
-                )
-                / len(power_metrics),
-                # GPU utilization pattern (keep relative time)
-                "gpu_util_pattern": [
-                    (m["timestamp"], m["gpu"]["utilization"]["gpu"])
-                    for m in power_metrics
-                ],
-                # Temperature pattern (keep relative time)
-                "temp_pattern": [
-                    (m["timestamp"], m["gpu"]["temperature"]["current"])
-                    for m in power_metrics
-                ],
-                # Additional derived metrics
-                "peak_power": max(m["gpu"]["power"]["current"] for m in power_metrics),
-                "peak_temperature": max(
-                    m["gpu"]["temperature"]["current"] for m in power_metrics
-                ),
-                "avg_gpu_util": sum(
-                    m["gpu"]["utilization"]["gpu"] for m in power_metrics
-                )
-                / len(power_metrics),
             }
-            return power_analysis
+
+            # Add battery metrics if available
+            battery_metrics = [
+                m.get("battery", {}) for m in power_metrics if m.get("battery")
+            ]
+            if battery_metrics:
+                # Get initial and final measurements
+                initial_info = battery_metrics[0].get("initial", {})
+                final_info = battery_metrics[-1].get("current", {})
+
+                initial_charge = initial_info.get("charge_remaining", 0)
+                final_charge = final_info.get("charge_remaining", 0)
+
+                # Calculate total elapsed time
+                total_time = battery_metrics[-1].get("elapsed_time", 0)
+
+                # Calculate consumption
+                charge_consumed = max(
+                    0, initial_charge - final_charge
+                )  # Ensure non-negative
+
+                # Calculate average power consumption
+                power_draws = [
+                    b.get("current", {}).get("power_draw", 0) for b in battery_metrics
+                ]
+                avg_power = sum(power_draws) / len(power_draws) if power_draws else None
+
+                analysis["battery"] = {
+                    "initial_charge": initial_charge,
+                    "final_charge": final_charge,
+                    "charge_consumed": charge_consumed,
+                    "power_consumption": avg_power,
+                    "total_time": total_time,
+                }
+
+            # Add GPU metrics if available
+            if any("gpu" in m for m in power_metrics):
+                analysis.update(
+                    {
+                        "total_power": sum(
+                            m["gpu"]["power"]["current"] for m in power_metrics
+                        ),
+                        "avg_power_watts": sum(
+                            m["gpu"]["power"]["current"] for m in power_metrics
+                        )
+                        / len(power_metrics),
+                        "peak_power": max(
+                            m["gpu"]["power"]["current"] for m in power_metrics
+                        ),
+                        "avg_efficiency": sum(
+                            m["gpu"].get("efficiency", {}).get("ops_per_watt", 0)
+                            for m in power_metrics
+                        )
+                        / len(power_metrics),
+                        "memory_utils": [
+                            m["gpu"]["memory"]["utilization"] for m in power_metrics
+                        ],
+                        "max_memory_util": max(
+                            m["gpu"]["memory"]["utilization"] for m in power_metrics
+                        ),
+                        "avg_memory_util": sum(
+                            m["gpu"]["memory"]["utilization"] for m in power_metrics
+                        )
+                        / len(power_metrics),
+                        "gpu_util_pattern": [
+                            (m["timestamp"], m["gpu"]["utilization"]["gpu"])
+                            for m in power_metrics
+                        ],
+                        "temp_pattern": [
+                            (m["timestamp"], m["gpu"]["temperature"]["current"])
+                            for m in power_metrics
+                        ],
+                        "peak_temperature": max(
+                            m["gpu"]["temperature"]["current"] for m in power_metrics
+                        ),
+                        "avg_gpu_util": sum(
+                            m["gpu"]["utilization"]["gpu"] for m in power_metrics
+                        )
+                        / len(power_metrics),
+                    }
+                )
+
+            return analysis
+
         except Exception as e:
             logger.error(f"Error analyzing power metrics: {e}")
+            logger.exception(e)  # This will log the full traceback
             return {}
 
     @staticmethod
@@ -333,57 +524,94 @@ class PowerAnalyzer:
         power_analysis: Dict[str, Any]
     ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """Create DataFrames for power analysis results."""
+        # Basic metrics that are always available
+        metrics = [
+            ("Average CPU Usage (%)", power_analysis.get("avg_cpu_percent", 0)),
+            ("Peak CPU Usage (%)", power_analysis.get("peak_cpu_percent", 0)),
+            ("Average Memory Usage (%)", power_analysis.get("avg_memory_percent", 0)),
+            ("Peak Memory Usage (%)", power_analysis.get("peak_memory_percent", 0)),
+        ]
+
+        # Add battery metrics if available
+        if "battery" in power_analysis:
+            battery_metrics = [
+                (
+                    "Initial Battery Charge (%)",
+                    power_analysis["battery"].get("initial_charge", 0),
+                ),
+                (
+                    "Final Battery Charge (%)",
+                    power_analysis["battery"].get("final_charge", 0),
+                ),
+                (
+                    "Battery Charge Consumed (%)",
+                    power_analysis["battery"].get("charge_consumed", 0),
+                ),
+            ]
+            if power_analysis["battery"].get("power_consumption") is not None:
+                battery_metrics.append(
+                    (
+                        "Average Battery Power Consumption (W)",
+                        power_analysis["battery"]["power_consumption"],
+                    )
+                )
+            metrics.extend(battery_metrics)
+
+        # Add GPU metrics if available
+        if "total_power" in power_analysis:
+            gpu_metrics = [
+                ("Total GPU Power (W)", power_analysis["total_power"]),
+                ("Average GPU Power (W)", power_analysis["avg_power_watts"]),
+                ("Peak GPU Power (W)", power_analysis["peak_power"]),
+                ("Power Efficiency (util%/W)", power_analysis["avg_efficiency"]),
+                ("Maximum Memory Utilization (%)", power_analysis["max_memory_util"]),
+                ("Average Memory Utilization (%)", power_analysis["avg_memory_util"]),
+                ("Average GPU Utilization (%)", power_analysis["avg_gpu_util"]),
+                ("Peak Temperature (°C)", power_analysis["peak_temperature"]),
+            ]
+            metrics.extend(gpu_metrics)
+
         # Create analysis DataFrame
-        analysis_df = pd.DataFrame(
-            {
-                "Metric": [
-                    "Total Power (W)",  # Add Total Power metric
-                    "Average Power (W)",
-                    "Peak Power (W)",
-                    "Power Efficiency (util%/W)",
-                    "Maximum Memory Utilization (%)",
-                    "Average Memory Utilization (%)",
-                    "Average GPU Utilization (%)",
-                    "Peak Temperature (°C)",
-                ],
-                "Value": [
-                    round(power_analysis["total_power"], 2),  # Add total power value
-                    round(power_analysis["avg_power_watts"], 2),
-                    round(power_analysis["peak_power"], 2),
-                    round(power_analysis["avg_efficiency"], 2),
-                    round(power_analysis["max_memory_util"], 1),
-                    round(power_analysis["avg_memory_util"], 1),
-                    round(power_analysis["avg_gpu_util"], 1),
-                    power_analysis["peak_temperature"],
-                ],
-            }
+        analysis_df = pd.DataFrame(metrics, columns=["Metric", "Value"])
+        analysis_df["Value"] = analysis_df["Value"].apply(
+            lambda x: round(x, 2) if isinstance(x, float) else x
         )
 
-        # Create time series DataFrames with both relative and absolute time
+        # Create empty DataFrames for GPU utilization and temperature if not available
         gpu_util_df = pd.DataFrame(
-            [
-                {
-                    "Relative Time (s)": timestamp,
-                    "Datetime": m["datetime"],
-                    "GPU Utilization (%)": util,
-                }
-                for (timestamp, util), m in zip(
-                    power_analysis["gpu_util_pattern"], power_analysis["metrics"]
-                )
-            ]
+            columns=["Relative Time (s)", "Datetime", "GPU Utilization (%)"]
+        )
+        temp_df = pd.DataFrame(
+            columns=["Relative Time (s)", "Datetime", "Temperature (°C)"]
         )
 
-        temp_df = pd.DataFrame(
-            [
-                {
-                    "Relative Time (s)": timestamp,
-                    "Datetime": m["datetime"],
-                    "Temperature (°C)": temp,
-                }
-                for (timestamp, temp), m in zip(
-                    power_analysis["temp_pattern"], power_analysis["metrics"]
-                )
-            ]
-        )
+        # Fill GPU utilization and temperature DataFrames if data is available
+        if "gpu_util_pattern" in power_analysis:
+            gpu_util_df = pd.DataFrame(
+                [
+                    {
+                        "Relative Time (s)": timestamp,
+                        "Datetime": m["datetime"],
+                        "GPU Utilization (%)": util,
+                    }
+                    for (timestamp, util), m in zip(
+                        power_analysis["gpu_util_pattern"], power_analysis["metrics"]
+                    )
+                ]
+            )
+
+        if "temp_pattern" in power_analysis:
+            temp_df = pd.DataFrame(
+                [
+                    {
+                        "Relative Time (s)": timestamp,
+                        "Datetime": m["datetime"],
+                        "Temperature (°C)": temp,
+                    }
+                    for (timestamp, temp), m in zip(
+                        power_analysis["temp_pattern"], power_analysis["metrics"]
+                    )
+                ]
+            )
 
         return analysis_df, gpu_util_df, temp_df
