@@ -1,4 +1,4 @@
-# `tracr`: Remote Adaptive Collaborative Research for AI
+# `tracr`: Remote Adaptive Collaborative Reasoning
 
 A framework for **distributed AI experiments**, enabling split inference across multiple devices. This project allows you to run AI models across different devices, with automatic network management and experiment coordination.
 
