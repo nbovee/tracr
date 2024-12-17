@@ -187,24 +187,112 @@ class SSHClient:
             raise SSHError(f"File transfer failed: {e}")
 
     @ensure_connection
-    def transfer_directory(
-        self, source: Path, destination: Path, exclude: List[str] = None
-    ) -> None:
-        """Transfer directory recursively to remote host."""
-        exclude = exclude or []
-        if source.name in exclude:
-            return
-
+    def transfer_directory(self, source: Path, destination: Path) -> None:
+        """Transfer directory recursively to remote host with file conflict handling."""
         try:
             if not self._sftp:
-                self._sftp = self._client.open_sftp()  # type: ignore
+                self._sftp = self._client.open_sftp()
 
-            if source.is_dir():
-                self._ensure_remote_directory(destination)
-                for item in source.iterdir():
-                    self.transfer_directory(item, destination / item.name, exclude)
-            else:
-                self.transfer_file(source, destination)
+            # Ensure source path exists
+            if not source.exists():
+                raise SSHError(f"Source path does not exist: {source}")
+
+            # Handle WSL to Windows path conversion
+            dest_str = str(destination)
+            is_wsl_windows = dest_str.startswith("/mnt/")
+            is_direct_windows = dest_str.startswith(("C:", "D:", "E:"))
+
+            if is_wsl_windows:
+                # Convert /mnt/c/... to C:/...
+                parts = dest_str.split("/")
+                if len(parts) > 3:  # /mnt/c/...
+                    drive_letter = parts[2].upper()
+                    windows_path = f"{drive_letter}:/{'/'.join(parts[3:])}"
+                    destination = Path(windows_path)
+                    logger.debug(f"Converted WSL path to Windows path: {destination}")
+            elif is_direct_windows:
+                # Ensure Windows path format
+                destination = Path(str(destination).replace("\\", "/"))
+
+            # Create base directory structure first
+            try:
+                current_path = Path()
+                for part in destination.parts:
+                    if part.endswith(":"):  # Skip drive letter for Windows
+                        current_path = Path(part + "/")
+                        continue
+                    current_path = current_path / part
+                    try:
+                        self._sftp.stat(str(current_path))
+                    except FileNotFoundError:
+                        try:
+                            self._sftp.mkdir(str(current_path))
+                            logger.debug(f"Created directory: {current_path}")
+                        except IOError as e:
+                            if "exists" not in str(e).lower():
+                                raise
+
+            except Exception as e:
+                logger.warning(f"Error creating directory structure: {e}")
+
+            # Handle directory transfer
+            for item in source.rglob("*"):
+                if item.is_file():
+                    # Calculate relative path from source to item
+                    rel_path = item.relative_to(source)
+                    if is_wsl_windows:
+                        # Ensure Windows path format
+                        rel_path = Path(str(rel_path).replace("\\", "/"))
+                    remote_path = destination / rel_path
+                    remote_parent = remote_path.parent
+
+                    # Create parent directories if they don't exist
+                    try:
+                        self._sftp.stat(str(remote_parent))
+                    except FileNotFoundError:
+                        current_path = Path(destination)
+                        for part in rel_path.parent.parts:
+                            current_path = current_path / part
+                            try:
+                                self._sftp.stat(str(current_path))
+                            except FileNotFoundError:
+                                try:
+                                    self._sftp.mkdir(str(current_path))
+                                    logger.debug(f"Created directory: {current_path}")
+                                except IOError as e:
+                                    if "exists" not in str(e).lower():
+                                        raise
+
+                    # Check if file already exists on remote
+                    try:
+                        self._sftp.stat(str(remote_path))
+                        # File exists, create a new name with '_host' suffix
+                        name_parts = remote_path.stem.split("_")
+                        if name_parts[-1] != "host":
+                            new_name = f"{remote_path.stem}_host{remote_path.suffix}"
+                        else:
+                            # If already has _host suffix, add number
+                            i = 1
+                            while True:
+                                try:
+                                    new_name = (
+                                        f"{remote_path.stem}_{i}{remote_path.suffix}"
+                                    )
+                                    self._sftp.stat(str(remote_path.parent / new_name))
+                                    i += 1
+                                except FileNotFoundError:
+                                    break
+
+                        remote_path = remote_path.parent / new_name
+                        logger.debug(f"File exists, renaming to {remote_path}")
+                    except FileNotFoundError:
+                        # File doesn't exist, use original name
+                        pass
+
+                    # Transfer the file
+                    self._sftp.put(str(item), str(remote_path))
+                    logger.debug(f"Transferred {item} to {remote_path}")
+
         except Exception as e:
             raise SSHError(f"Directory transfer failed: {e}")
 

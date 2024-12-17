@@ -8,6 +8,7 @@ import sys
 import torch
 from functools import lru_cache
 from typing import Optional, Dict, Any, Final
+import time
 
 # Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parent
@@ -21,11 +22,12 @@ from src.api import (  # noqa: E402
 )
 from src.experiment_design.datasets import DataManager  # noqa: E402
 from src.utils import read_yaml_file  # noqa: E402
+from src.api.remote_connection import create_ssh_client
 
 DEFAULT_SOURCE_DIR: Final[str] = "results"
 
 # Destination directory on server to copy results over to from host when experiment is complete
-DEFAULT_DEST_DIR: Final[str] = "/mnt/d/github/RACR_AI/results"
+DEFAULT_DEST_DIR: Final[str] = "/mnt/c/Users/racr/Desktop/tracr/results"
 
 
 class ExperimentHost:
@@ -111,8 +113,6 @@ class ExperimentHost:
     def _copy_results_to_server(self) -> None:
         """Copy results to the server using SSH utilities."""
         try:
-            from src.api import SSHSession
-
             server_device = self.experiment_manager.device_manager.get_device_by_type(
                 "SERVER"
             )
@@ -120,34 +120,60 @@ class ExperimentHost:
                 logger.error("No server device found for copying results")
                 return
 
-            ssh_config = {
-                "host": server_device.get_host(),
-                "user": server_device.get_username(),
-                "private_key_path": str(server_device.get_private_key_path()),
-                "port": server_device.get_port(),
-            }
+            # Wait for network connection to close completely
+            if hasattr(self.experiment, "network_client"):
+                self.experiment.network_client.cleanup()
+                time.sleep(2)
 
-            results_config = self.config.get("results", {})
-            source_dir = Path(results_config.get("source_dir", DEFAULT_SOURCE_DIR))
+            source_dir = Path(
+                self.config.get("results", {}).get("source_dir", "results")
+            )
             destination_dir = Path(
-                results_config.get("destination_dir", DEFAULT_DEST_DIR)
+                self.config.get("results", {}).get(
+                    "destination_dir", "/home/racr/Desktop/tracr/results"
+                )
             )
 
+            # Use default SSH port (22) instead of the experiment port
+            ssh_port = 22
             logger.info(
-                f"Establishing SSH connection to server {ssh_config['host']}..."
+                f"Establishing SSH connection to server {server_device.get_host()}..."
             )
-            with SSHSession(**ssh_config) as ssh:
-                if ssh.copy_results_to_server(
-                    source_dir=source_dir, destination_dir=destination_dir
-                ):
+
+            max_retries = 3
+            retry_delay = 2
+
+            for attempt in range(max_retries):
+                try:
+                    ssh_client = create_ssh_client(
+                        host=server_device.get_host(),
+                        user=server_device.get_username(),
+                        private_key_path=server_device.get_private_key_path(),
+                        port=ssh_port,
+                        timeout=10.0,
+                    )
+
+                    # Transfer the results directory
+                    ssh_client.transfer_directory(source_dir, destination_dir)
                     logger.info(
                         f"Results successfully copied to {destination_dir} on server"
                     )
-                else:
-                    logger.error("Failed to copy results to server")
+                    break  # Success, exit retry loop
+
+                except Exception as e:
+                    logger.warning(
+                        f"SSH connection attempt {attempt + 1} failed: {str(e)}"
+                    )
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                    else:
+                        raise
+                finally:
+                    if "ssh_client" in locals():
+                        ssh_client.close()
 
         except Exception as e:
-            logger.error(f"Error copying results to server: {e}")
+            logger.error(f"Error copying results to server: {e}", exc_info=True)
 
     def cleanup(self) -> None:
         """Clean up resources and copy results."""
