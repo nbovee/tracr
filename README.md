@@ -1,6 +1,6 @@
 # `tracr`: Remote Adaptive Collaborative Research for AI
 
-A framework for **distributed AI experiments**, enabling split inference across multiple devices. This project allows you to run AI models across different devices, with automatic network management and experiment coordination.
+A tool with the capability to identify the best way to split a deep learning architecture into 2 parts based on the total time to complete the inference process between an edge device and a server.  It has the flexibility to allow you to perform cooperative inference using different deep learning models on different type of devices, with automatic network management and experiment coordination.
 
 ## Prerequisites
 - Python 3.10 or higher
