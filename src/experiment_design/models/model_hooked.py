@@ -3,55 +3,49 @@
 import atexit
 import copy
 import logging
-import sys
 import time
 from contextlib import nullcontext
-from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, ClassVar
 
 import numpy as np
 import torch
 from PIL import Image
 from torchinfo import summary  # type: ignore
 
-# Add project root to path so we can import from src module
-project_root = Path(__file__).resolve().parents[3]
-if str(project_root) not in sys.path:
-    sys.path.append(str(project_root))
-
 from .base import BaseModel
 from .hooks import (
     create_forward_prehook,
     create_forward_posthook,
-    NotDict,
+    EarlyOutput,
     HookExitException,
 )
 from .templates import LAYER_TEMPLATE
-from src.api.master_dict import MasterDict
-from src.utils.power_meter import PowerMeter
-from src.interface.bridge import ModelInterface
+from src.api import MasterDict
+from src.interface import ModelInterface
 
-# Register atexit handler to clear CUDA cache
 atexit.register(torch.cuda.empty_cache)
-
-# Configure logger
 logger = logging.getLogger("split_computing_logger")
 
 
 class WrappedModel(BaseModel, ModelInterface):
-    """Wraps a pretrained model with features necessary for edge computing tests."""
+    """Model wrapper implementing hook-based functionality for edge computing experiments."""
+
+    DEFAULT_DEPTH: ClassVar[int] = 2
+    DEFAULT_BUFFER_SIZE: ClassVar[int] = 100
+    DEFAULT_WARMUP_ITERS: ClassVar[int] = 2
 
     def __init__(
         self,
         config: Dict[str, Any],
         master_dict: Optional[MasterDict] = None,
         **kwargs,
-    ):
-        """Initialize WrappedModel with configuration and optional MasterDict."""
+    ) -> None:
+        """Initialize wrapped model with configuration and optional master dictionary."""
         BaseModel.__init__(self, config)
         ModelInterface.__init__(self, config)
-        logger.info(f"Initializing WrappedModel with config: {config}")
+        logger.debug(f"Initializing WrappedModel with config: {config}")
 
+        # Initialize basic attributes
         self.timer = time.perf_counter_ns
         self.master_dict = master_dict
         self.io_buffer = {}
@@ -59,83 +53,94 @@ class WrappedModel(BaseModel, ModelInterface):
         self.forward_info = {}
         self.forward_hooks = []
         self.forward_post_hooks = []
+        self.save_layers = getattr(self.model, "save", {})
 
-        # Load model using the BaseModel's load_model method
-        self.model = self._load_model()
-        self.drop_save_dict = getattr(self.model, "save", {})
-        logger.debug(f"Model loaded with drop_save_dict: {self.drop_save_dict}")
+        # Initialize hook-related attributes
+        self.start_i: Optional[int] = None
+        self.stop_i: Optional[int] = None
+        self.banked_output: Optional[Any] = None
+        self.log = False
 
-        # Load model summary and layer count
-        self.torchinfo_summary = summary(self.model, (1, *self.input_size), verbose=0)
+        # Setup model layers and hooks
+        self._setup_model()
+        logger.info("WrappedModel initialization complete")
+
+    def _setup_model(self) -> None:
+        """Set up model layers, hooks, and initialize state."""
+        self.torchinfo_summary = summary(
+            self.model, (1, *self.input_size), device=self.device, verbose=0
+        )
         self.layer_count = self._walk_modules(self.model.children(), depth=1, walk_i=0)
         del self.torchinfo_summary
+
+        # Store empty forward info for resets
         self.forward_info_empty = copy.deepcopy(self.forward_info)
         logger.debug(f"Model initialized with {self.layer_count} layers")
 
-        # Hook-related attributes
-        self.model_start_i: Optional[int] = None
-        self.model_stop_i: Optional[int] = None
-        self.banked_input: Optional[Any] = None
-        self.log = False
-        self.power_meter = PowerMeter(self.device)
+        # Perform warmup iterations
         self.warmup(iterations=self.warmup_iterations)
-        logger.info("WrappedModel initialization complete")
 
-    def _walk_modules(self, modules, depth: int, walk_i: int) -> int:
-        """Recursively registers hooks on model layers."""
+    def _walk_modules(self, modules: Any, depth: int, walk_i: int) -> int:
+        """Register hooks on model layers recursively."""
         for child in modules:
             child_name = child.__class__.__name__
             children = list(child.children())
-            if children and depth < self.depth:
-                logger.debug(
-                    f"{'-' * depth}Module {child_name} has children; hooking children instead."
-                )
-                walk_i = self._walk_modules(children, depth + 1, walk_i)
-                logger.debug(f"{'-' * depth}Finished hooking children of {child_name}.")
-            else:
-                if isinstance(child, torch.nn.Module):
-                    layer_info = next(
-                        (
-                            layer
-                            for layer in self.torchinfo_summary.summary_list
-                            if layer.layer_id == id(child)
-                        ),
-                        None,
-                    )
-                    if layer_info:
-                        self.forward_info[walk_i] = copy.deepcopy(LAYER_TEMPLATE)
-                        self.forward_info[walk_i].update(
-                            {
-                                "depth": depth,
-                                "layer_id": walk_i,
-                                "class": layer_info.class_name,
-                                "parameters": layer_info.num_params,
-                                "parameter_bytes": layer_info.param_bytes,
-                                "input_size": layer_info.input_size,
-                                "output_size": layer_info.output_size,
-                                "output_bytes": layer_info.output_bytes,
-                            }
-                        )
-                        logger.debug(
-                            f"Registered layer {walk_i}: {layer_info.class_name}"
-                        )
 
-                    pre_hook = child.register_forward_pre_hook(
-                        create_forward_prehook(
-                            self, walk_i, child_name, (0, 0), self.device
-                        )
+            if children and depth < self.depth:
+                logger.debug(f"{'-' * depth}Module {child_name} has children")
+                walk_i = self._walk_modules(children, depth + 1, walk_i)
+            elif isinstance(child, torch.nn.Module):
+                walk_i = self._register_layer(child, child_name, depth, walk_i)
+
+        return walk_i
+
+    def _register_layer(
+        self, layer: torch.nn.Module, layer_name: str, depth: int, walk_i: int
+    ) -> int:
+        """Register hooks and info for a single layer."""
+        layer_info = next(
+            (
+                info
+                for info in self.torchinfo_summary.summary_list
+                if info.layer_id == id(layer)
+            ),
+            None,
+        )
+
+        if layer_info:
+            # Store layer information
+            self.forward_info[walk_i] = copy.deepcopy(LAYER_TEMPLATE)
+            self.forward_info[walk_i].update(
+                {
+                    "depth": depth,
+                    "layer_id": walk_i,
+                    "class": layer_info.class_name,
+                    "parameters": layer_info.num_params,
+                    "parameter_bytes": layer_info.param_bytes,
+                    "input_size": layer_info.input_size,
+                    "output_size": layer_info.output_size,
+                    "output_bytes": layer_info.output_bytes,
+                }
+            )
+
+            # Register hooks
+            self.forward_hooks.append(
+                layer.register_forward_pre_hook(
+                    create_forward_prehook(
+                        self, walk_i, layer_name, (0, 0), self.device
                     )
-                    post_hook = child.register_forward_hook(
-                        create_forward_posthook(
-                            self, walk_i, child_name, (0, 0), self.device
-                        )
+                )
+            )
+            self.forward_post_hooks.append(
+                layer.register_forward_hook(
+                    create_forward_posthook(
+                        self, walk_i, layer_name, (0, 0), self.device
                     )
-                    self.forward_hooks.append(pre_hook)
-                    self.forward_post_hooks.append(post_hook)
-                    logger.debug(
-                        f"{'-'*depth}Layer {walk_i}: {child_name} had hooks applied."
-                    )
-                    walk_i += 1
+                )
+            )
+            logger.debug(f"Registered layer {walk_i}: {layer_info.class_name}")
+            walk_i += 1
+
         return walk_i
 
     def forward(
@@ -146,80 +151,79 @@ class WrappedModel(BaseModel, ModelInterface):
         end: Union[int, float] = np.inf,
         log: bool = True,
     ) -> Any:
-        """Performs a forward pass with optional slicing and logging."""
-        start_time = time.perf_counter_ns()
-        start_energy = self.power_meter.get_energy()
+        """Execute forward pass with optional slicing and logging."""
+        start_time = self.timer()
         end = self.layer_count if end == np.inf else end
         logger.info(
-            f"Starting forward pass: inference_id={inference_id}, start={start}, end={end}, log={log}"
+            f"Starting forward pass: id={inference_id}, start={start}, end={end}"
         )
 
-        # Configure hooks
+        # Configure forward pass
         self.log = log
-        self.model_start_i = start
-        self.model_stop_i = end
+        self.start_i = start
+        self.stop_i = end
+        self._setup_inference_id(inference_id)
 
-        # Prepare inference ID
+        # Execute forward pass
+        try:
+            output = self._execute_forward(x)
+        except HookExitException as e:
+            output = self._handle_early_exit(e)
+
+        # Handle results
+        self._handle_results(start_time)
+        return output
+
+    def _setup_inference_id(self, inference_id: Optional[str]) -> None:
+        """Set up inference ID and logging state."""
         if inference_id:
             base_id, *suffix = inference_id.rsplit(".", maxsplit=1)
             suffix = int(suffix[0]) + 1 if suffix else 0
-            current_id = f"{base_id}.{suffix}"
+            self.inference_info["inference_id"] = f"{base_id}.{suffix}"
         else:
-            current_id = "unlogged"
+            self.inference_info["inference_id"] = "unlogged"
             self.log = False
 
-        self.inference_info["inference_id"] = current_id
-        logger.info(f"Inference {current_id} started.")
+    def _execute_forward(self, x: Union[torch.Tensor, Image.Image]) -> Any:
+        """Execute model forward pass with appropriate context."""
+        context = torch.no_grad() if self.get_mode() == "eval" else nullcontext()
+        with context:
+            return self.model(x)
 
-        # Run forward pass
-        try:
-            context = torch.no_grad() if self.get_mode() == "eval" else nullcontext()
-            with context:
-                output = self.model(x)
-        except HookExitException as e:
-            logger.debug("Early exit from forward pass due to stop index.")
-            output = NotDict(e.result)
-            for i in range(self.model_stop_i, self.layer_count):
-                self.forward_info.pop(i, None)
-        end_time = time.perf_counter_ns()
-        end_energy = self.power_meter.get_energy()
+    def _handle_early_exit(self, exception: HookExitException) -> EarlyOutput:
+        """Handle early exit from forward pass."""
+        output = EarlyOutput(exception.result)
+        for i in range(self.stop_i, self.layer_count):
+            self.forward_info.pop(i, None)
+        return output
 
-        total_time = end_time - start_time
-        total_energy = end_energy - start_energy
-
-        # Update inference info with timing and power usage
-        self.inference_info["total_time"] = total_time
-        self.inference_info["total_energy"] = total_energy
-
-        # Handle inference info
+    def _handle_results(self, start_time: int) -> None:
+        """Handle forward pass results and logging."""
+        self.inference_info["total_time"] = self.timer() - start_time
         self.inference_info["layer_information"] = self.forward_info
+
         if self.log and self.master_dict:
-            base_id = current_id.split(".", maxsplit=1)[0]
+            base_id = self.inference_info["inference_id"].split(".", maxsplit=1)[0]
             self.io_buffer[base_id] = copy.deepcopy(self.inference_info)
+
             if len(self.io_buffer) >= self.flush_buffer_size:
                 self.update_master_dict()
 
-        # Reset for next inference
+        # Reset state
         self.inference_info.clear()
         self.forward_info = copy.deepcopy(self.forward_info_empty)
-        self.banked_input = None
-        logger.info(f"Inference {current_id} ended.")
-        return output
+        self.banked_output = None
 
     def update_master_dict(self) -> None:
-        """Flushes the IO buffer to the MasterDict."""
-        logger.debug("Updating MasterDict with IO buffer.")
+        """Update master dictionary with buffered data."""
         if self.master_dict and self.io_buffer:
-            logger.info("Flushing IO buffer to MasterDict.")
             self.master_dict.update(self.io_buffer)
             self.io_buffer.clear()
-        else:
-            logger.info("MasterDict not updated: buffer empty or MasterDict is None.")
 
     def get_state_dict(self) -> Dict[str, Any]:
-        """Returns the model's state dictionary."""
+        """Return model state dictionary."""
         return self.model.state_dict()
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
-        """Loads a state dictionary into the model."""
+        """Load state dictionary into model."""
         self.model.load_state_dict(state_dict)

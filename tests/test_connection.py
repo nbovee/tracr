@@ -3,7 +3,6 @@
 import logging
 import os
 import sys
-import threading
 from typing import Dict, Any, Optional, List
 from colorama import init
 from pathlib import Path
@@ -13,9 +12,13 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from src.utils.system_utils import read_yaml_file, get_repo_root
-from src.utils.logger import setup_logger, DeviceType
-from src.utils.ssh import ssh_connect
+from src.utils.file_manager import read_yaml_file, get_repo_root  # noqa: E402
+from src.api import (  # noqa: E402
+    DeviceType,
+    create_ssh_client,
+    start_logging_server,
+    shutdown_logging_server,
+)
 
 init(autoreset=True)
 
@@ -71,10 +74,12 @@ class ConnectivityChecker:
                 pkey_fp = str(get_repo_root() / "config" / "pkeys" / pkey_fp)
 
             logger.info(f"Testing SSH from SERVER to PARTICIPANT ({host})")
-            server_to_participant_ssh = ssh_connect(
+            server_to_participant_ssh = create_ssh_client(
                 host=host,
                 user=user,
-                pkey_fp=pkey_fp,
+                private_key_path=pkey_fp,
+                port=22,
+                timeout=10,
             )
             if server_to_participant_ssh:
                 logger.info(f"SSH from SERVER to PARTICIPANT ({host}) succeeded.")
@@ -97,10 +102,12 @@ class ConnectivityChecker:
                 )
 
             logger.info(f"Testing SSH from PARTICIPANT to SERVER ({server_host})")
-            participant_to_server_ssh = ssh_connect(
+            participant_to_server_ssh = create_ssh_client(
                 host=server_host,
                 user=server_user,
-                pkey_fp=server_pkey_fp,
+                private_key_path=server_pkey_fp,
+                port=22,
+                timeout=10,
             )
             if participant_to_server_ssh:
                 logger.info(
@@ -168,7 +175,8 @@ def main():
 
         # Initialize logger with SERVER device type
         global logger
-        logger = setup_logger(device=DeviceType.SERVER, config=config)
+        logging_server = start_logging_server(device=DeviceType.SERVER, config=config)
+        logger = logging.getLogger("split_computing_logger")
         logger.info("Starting SSH connectivity checks")
 
         checker = ConnectivityChecker(config)
@@ -185,13 +193,7 @@ def main():
             )
             sys.exit(1)
     finally:
-        # Close loggers with a timeout using threading
-        if logger and logger.handlers:
-            shutdown_thread = threading.Thread(target=close_loggers, args=(logger,))
-            shutdown_thread.start()
-            shutdown_thread.join(timeout=5)  # 5-second timeout
-            if shutdown_thread.is_alive():
-                print("Logging shutdown timed out. Forcing exit.")
+        shutdown_logging_server(logging_server)
 
         # Force exit
         os._exit(0)

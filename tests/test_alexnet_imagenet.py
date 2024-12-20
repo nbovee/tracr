@@ -1,3 +1,5 @@
+# tests/test_alexnet_imagenet.py
+
 import os
 import sys
 import torch
@@ -9,9 +11,9 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from src.experiment_design.datasets.imagenet import ImageNetDataset
-from src.utils.system_utils import read_yaml_file
-from src.experiment_design.datasets.collate import COLLATE_FUNCTIONS
+from src.experiment_design.datasets.imagenet import ImageNetDataset  # noqa: E402
+from src.utils.file_manager import read_yaml_file  # noqa: E402
+from src.experiment_design.datasets.collate_fns import COLLATE_FUNCTIONS  # noqa: E402
 
 # Read config file
 config = read_yaml_file("config/alexnetsplit.yaml")
@@ -115,7 +117,7 @@ accuracy = (correct_predictions / total_images) * 100
 print(f"\nOverall Accuracy: {accuracy:.2f}%")
 
 # Display dataset statistics
-print(f"\nDataset Statistics:")
+print("\nDataset Statistics:")
 print(f"Total classes: {len(dataset.classes)}")
 print(f"Total images: {len(dataset)}")
 print(f"Class mapping size: {len(dataset.class_id_to_name)}")

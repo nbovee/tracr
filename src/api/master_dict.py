@@ -3,7 +3,8 @@
 import logging
 import pickle
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple, ClassVar
 
 import pandas as pd
 from rpyc.utils.classic import obtain
@@ -11,259 +12,231 @@ from rpyc.utils.classic import obtain
 logger = logging.getLogger("split_computing_logger")
 
 
+@dataclass
+class InferenceMetrics:
+    """Container for inference-related metrics."""
+
+    split_layer: int
+    transmission_latency: int
+    inf_time_client: int
+    inf_time_edge: int
+    total_time: int
+    watts_used: float
+
+
+@dataclass
+class LayerData:
+    """Container for layer-specific data."""
+
+    layer_id: int
+    inference_time: Optional[int] = None
+    completed_by_node: Optional[str] = None
+    output_bytes: Optional[int] = None
+    watts_used: float = 0.0
+
+
+@dataclass
+class InferenceData:
+    """Container for complete inference data."""
+
+    inference_id: str
+    layer_information: Dict[str, Dict[str, Any]]
+
+
 class MasterDict:
     """Thread-safe dictionary to store and manage inference data."""
 
+    DEFAULT_BANDWIDTH: ClassVar[float] = 4.0  # MB/s
+    DEFAULT_NODES: ClassVar[List[str]] = ["SERVER", "PARTICIPANT"]
+    DEFAULT_SPLIT_LAYER: ClassVar[int] = 20
+
     def __init__(self) -> None:
-        """Initialize MasterDict with a reentrant lock and an empty dictionary."""
-        self.lock = threading.RLock()
-        self.data: Dict[str, Dict[str, Any]] = {}
-        logger.info("MasterDict initialized")
+        """Initialize the master dictionary with thread-safe storage."""
+        self._lock = threading.RLock()
+        self._data: Dict[str, Dict[str, Any]] = {}
+
+    def _validate_inference_id(self, inference_id: str) -> None:
+        """Validate inference ID exists in data store."""
+        if inference_id not in self._data:
+            raise KeyError(f"Inference ID '{inference_id}' not found.")
+
+    def _get_layer_info(self, inference_id: str) -> Dict[str, Dict[str, Any]]:
+        """Retrieve layer information for given inference ID."""
+        self._validate_inference_id(inference_id)
+        return self._data[inference_id].get("layer_information", {})
 
     def set_item(self, inference_id: str, value: Dict[str, Any]) -> None:
-        """Set or update the value for a given inference ID."""
-        with self.lock:
-            if inference_id in self.data:
-                layer_info = value.get("layer_information")
-                if layer_info is not None:
-                    filtered_layer_info = {
-                        k: v
-                        for k, v in layer_info.items()
-                        if v.get("inference_time") is not None
-                    }
-                    self.data[inference_id]["layer_information"].update(
-                        filtered_layer_info
-                    )
-                    logger.debug(
-                        f"Updated key {inference_id} with new layer information"
-                    )
-                else:
-                    logger.error(
-                        f"Cannot integrate inference_dict without 'layer_information' for key {inference_id}"
-                    )
-                    raise ValueError(
-                        "Cannot integrate inference_dict without 'layer_information' field."
-                    )
+        """Set or update value for given inference ID."""
+        with self._lock:
+            if inference_id in self._data:
+                self._update_existing_inference(inference_id, value)
             else:
-                self.data[inference_id] = value
-                logger.debug(f"Added new key {inference_id} to MasterDict")
+                self._data[inference_id] = value
+
+    def _update_existing_inference(
+        self, inference_id: str, value: Dict[str, Any]
+    ) -> None:
+        """Update existing inference data with new layer information."""
+        layer_info = value.get("layer_information")
+        if not layer_info:
+            raise ValueError(
+                "Cannot integrate inference_dict without 'layer_information' field."
+            )
+
+        filtered_info = {
+            k: v for k, v in layer_info.items() if v.get("inference_time") is not None
+        }
+        self._data[inference_id]["layer_information"].update(filtered_info)
 
     def get_item(self, inference_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve the value associated with a given inference ID."""
-        with self.lock:
-            value = self.data.get(inference_id)
-            if value:
-                logger.debug(f"Retrieved value for key {inference_id}")
-            else:
-                logger.debug(f"Key {inference_id} not found in MasterDict")
-            return value
+        """Retrieve value for given inference ID."""
+        with self._lock:
+            return self._data.get(inference_id)
 
     def update_data(
         self, new_info: Dict[str, Dict[str, Any]], by_value: bool = True
     ) -> None:
-        """Update the master dictionary with new inference data."""
-        if by_value:
-            new_info = obtain(new_info)
-        with self.lock:
-            for inference_id, layer_data in new_info.items():
+        """Update master dictionary with new inference data."""
+        info_to_update = obtain(new_info) if by_value else new_info
+        with self._lock:
+            for inference_id, layer_data in info_to_update.items():
                 self.set_item(inference_id, layer_data)
-        logger.info(f"Updated MasterDict with {len(new_info)} new entries")
 
     def get_transmission_latency(
-        self, inference_id: str, split_layer: int, mb_per_s: float = 4.0
+        self, inference_id: str, split_layer: int, mb_per_s: float = DEFAULT_BANDWIDTH
     ) -> int:
-        """Calculate transmission latency in nanoseconds for a split layer."""
-        inf_data = self.data.get(inference_id)
-        if not inf_data:
-            logger.error(f"Inference ID '{inference_id}' not found in MasterDict")
-            raise KeyError(f"Inference ID '{inference_id}' not found.")
-
-        # TODO: Replace hardcoded split_layer value (20) with dynamic determination if possible
-        if split_layer == 20:
+        """Calculate transmission latency in nanoseconds for split layer."""
+        if split_layer == self.DEFAULT_SPLIT_LAYER:
             return 0
 
+        layer_info = self._get_layer_info(inference_id)
         send_layer = split_layer - 1
-        sent_output_size = (
+        output_size = (
             602112
             if split_layer == 0
-            else inf_data["layer_information"]
-            .get(send_layer, {})
-            .get("output_bytes", 0)
+            else layer_info.get(send_layer, {}).get("output_bytes", 0)
         )
 
-        bytes_per_second = mb_per_s * 1e6
-        latency_ns = int((sent_output_size / bytes_per_second) * 1e9)
-        logger.debug(
-            f"Calculated transmission latency for inference {inference_id}, split layer {split_layer}: {latency_ns} ns"
-        )
-        return latency_ns
+        return int((output_size / (mb_per_s * 1e6)) * 1e9)
 
     def get_total_inference_time(
         self, inference_id: str, nodes: Optional[List[str]] = None
     ) -> Tuple[int, int]:
         """Calculate total inference time for client and edge nodes."""
-        if nodes is None:
-            nodes = ["SERVER", "PARTICIPANT"]
+        nodes = nodes or self.DEFAULT_NODES
+        layer_info = self._get_layer_info(inference_id)
 
-        inf_data = self.data.get(inference_id)
-        if not inf_data:
-            logger.error(f"Inference ID '{inference_id}' not found in MasterDict")
-            raise KeyError(f"Inference ID '{inference_id}' not found.")
+        def sum_inference_time(layer_data: Dict[str, Any]) -> int:
+            return (
+                int(layer_data["inference_time"])
+                if (
+                    layer_data.get("inference_time")
+                    and layer_data.get("completed_by_node") in nodes
+                )
+                else 0
+            )
 
-        layer_info = inf_data.get("layer_information", {})
-        inf_time_client = sum(
-            int(layer["inference_time"])
-            for layer in layer_info.values()
-            if layer.get("inference_time") and layer.get("completed_by_node") in nodes
-        )
-        inf_time_edge = sum(
-            int(layer["inference_time"])
-            for layer in layer_info.values()
-            if layer.get("inference_time") and layer.get("completed_by_node") in nodes
-        )
-        logger.debug(
-            f"Total inference time for {inference_id}: Client: {inf_time_client} ns, Edge: {inf_time_edge} ns"
-        )
-        return inf_time_client, inf_time_edge
+        times = [sum_inference_time(layer) for layer in layer_info.values()]
+        return sum(times), sum(times)
 
     def get_split_layer(
         self, inference_id: str, nodes: Optional[List[str]] = None
     ) -> int:
-        """Determine the split layer where the model transitions nodes."""
-        if nodes is None:
-            nodes = ["SERVER", "PARTICIPANT"]
+        """Determine split layer where model transitions nodes."""
+        nodes = nodes or self.DEFAULT_NODES
+        layer_info = self._get_layer_info(inference_id)
 
-        inf_data = self.data.get(inference_id)
-        if not inf_data:
-            logger.error(f"Inference ID '{inference_id}' not found in MasterDict")
-            raise KeyError(f"Inference ID '{inference_id}' not found.")
-
-        layer_info = inf_data.get("layer_information", {})
-        sorted_layers = sorted(layer_info.keys(), key=lambda x: int(x))
-
+        sorted_layers = sorted(layer_info.keys(), key=int)
         if not sorted_layers:
-            logger.error(f"No layer information for inference ID '{inference_id}'")
             raise ValueError(f"No layer information for inference ID '{inference_id}'.")
 
         start_node = layer_info[sorted_layers[0]].get("completed_by_node")
         for layer_id in sorted_layers:
-            current_node = layer_info[layer_id].get("completed_by_node")
-            if current_node != start_node:
-                split_layer = int(layer_id)
-                logger.debug(f"Split layer for inference {inference_id}: {split_layer}")
-                return split_layer
+            if layer_info[layer_id].get("completed_by_node") != start_node:
+                return int(layer_id)
 
-        logger.debug(
-            f"No split layer found for inference {inference_id}, returning default."
-        )
-        # TODO: Replace hardcoded return values (0 or 20) with dynamic logic
-        return 0 if start_node in nodes else 20
+        return 0 if start_node in nodes else self.DEFAULT_SPLIT_LAYER
 
-    def calculate_supermetrics(
-        self, inference_id: str
-    ) -> Tuple[int, int, int, int, int, float]:
-        """Calculate various metrics for an inference."""
-        logger.info(f"Calculating supermetrics for inference {inference_id}")
+    def calculate_supermetrics(self, inference_id: str) -> InferenceMetrics:
+        """Calculate comprehensive metrics for an inference."""
         split_layer = self.get_split_layer(inference_id)
         transmission_latency = self.get_transmission_latency(inference_id, split_layer)
         inf_time_client, inf_time_edge = self.get_total_inference_time(inference_id)
         total_time = inf_time_client + inf_time_edge + transmission_latency
         watts_used = self.calculate_total_watts_used(inference_id)
-        logger.debug(
-            f"Supermetrics for {inference_id}: split_layer={split_layer}, transmission_latency={transmission_latency}, "
-            f"inf_time_client={inf_time_client}, inf_time_edge={inf_time_edge}, total_time={total_time}, "
-            f"watts_used={watts_used}"
-        )
-        return (
-            split_layer,
-            transmission_latency,
-            inf_time_client,
-            inf_time_edge,
-            total_time,
-            watts_used,
+
+        return InferenceMetrics(
+            split_layer=split_layer,
+            transmission_latency=transmission_latency,
+            inf_time_client=inf_time_client,
+            inf_time_edge=inf_time_edge,
+            total_time=total_time,
+            watts_used=watts_used,
         )
 
     def calculate_total_watts_used(self, inference_id: str) -> float:
-        """Calculate the total watts used for an inference."""
-        inf_data = self.data.get(inference_id)
-        if not inf_data:
-            logger.error(f"Inference ID '{inference_id}' not found in MasterDict")
-            raise KeyError(f"Inference ID '{inference_id}' not found.")
-
-        layer_info = inf_data.get("layer_information", {})
-        total_watts = sum(
-            float(layer.get("watts_used", 0)) for layer in layer_info.values()
-        )
-        logger.debug(f"Total watts used for inference {inference_id}: {total_watts}")
-        return total_watts
+        """Calculate total watts used for an inference."""
+        layer_info = self._get_layer_info(inference_id)
+        return sum(float(layer.get("watts_used", 0)) for layer in layer_info.values())
 
     def to_dataframe(self) -> pd.DataFrame:
-        """Convert the master dictionary into a pandas DataFrame."""
-        logger.info("Converting MasterDict to DataFrame")
+        """Convert master dictionary to pandas DataFrame."""
         records = []
         layer_attributes = set()
 
-        with self.lock:
-            for superfields in self.data.values():
+        with self._lock:
+            for superfields in self._data.values():
                 inference_id = superfields.get("inference_id")
                 if not inference_id:
-                    logger.warning(
-                        f"Skipping entry without inference_id: {superfields}"
-                    )
                     continue
 
                 try:
-                    (
-                        split_layer,
-                        transmission_latency,
-                        inf_time_client,
-                        inf_time_edge,
-                        total_time,
-                        watts_used,
-                    ) = self.calculate_supermetrics(inference_id)
-                except (KeyError, ValueError) as e:
-                    logger.error(
-                        f"Error calculating supermetrics for {inference_id}: {e}"
+                    metrics = self.calculate_supermetrics(inference_id)
+                    self._build_dataframe_records(
+                        inference_id, metrics, superfields, layer_attributes, records
                     )
+                except (KeyError, ValueError):
                     continue
 
-                for layer in superfields.get("layer_information", {}).values():
-                    layer_id = layer.get("layer_id")
-                    if layer_id is None:
-                        logger.warning(
-                            f"Skipping layer without layer_id for inference {inference_id}"
-                        )
-                        continue
-
-                    if not layer_attributes:
-                        layer_attributes.update(layer.keys())
-                        layer_attributes.discard("layer_id")
-
-                    record = {
-                        "inference_id": inference_id,
-                        "split_layer": split_layer,
-                        "total_time_ns": total_time,
-                        "inf_time_client": inf_time_client,
-                        "inf_time_edge": inf_time_edge,
-                        "transmission_latency_ns": transmission_latency,
-                        "watts_used": watts_used,
-                        "layer_id": layer_id,
-                    }
-                    for attr in layer_attributes:
-                        record[attr] = layer.get(attr)
-
-                    records.append(record)
-
         df = pd.DataFrame(records)
-        df.sort_values(by=["inference_id", "layer_id"], inplace=True)
-        logger.info(f"Created DataFrame with {len(df)} rows")
+        if not df.empty:
+            df.sort_values(by=["inference_id", "layer_id"], inplace=True)
         return df
 
+    def _build_dataframe_records(
+        self,
+        inference_id: str,
+        metrics: InferenceMetrics,
+        superfields: Dict[str, Any],
+        layer_attributes: set,
+        records: List[Dict[str, Any]],
+    ) -> None:
+        """Build records for DataFrame conversion."""
+        for layer in superfields.get("layer_information", {}).values():
+            layer_id = layer.get("layer_id")
+            if layer_id is None:
+                continue
+
+            if not layer_attributes:
+                layer_attributes.update(k for k in layer.keys() if k != "layer_id")
+
+            record = {
+                "inference_id": inference_id,
+                "split_layer": metrics.split_layer,
+                "total_time_ns": metrics.total_time,
+                "inf_time_client": metrics.inf_time_client,
+                "inf_time_edge": metrics.inf_time_edge,
+                "transmission_latency_ns": metrics.transmission_latency,
+                "watts_used": metrics.watts_used,
+                "layer_id": layer_id,
+                **{attr: layer.get(attr) for attr in layer_attributes},
+            }
+            records.append(record)
+
     def to_pickle(self) -> bytes:
-        """Serialize the master dictionary to a pickle byte stream."""
-        logger.info("Serializing MasterDict to pickle")
-        with self.lock:
-            return pickle.dumps(self.data)
+        """Serialize master dictionary to pickle byte stream."""
+        with self._lock:
+            return pickle.dumps(self._data)
 
     def __getitem__(self, key: str) -> Optional[Dict[str, Any]]:
         """Enable dictionary-like access for getting items."""
@@ -274,9 +247,9 @@ class MasterDict:
         self.set_item(key, value)
 
     def __iter__(self):
-        """Enable iteration over the master dictionary."""
-        return iter(self.data)
+        """Enable iteration over master dictionary."""
+        return iter(self._data)
 
     def __len__(self) -> int:
-        """Return the number of items in the master dictionary."""
-        return len(self.data)
+        """Return number of items in master dictionary."""
+        return len(self._data)

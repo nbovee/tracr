@@ -1,7 +1,9 @@
 # src/experiment_design/models/base.py
 
 import logging
-from typing import Any, Dict, Optional
+from abc import abstractmethod
+from typing import Any, Dict, Optional, ClassVar, Union
+from pathlib import Path
 
 import numpy as np
 from PIL import Image
@@ -11,57 +13,55 @@ from torch import Tensor
 from torchvision.transforms import ToTensor  # type: ignore
 
 from .registry import ModelRegistry
-from src.utils.system_utils import get_repo_root, read_yaml_file
+from src.utils import get_repo_root, read_yaml_file
 
 logger = logging.getLogger("split_computing_logger")
 
 
 class BaseModel(nn.Module):
-    """Base model class that initializes and manages the selected model."""
+    """Base model class implementing core model functionality and configuration."""
 
-    def __init__(self, config: Dict[str, Any]):
-        """Initialize BaseModel with configuration."""
+    DEFAULT_CONFIG_PATH: ClassVar[Path] = (
+        get_repo_root() / "config" / "model_config_template.yaml"
+    )
+    VALID_MODES: ClassVar[set] = {"train", "eval"}
+
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize model with configuration settings."""
         super().__init__()
-        logger.info("Initializing BaseModel")
+        self.config = self._load_config(config)
+        self._setup_default_configs()
+        self._setup_model_configs()
+        self._setup_dataset_configs()
+        self._setup_dataloader_configs()
+        self._initialize_model()
 
-        if not config:
-            repo_root = get_repo_root()
-            custom_config_path = repo_root / "config" / "model_config_template.yaml"
-            if custom_config_path.exists():
-                self.config = read_yaml_file(custom_config_path)
-                logger.debug(f"Loaded custom config from {custom_config_path}")
-            else:
-                logger.error(f"No custom config file found at {custom_config_path}")
-                raise FileNotFoundError(
-                    f"No custom config file found at {custom_config_path}"
-                )
-        else:
-            self.config = read_yaml_file(config)
-            logger.debug("Loaded config from provided dictionary")
+    def _load_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Load and validate configuration from file or dictionary."""
+        if config:
+            return read_yaml_file(config)
 
-        # Extract configurations
-        self._extract_configurations()
+        if not self.DEFAULT_CONFIG_PATH.exists():
+            raise FileNotFoundError(
+                f"No config file found at {self.DEFAULT_CONFIG_PATH}"
+            )
 
-        # Initialize the model
-        self.model = self._load_model()
-        self.total_layers = len(list(self.model.children()))
-        self.to_device()
-        self.set_mode(self.mode)
-        logger.info("BaseModel initialization complete")
+        return read_yaml_file(self.DEFAULT_CONFIG_PATH)
 
-    def _extract_configurations(self) -> None:
-        """Extract configurations from the config dictionary."""
-        # Global configurations with defaults
+    def _setup_default_configs(self) -> None:
+        """Set up default configuration parameters."""
         self.default_configs = self.config.get("default", {})
         self.device = self.default_configs.get("device", "cpu")
-        logger.debug(f"Using device: {self.device}")
+        if self.device == "cuda" and not torch.cuda.is_available():
+            logger.warning("CUDA is not available, falling back to CPU")
+            self.device = "cpu"
 
-        # Model-specific configurations
+    def _setup_model_configs(self) -> None:
+        """Set up model-specific configuration parameters."""
         self.model_config = self.config.get("model", {})
-        self.model_name = self.model_config.get("model_name")
+        self.model_name = self.model_config["model_name"]
         self.weight_path = self.model_config.get("weight_path")
-        self.input_size = tuple(self.model_config.get("input_size", (3, 224, 224)))
-        self.hook_style = self.model_config.get("hook_style")
+        self.input_size = tuple(self.model_config["input_size"])
         self.save_layers = self.model_config.get("save_layers", [])
         self.depth = self.model_config.get("depth", 2)
         self.mode = self.model_config.get("mode", "eval")
@@ -69,118 +69,91 @@ class BaseModel(nn.Module):
         self.warmup_iterations = self.model_config.get("warmup_iterations", 2)
         self.node_name = self.model_config.get("node_name", "UNKNOWN")
 
-        logger.debug(
-            f"Model configurations: name={self.model_name}, mode={self.mode}, input_size={self.input_size}"
-        )
-
-        # Dataset-specific configurations
-        self._extract_dataset_configurations()
-
-        # DataLoader-specific configurations
-        self._extract_dataloader_configurations()
-
-    def _extract_dataset_configurations(self) -> None:
-        """Extract dataset configurations from the config dictionary."""
+    def _setup_dataset_configs(self) -> None:
+        """Set up dataset-specific configuration parameters."""
         self.dataset_config = self.config.get("dataset")
         if not self.dataset_config:
-            logger.error(f"Dataset configuration for '{self.model_name}' not found")
-            raise ValueError(
-                f"Dataset configuration for '{self.model_name}' not found."
-            )
+            raise ValueError(f"Dataset configuration for '{self.model_name}' not found")
 
-        self.dataset_module = self.dataset_config.get("module")
-        self.dataset_class = self.dataset_config.get("class")
+        self.dataset_module = self.dataset_config["module"]
+        self.dataset_class = self.dataset_config["class"]
         self.dataset_args = self.dataset_config.get("args", {})
-        logger.debug(
-            f"Dataset configurations: module={self.dataset_module}, class={self.dataset_class}"
-        )
 
-    def _extract_dataloader_configurations(self) -> None:
-        """Extract DataLoader configurations from the config dictionary."""
+    def _setup_dataloader_configs(self) -> None:
+        """Set up dataloader-specific configuration parameters."""
         self.dataloader_config = self.config.get("dataloader", {})
         self.batch_size = self.dataloader_config.get("batch_size", 1)
         self.shuffle = self.dataloader_config.get("shuffle", False)
         self.num_workers = self.dataloader_config.get("num_workers", 4)
-        logger.debug(
-            f"DataLoader configurations: batch_size={self.batch_size}, shuffle={self.shuffle}, num_workers={self.num_workers}"
-        )
+
+    def _initialize_model(self) -> None:
+        """Set up model components and configurations."""
+        self.model = self._load_model()
+        self.model.to(self.device)
+        self.set_mode(self.mode)
 
     def _load_model(self) -> nn.Module:
-        """Load the model using the ModelRegistry."""
-        logger.info(f"Loading model: {self.model_name}")
+        """Load and return model instance using registry."""
         try:
-            model = ModelRegistry.get_model(
-                self.model_name,
+            return ModelRegistry.get_model(
+                model_name=self.model_name,
                 model_config=self.model_config,
+                dataset_config=self.dataset_config,
             )
-            logger.info(f"Successfully loaded model: {self.model_name}")
-            return model
-        except ValueError as e:
-            logger.error(f"Error loading model '{self.model_name}': {e}")
-            raise ValueError(f"Error loading model '{self.model_name}': {e}")
-
-    def to_device(self, device: Optional[str] = None) -> None:
-        """Move the model to the specified device."""
-        target_device = device or self.device
-        device_obj = (
-            torch.device(target_device)
-            if isinstance(target_device, str)
-            else target_device
-        )
-        self.model.to(device_obj)
-        self.device = target_device
-        logger.info(f"Moved model to device: {self.device}")
+        except Exception as e:
+            logger.error(f"Failed to load model '{self.model_name}': {e}")
+            raise
 
     def set_mode(self, mode: str) -> None:
-        """Set the model to training or evaluation mode."""
-        if not mode:
-            logger.error("Mode must be provided")
-            raise ValueError("Mode must be provided")
+        """Set model to training or evaluation mode."""
+        if not mode or mode.lower() not in self.VALID_MODES:
+            raise ValueError(f"Mode must be one of {self.VALID_MODES}")
 
-        mode = mode.lower()
-        if mode not in {"train", "eval"}:
-            logger.error(f"Invalid mode: {mode}")
-            raise ValueError("Mode must be 'train' or 'eval'")
-
-        self.model.train(mode == "train")
-        self.mode = mode
-        logger.info(f"Set model mode to: {self.mode}")
+        self.mode = mode.lower()
+        self.model.train(self.mode == "train")
 
     def get_mode(self) -> str:
-        """Return the current mode of the model ('train' or 'eval')."""
+        """Return current model mode."""
         return self.mode
 
-    def parse_input(self, input_data: Any) -> Tensor:
-        """Convert input data to a tensor and move it to the device."""
-        logger.debug(f"Parsing input of type: {type(input_data).__name__}")
+    def parse_input(self, input_data: Union[Image.Image, np.ndarray, Tensor]) -> Tensor:
+        """Convert input to tensor and move to device."""
         if isinstance(input_data, Image.Image):
-            if input_data.size != self.input_size[1:]:
-                input_data = input_data.resize(self.input_size[1:])
-            input_tensor = ToTensor()(input_data).unsqueeze(0)
+            return self._process_pil_image(input_data)
         elif isinstance(input_data, np.ndarray):
-            input_tensor = torch.from_numpy(input_data)
-        elif isinstance(input_data, torch.Tensor):
-            input_tensor = input_data
-        else:
-            logger.error(f"Unsupported input type: {type(input_data).__name__}")
-            raise TypeError(f"Unsupported input type: {type(input_data).__name__}")
-        return input_tensor.to(self.device)
+            return torch.from_numpy(input_data).to(self.device)
+        elif isinstance(input_data, Tensor):
+            return input_data.to(self.device)
 
-    def warmup(self, iterations: int = 50) -> None:
-        """Perform warmup iterations to initialize the model."""
-        logger.info(f"Starting model warmup with {iterations} iterations")
-        dummy_input = torch.randn(1, *self.input_size, device=self.device)
+        raise TypeError(f"Unsupported input type: {type(input_data).__name__}")
+
+    def _process_pil_image(self, image: Image.Image) -> Tensor:
+        """Process PIL image to tensor."""
+        if image.size != self.input_size[1:]:
+            image = image.resize(self.input_size[1:])
+        return ToTensor()(image).unsqueeze(0).to(self.device)
+
+    def warmup(self, iterations: Optional[int] = None) -> None:
+        """Perform model warmup iterations."""
+        logger.info(
+            f"Performing {iterations or self.warmup_iterations} warmup iterations"
+        )
+        iters = iterations or self.warmup_iterations
+
+        # Create dummy input on the same device as model
+        dummy_input = torch.randn(1, *self.input_size).to(self.device)
+
         original_mode = self.mode
         self.set_mode("eval")
-        with torch.no_grad():
-            for i in range(iterations):
-                self.forward(dummy_input)
-                if (i + 1) % 10 == 0:
-                    logger.debug(f"Completed {i + 1} warmup iterations")
-        self.set_mode(original_mode)
-        logger.info("Model warmup completed")
 
-    def forward(self, **kwargs) -> Tensor:
-        """Perform a forward pass through the model."""
-        logger.error("Forward method must be implemented in the subclass")
-        raise NotImplementedError("Forward method must be implemented in the subclass.")
+        with torch.no_grad():
+            for _ in range(iters):
+                self.forward(dummy_input)
+
+        self.set_mode(original_mode)
+        logger.debug("Warmup completed")
+
+    @abstractmethod
+    def forward(self, x: Tensor, **kwargs) -> Tensor:
+        """Implement forward pass in derived classes."""
+        raise NotImplementedError("Forward method must be implemented in subclass")

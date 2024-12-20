@@ -4,6 +4,7 @@
 default:
   device: cuda
   font_path: config/fonts/DejaVuSans-Bold.ttf
+  save_layer_images: false
 
 # LOGGING CONFIGURATIONS
 logging:
@@ -17,10 +18,8 @@ model:
   pretrained: false
   weight_path: data/onion/weights/best.pt
   input_size: [3, 224, 224]
-  hook_style: post
-  split_layer: 10
+  split_layer: 3
   save_layers: [2, 4, 6]
-  total_layers: 23
   num_classes: 2
   mode: eval
   depth: 2
@@ -32,7 +31,6 @@ model:
 dataset:
   module: onion
   class: OnionDataset
-  task: detection
   args:
     root: data/onion
     class_names: ["with_weeds", "without_weeds"]
@@ -47,7 +45,7 @@ dataloader:
   num_workers: 4
   collate_fn: onion_collate
 
-# EXPERIMENT CONFIGURATIONS
+# COMPRESSION CONFIGURATIONS
 compression:
   clevel: 3
   filter: SHUFFLE

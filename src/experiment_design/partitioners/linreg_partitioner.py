@@ -159,7 +159,7 @@ class RegressionPartitioner(Partitioner):
     def _train_regression(self, x: torch.Tensor, y: torch.Tensor) -> LinearRegression:
         model = LinearRegression()
         if x.max() == x.min():
-            logger.warning(f"Insufficient data for regression, setting w=0 b=median")
+            logger.warning("Insufficient data for regression, setting w=0 b=median")
             model.set_weights(0, torch.median(y))
         else:
             mmax = max(x.max(), y.max())

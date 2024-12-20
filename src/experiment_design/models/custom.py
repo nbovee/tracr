@@ -1,99 +1,86 @@
 # src/experiment_design/models/custom.py
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple, ClassVar
+from dataclasses import dataclass
 
-import torch
 import torch.nn as nn
 from torch import Tensor
-from torchvision import models  # type: ignore
 
 from .registry import ModelRegistry
 
 logger = logging.getLogger("split_computing_logger")
 
 
-@ModelRegistry.register("alexnet")
-class AlexNetModel(nn.Module):
-    """Wrapper for the AlexNet model."""
+@dataclass
+class ModelConfig:
+    """Configuration parameters for custom model."""
 
-    def __init__(self, model_config: Dict[str, Any], **kwargs) -> None:
-        """Initialize AlexNetModel with configuration."""
-        super().__init__()
-        logger.info("Initializing AlexNetModel")
-        pretrained = model_config.get("pretrained", True)
-        torch_version = tuple(map(int, torch.__version__.split(".")[:2]))
-        if torch_version <= (0, 11):
-            self.model = models.alexnet(pretrained=pretrained)
-        else:
-            self.model = models.alexnet(weights="IMAGENET1K_V1" if pretrained else None)
-        logger.debug(f"AlexNetModel initialized with pretrained={pretrained}")
+    input_channels: int
+    height: int
+    width: int
+    channel_sizes: List[int]
 
-    def forward(self, x: Tensor) -> Tensor:
-        """Perform a forward pass through AlexNet."""
-        logger.debug("AlexNetModel forward pass")
-        return self.model(x)
-
-
-@ModelRegistry.register("yolo")
-class YOLOModel(nn.Module):
-    """Wrapper for the YOLO model."""
-
-    def __init__(self, model_config: Dict[str, Any], **kwargs) -> None:
-        """Initialize YOLOModel with configuration."""
-        from ultralytics import YOLO  # type: ignore
-
-        super().__init__()
-        logger.info("Initializing YOLOModel")
-        weights_path = model_config.get("weight_path")
-        if not weights_path:
-            logger.error("weights_path must be provided for YOLOModel.")
-            raise ValueError("weights_path must be provided for YOLOModel.")
-        self.model = YOLO(weights_path).model
-        logger.debug(f"YOLOModel initialized with weights_path={weights_path}")
-
-    def forward(self, x: Tensor) -> Tensor:
-        """Perform a forward pass through YOLO."""
-        logger.debug("YOLOModel forward pass")
-        return self.model(x)
+    @classmethod
+    def from_dict(cls, config: Dict[str, Any]) -> "ModelConfig":
+        """Create ModelConfig from configuration dictionary."""
+        input_size = config.get("input_size", (3, 224, 224))
+        return cls(
+            input_channels=input_size[0],
+            height=input_size[1],
+            width=input_size[2],
+            channel_sizes=[16, 32, 64],
+        )
 
 
 @ModelRegistry.register("custom")
 class CustomModel(nn.Module):
-    """Defines and returns the custom model architecture."""
+    """Custom model implementation with configurable architecture."""
 
-    def __init__(self, model_config: Dict[str, Any], **kwargs) -> None:
-        """Initialize CustomModel with configuration."""
+    DEFAULT_CHANNELS: ClassVar[List[int]] = [16, 32, 64]
+
+    def __init__(self, model_config: Dict[str, Any], **kwargs: Any) -> None:
+        """Initialize custom model with specified configuration."""
         super().__init__()
-        logger.info("Initializing CustomModel")
-        input_channels, height, width = model_config.get("input_size", (3, 224, 224))
-        layers = []
-        in_channels = input_channels
-        spatial_dims = (height, width)
+        self.config = ModelConfig.from_dict(model_config)
+        self.model = self._build_model()
+        logger.debug(
+            f"Initialized CustomModel with input_size={model_config.get('input_size')}"
+        )
 
-        for out_channels in [16, 32, 64]:
-            layers.extend(
-                [
-                    nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-                    nn.ReLU(inplace=True),
-                    nn.MaxPool2d(kernel_size=2, stride=2),
-                ]
-            )
+    def _build_model(self) -> nn.Sequential:
+        """Construct model architecture."""
+        layers = []
+        in_channels = self.config.input_channels
+        spatial_dims = (self.config.height, self.config.width)
+
+        for out_channels in self.config.channel_sizes:
+            layers.extend(self._create_conv_block(in_channels, out_channels))
             in_channels = out_channels
             spatial_dims = tuple(dim // 2 for dim in spatial_dims)
 
-        layers.extend(
-            [
-                nn.Flatten(),
-                nn.Linear(in_channels * spatial_dims[0] * spatial_dims[1], 10),
-            ]
-        )
-        self.model = nn.Sequential(*layers)
-        logger.debug(
-            f"CustomModel initialized with input_size={model_config.get('input_size')}"
-        )
+        layers.extend(self._create_classifier(in_channels, spatial_dims))
+        return nn.Sequential(*layers)
+
+    @staticmethod
+    def _create_conv_block(in_channels: int, out_channels: int) -> List[nn.Module]:
+        """Create convolutional block with activation and pooling."""
+        return [
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+        ]
+
+    @staticmethod
+    def _create_classifier(
+        in_channels: int, spatial_dims: Tuple[int, int]
+    ) -> List[nn.Module]:
+        """Create classification layers."""
+        return [
+            nn.Flatten(),
+            nn.Linear(in_channels * spatial_dims[0] * spatial_dims[1], 10),
+        ]
 
     def forward(self, x: Tensor) -> Tensor:
-        """Perform a forward pass through the custom model."""
-        logger.debug("CustomModel forward pass")
+        """Process input through model layers."""
         return self.model(x)

@@ -12,6 +12,7 @@
 default:
   device: <device>               # Options: 'cuda' (GPU), 'cpu' (CPU). Default is cuda.
   font_path: <font_path>         # Path to font file for visualization; e.g., fonts/DejaVuSans-Bold.ttf.
+  save_layer_images: <save_layer_images> # Whether to save intermediate layer images at each split. Default is false.
 
 # LOGGING CONFIGURATIONS
 logging:
@@ -26,10 +27,8 @@ model:
   pretrained: false              # Whether to use pretrained weights. Default is false.
   weight_path: null              # Path to custom weights file; e.g., 'path/to/weights/best.pt' for YOLOv8. Default is null.
   input_size: <input_size>       # REQUIRED: Input tensor dimensions [channels, height, width]. Common sizes: [3, 224, 224] for AlexNet, [3, 640, 640] for YOLOv8.
-  hook_style: <hook_style>       # Where to insert hooks in model layers. Options: 'pre' (before layer execution), 'post' (after layer execution).
-  split_layer: <split_layer>     # REQUIRED: Layer index where model will be split. Note: Must be less than total_layers.
+  split_layer: <split_layer>     # OPTIONAL: Layer index where model will be split. -1 by default to run all layers and find the best split. Note: Must be less than total_layers.
   save_layers: <save_layers>     # Layer indices to save intermediate outputs. Useful for debugging and visualization.
-  total_layers: <total_layers>   # REQUIRED: Total number of layers in model. Example: 8 for AlexNet, 23 for YOLOv8.
   num_classes: <num_classes>     # Number of output classes. null: Use model's default. Example: 1000 for ImageNet, 2 for binary classification.
   mode: <mode>                   # Model operation mode. Options: 'eval' (recommended for split inference), 'train'.
   depth: <depth>                         # Depth for recursive model layer exploration. Default is 2.
@@ -42,7 +41,6 @@ model:
 dataset:
   module: <module>              # REQUIRED: Python module name for dataset. Examples: 'imagenet', 'onion'. Defined in src/experiment_design/datasets/
   class: <class>                # REQUIRED: Dataset class name. Examples: 'ImageNetDataset', 'OnionDataset'.
-  task: <task>                  # REQUIRED: Dataset task. Examples: 'classification', 'detection'.
   args:
     root: <root>                # REQUIRED: Dataset root directory. Example: 'data/imagenet', 'data/onion'.
     class_names: <class_names>  # Class names or path to class names file. Examples: 'data/imagenet/imagenet_classes.txt', ["with_weeds", "without_weeds"].
@@ -58,7 +56,7 @@ dataloader:
   num_workers: <num_workers>        # Number of parallel data loading workers. Adjust based on CPU cores available.
   collate_fn: <collate_fn>          # Collate function name. Options: "imagenet_collate", "onion_collate", null
 
-# EXPERIMENT CONFIGURATIONS
+# COMPRESSION CONFIGURATIONS
 # ------------------------
 compression:
   clevel: <compression_level>  # Compression level [0 - 9] with 9 being maximum compression as default from blosc2.

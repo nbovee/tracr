@@ -1,4 +1,4 @@
-# config/alexnetsplit.yaml
+# config/yolov5split.yaml
 
 # DEFAULT CONFIGURATIONS
 default:
@@ -13,28 +13,28 @@ logging:
 
 # MODEL CONFIGURATIONS
 model:
-  model_name: alexnet
+  model_name: yolov5s
   version: null
-  pretrained: true
-  weight_path: null
+  pretrained: false
+  weight_path: data/onion/weights/best.pt
   input_size: [3, 224, 224]
-  split_layer: 12
-  save_layers: [2, 4, 6]
-  num_classes: 1000
+  split_layer: 3
+  save_layers: [2, 4, 8]
+  num_classes: 2
   mode: eval
   depth: 2
   flush_buffer_size: 100
   warmup_iterations: 10
-  log_file: logs/alexnetsplit.log
+  log_file: logs/yolov5split.log
 
 # DATASET CONFIGURATIONS
 dataset:
-  module: imagenet
-  class: ImageNetDataset
+  module: onion
+  class: OnionDataset
   args:
-    root: data/imagenet
-    class_names: data/imagenet/imagenet_classes.txt
-    img_directory: data/imagenet/sample_images
+    root: data/onion
+    class_names: ["with_weeds", "without_weeds"]
+    img_directory: data/onion/testing
     transform: null
     max_samples: -1
 
@@ -43,10 +43,10 @@ dataloader:
   batch_size: 1
   shuffle: false
   num_workers: 4
-  collate_fn: imagenet_collate
+  collate_fn: onion_collate
 
 # COMPRESSION CONFIGURATIONS
 compression:
   clevel: 3
   filter: SHUFFLE
-  codec: ZSTD
+  codec: ZSTD 

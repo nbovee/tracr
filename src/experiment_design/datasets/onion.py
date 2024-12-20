@@ -2,19 +2,28 @@
 
 import logging
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union, ClassVar, Set
 
-from PIL import Image
 import torch
 from torchvision import transforms  # type: ignore
+from PIL import Image
 
-from .custom import BaseDataset
+from .base import BaseDataset
 
 logger = logging.getLogger("split_computing_logger")
 
 
 class OnionDataset(BaseDataset):
-    """Dataset class for loading and processing onion images."""
+    """Dataset implementation for loading and processing onion images."""
+
+    DEFAULT_TRANSFORM: ClassVar[transforms.Compose] = transforms.Compose(
+        [
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+        ]
+    )
+
+    IMAGE_EXTENSIONS: ClassVar[Set[str]] = {".jpg", ".jpeg", ".png"}
 
     def __init__(
         self,
@@ -25,87 +34,95 @@ class OnionDataset(BaseDataset):
         class_names: Optional[Union[List[str], str]] = None,
         img_directory: Optional[Union[str, Path]] = None,
     ) -> None:
-        """Initialize OnionDataset with paths and transformations."""
+        """Initialize OnionDataset with specified parameters."""
         super().__init__()
+        self._initialize_paths(root, img_directory)
+        self._setup_classes(class_names)
+        self._setup_transforms(transform, target_transform)
+        self._initialize_dataset(max_samples)
+
+    def _initialize_paths(
+        self,
+        root: Optional[Union[str, Path]],
+        img_directory: Optional[Union[str, Path]],
+    ) -> None:
+        """Set up dataset paths and verify existence."""
         if not root:
-            raise ValueError("Root directory is required.")
+            raise ValueError("Root directory is required")
 
         self.root = Path(root)
         self.img_dir = Path(img_directory) if img_directory else None
 
         if not self.img_dir or not self.img_dir.exists():
-            logger.error(f"Image directory not found: {self.img_dir}")
             raise FileNotFoundError(f"Image directory not found: {self.img_dir}")
 
+    def _setup_classes(self, class_names: Optional[Union[List[str], str]]) -> None:
+        """Configure dataset classes from file or list."""
         if isinstance(class_names, str):
             self.class_file = Path(class_names)
-            if not self.class_file.exists():
-                logger.warning(f"Class names file not found: {self.class_file}")
-                self.classes = []
-            else:
-                self.classes = self._load_classes()
+            self.classes = self._load_classes() if self.class_file.exists() else []
         else:
             self.classes = class_names or []
 
         if not self.classes:
             raise ValueError(
-                "Class names must be provided either as a list or a valid file path."
+                "Class names must be provided either as a list or a valid file path"
             )
 
-        logger.info(
-            f"Initializing OnionDataset with root={self.root}, "
-            f"class_file={self.class_file if isinstance(class_names, str) else 'Provided as list'}, "
-            f"img_dir={self.img_dir}, max_samples={max_samples}"
-        )
-
-        self.transform = transform or transforms.Compose(
-            [
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-            ]
-        )
+    def _setup_transforms(
+        self, transform: Optional[Callable], target_transform: Optional[Callable]
+    ) -> None:
+        """Configure dataset transformations."""
+        self.transform = transform or self.DEFAULT_TRANSFORM
         self.target_transform = target_transform
-        self.max_samples = max_samples
 
+    def _initialize_dataset(self, max_samples: int) -> None:
+        """Initialize dataset state and load image files."""
+        self.max_samples = max_samples
         self.image_files = self._load_image_files()
         self.length = len(self.image_files)
-        logger.info(f"Initialized OnionDataset with {self.length} images.")
 
     def _load_classes(self) -> List[str]:
-        """Load class names from the class file."""
+        """Load and return class names from file."""
         with self.class_file.open("r") as file:
             classes = [line.strip() for line in file]
-        logger.debug(f"Loaded classes: {classes}")
+        logger.debug(f"Loaded {len(classes)} classes")
         return classes
 
     def _load_image_files(self) -> List[Path]:
-        """Load image file paths from the image directory."""
-        logger.debug(f"Loading images from {self.img_dir}")
-        image_extensions = {".jpg", ".jpeg", ".png"}
+        """Load and return list of valid image file paths."""
         images = sorted(
-            [
-                file
-                for file in self.img_dir.iterdir()
-                if file.suffix.lower() in image_extensions
-            ]
+            f
+            for f in self.img_dir.iterdir()
+            if f.suffix.lower() in self.IMAGE_EXTENSIONS
         )
+
         if self.max_samples > 0:
             images = images[: self.max_samples]
+
         logger.debug(f"Loaded {len(images)} images from {self.img_dir}")
         return images
 
     def __len__(self) -> int:
-        """Return the number of images in the dataset."""
+        """Return number of images in dataset."""
         return self.length
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, Image.Image, str]:
-        """Retrieve an image, its original version, and filename by index."""
+        """Get processed image, original image, and filename for given index."""
+        self._validate_index(index)
+        return self._load_and_process_image(self.image_files[index])
+
+    def _validate_index(self, index: int) -> None:
+        """Validate that the index is within bounds."""
         if not 0 <= index < self.length:
             raise IndexError(
-                f"Index {index} out of range for dataset of size {self.length}."
+                f"Index {index} out of range for dataset of size {self.length}"
             )
 
-        img_path = self.image_files[index]
+    def _load_and_process_image(
+        self, img_path: Path
+    ) -> Tuple[torch.Tensor, Image.Image, str]:
+        """Load and process image at given path."""
         try:
             image = Image.open(img_path).convert("RGB")
             original_image = image.copy()
@@ -113,19 +130,16 @@ class OnionDataset(BaseDataset):
             if self.transform:
                 image = self.transform(image)
 
-            filename = img_path.name
-            logger.debug(f"Loaded image: {filename} at index {index}")
-            return image, original_image, filename
+            return image, original_image, img_path.name
         except Exception as e:
             logger.error(f"Error loading image {img_path}: {e}")
             raise
 
     def get_original_image(self, image_file: str) -> Optional[Image.Image]:
-        """Get the original image without transformations."""
+        """Load and return original image without transformations."""
         try:
             img_path = self.img_dir / image_file
-            if img_path.exists():
-                return Image.open(img_path).convert('RGB')
+            return Image.open(img_path).convert("RGB") if img_path.exists() else None
         except Exception as e:
-            logger.error(f"Error loading original image {image_file}: {e}")
-        return None
+            logger.error(f"Error loading image {image_file}: {e}")
+            return None

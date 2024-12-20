@@ -1,217 +1,243 @@
+#!/usr/bin/env python
 # server.py
 
+import logging
 import pickle
 import socket
 import sys
 import time
+import argparse
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple, Any
 import torch
+from typing import Final
 
 # Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api.device_mgmt import DeviceManager
-from src.api.experiment_mgmt import ExperimentManager
-from src.utils.compression import CompressData
-from src.utils.logger import (
-    setup_logger,
+from src.api import (  # noqa: E402
+    DataCompression,
+    DeviceManager,
+    ExperimentManager,
     DeviceType,
     start_logging_server,
     shutdown_logging_server,
 )
+from src.utils import read_yaml_file  # noqa: E402
 
-# Configure logging with default config
 default_config = {"logging": {"log_file": "logs/server.log", "log_level": "INFO"}}
-logger = setup_logger(device=DeviceType.SERVER, config=default_config)
-logging_server = start_logging_server()
+logging_server = start_logging_server(device=DeviceType.SERVER, config=default_config)
+logger = logging.getLogger("split_computing_logger")
+
+HIGHEST_PROTOCOL = pickle.HIGHEST_PROTOCOL
+LENGTH_PREFIX_SIZE: Final[int] = 4
 
 
-class TemporaryCompression:
-    """Manages temporary compression settings until proper compression configuration is received from host."""
+class Server:
+    """Handles server operations for managing connections and processing data."""
 
-    def __init__(self) -> None:
-        """Initialize with minimal compression settings."""
-        self.compress_data = CompressData(
+    def __init__(
+        self, local_mode: bool = False, config_path: Optional[str] = None
+    ) -> None:
+        """Initialize the Server with device manager and placeholders."""
+        logger.debug("Initializing server...")
+        self.device_manager = DeviceManager()
+        self.experiment_manager: Optional[ExperimentManager] = None
+        self.server_socket: Optional[socket.socket] = None
+        self.local_mode = local_mode
+        self.config_path = config_path
+
+        if not local_mode:
+            self._setup_compression()
+            logger.debug("Server initialized in network mode")
+        else:
+            logger.debug("Server initialized in local mode")
+
+    def _setup_compression(self) -> None:
+        """Initialize compression with minimal settings."""
+        self.compress_data = DataCompression(
             {
                 "clevel": 1,  # Minimum compression level
                 "filter": "NOFILTER",  # No filtering
                 "codec": "BLOSCLZ",  # Fastest codec
             }
         )
-        logger.info("Initialized temporary compression with minimal settings")
-
-    def update_from_config(self, config: dict) -> CompressData:
-        """Update compression settings from received configuration."""
-        if "compression" in config:
-            logger.info("Updating compression settings from received config")
-            return CompressData(config["compression"])
-        logger.warning("No compression settings in config, keeping minimal settings")
-        return self.compress_data
-
-
-class Server:
-    """Handles server operations for managing connections and processing data."""
-
-    def __init__(self) -> None:
-        """Initialize the Server with device manager and placeholders."""
-        logger.info("Initializing server...")
-        self.device_manager = DeviceManager()
-        self.experiment_manager: Optional[ExperimentManager] = None
-        self.server_socket: Optional[socket.socket] = None
-        self.compress_data = TemporaryCompression().compress_data
-        logger.info("Server initialized")
+        logger.debug("Initialized compression with minimal settings")
 
     def start(self) -> None:
-        """Start the server to listen for incoming connections."""
-        server_devices = self.device_manager.get_devices(
-            available_only=True, device_type="SERVER"
-        )
-        if not server_devices:
-            logger.error("No available server devices found.")
+        """Start the server in either networked or local mode."""
+        if self.local_mode:
+            self._run_local_experiment()
+        else:
+            self._run_networked_server()
+
+    def _run_local_experiment(self) -> None:
+        """Run experiment locally on the server."""
+        if not self.config_path:
+            logger.error("Config path required for local mode")
             return
-
-        server_device = server_devices[0]
-        if not server_device.working_cparams:
-            logger.error("Server device has no working connection parameters.")
-            return
-
-        # Get host and port from device configuration
-        host = ""  # Use empty string to bind to all interfaces for better reliability
-        port = (
-            server_device.working_cparams.port
-            if server_device.working_cparams.port
-            else 12345
-        )
-
-        logger.info(f"Starting server on port {port}...")
 
         try:
-            # Create a new socket with SO_REUSEADDR option
-            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.server_socket.bind((host, port))
-            self.server_socket.listen()
-            logger.info(f"Server is listening on port {port} (all interfaces)")
+            logger.info("Starting local experiment...")
+            config = read_yaml_file(self.config_path)
 
+            from src.experiment_design.datasets import DataManager
+            import torch.utils.data
+
+            self.experiment_manager = ExperimentManager(config, force_local=True)
+            experiment = self.experiment_manager.setup_experiment()
+
+            logger.debug("Setting up data loader...")
+            dataset_config = config.get("dataset", {})
+            dataloader_config = config.get("dataloader", {})
+
+            collate_fn = None
+            if dataloader_config.get("collate_fn"):
+                try:
+                    from src.experiment_design.datasets.collate_fns import (
+                        COLLATE_FUNCTIONS,
+                    )
+
+                    collate_fn = COLLATE_FUNCTIONS[dataloader_config["collate_fn"]]
+                    logger.debug(
+                        f"Using custom collate function: {dataloader_config['collate_fn']}"
+                    )
+                except KeyError:
+                    logger.warning(
+                        f"Collate function '{dataloader_config['collate_fn']}' not found. "
+                        "Using default collation."
+                    )
+
+            dataset = DataManager.get_dataset(
+                {"dataset": dataset_config, "dataloader": dataloader_config}
+            )
+            data_loader = torch.utils.data.DataLoader(
+                dataset,
+                batch_size=dataloader_config.get("batch_size"),
+                shuffle=dataloader_config.get("shuffle"),
+                num_workers=dataloader_config.get("num_workers"),
+                collate_fn=collate_fn,
+            )
+
+            # Attach data loader to experiment
+            experiment.data_loader = data_loader
+            experiment.run()
+            logger.info("Local experiment completed successfully")
         except Exception as e:
-            logger.error(f"Failed to create server socket: {e}")
-            self.cleanup()
+            logger.error(f"Error running local experiment: {e}", exc_info=True)
+
+    def _run_networked_server(self) -> None:
+        """Run server in networked mode."""
+        server_device = self.device_manager.get_device_by_type("SERVER")
+        if not server_device:
+            logger.error("No SERVER device configured. Cannot start server.")
             return
 
+        if not server_device.is_reachable():
+            logger.error("SERVER device is not reachable. Check network connection.")
+            return
+
+        port = server_device.get_port()
+        logger.info(f"Starting networked server on port {port}...")
+
         try:
+            self._setup_socket(port)
             while True:
                 conn, addr = self.server_socket.accept()
                 logger.info(f"Connected by {addr}")
                 self.handle_connection(conn)
         except KeyboardInterrupt:
             logger.info("Server shutdown requested...")
+        except Exception as e:
+            logger.error(f"Server error: {e}", exc_info=True)
         finally:
             self.cleanup()
+
+    def _setup_socket(self, port: int) -> None:
+        """Set up server socket with proper error handling."""
+        try:
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.server_socket.bind(("", port))
+            self.server_socket.listen()
+            logger.info(f"Server is listening on port {port} (all interfaces)")
+        except Exception as e:
+            logger.error(f"Failed to create server socket: {e}")
+            raise
+
+    def _receive_config(self, conn: socket.socket) -> dict:
+        """Receive and parse configuration from client."""
+        config_length = int.from_bytes(conn.recv(LENGTH_PREFIX_SIZE), "big")
+        config_data = self.compress_data.receive_full_message(
+            conn=conn, expected_length=config_length
+        )
+        return pickle.loads(config_data)
+
+    def _process_data(
+        self,
+        experiment: Any,
+        output: torch.Tensor,
+        original_size: Tuple[int, int],
+        split_layer_index: int,
+    ) -> Tuple[Any, float]:
+        """Process received data through model and return results."""
+        server_start_time = time.time()
+        processed_result = experiment.process_data(
+            {"input": (output, original_size), "split_layer": split_layer_index}
+        )
+        return processed_result, time.time() - server_start_time
 
     def handle_connection(self, conn: socket.socket) -> None:
         """Handle an individual client connection."""
         try:
-            # Receive configuration length and data
-            config_length = int.from_bytes(conn.recv(4), "big")
-            config_data = self.compress_data.receive_full_message(
-                conn=conn, expected_length=config_length
-            )
-            config = pickle.loads(config_data)
+            # Receive and process configuration
+            config = self._receive_config(conn)
+            self._update_compression(config)
 
-            # Update compression settings from received config
-            self.compress_data = TemporaryCompression().update_from_config(config)
-
-            # Initialize experiment manager with received config
+            # Initialize experiment
             self.experiment_manager = ExperimentManager(config)
             experiment = self.experiment_manager.setup_experiment()
-            model = experiment.model
+            experiment.model.eval()
 
-            # Ensure model is in eval mode
-            model.eval()
-
-            # Log model and data utils initialization
-            logger.info(f"Model type: {config['model']['model_name']}")
-            logger.info(f"Task type: {config['dataset']['task']}")
-            if hasattr(experiment.data_utils, 'class_names'):
-                logger.info(f"Number of classes: {len(experiment.data_utils.class_names)}")
-                logger.info(f"First 5 classes: {experiment.data_utils.class_names[:5]}")
+            # Cache torch.no_grad() context
+            no_grad_context = torch.no_grad()
 
             # Send acknowledgment
             conn.sendall(b"OK")
 
+            # Process incoming data
             while True:
-                # Receive split layer index
-                split_layer_bytes = conn.recv(4)
-                if not split_layer_bytes:
+                # Receive split layer index and data length in one recv
+                header = conn.recv(LENGTH_PREFIX_SIZE * 2)
+                if not header or len(header) != LENGTH_PREFIX_SIZE * 2:
                     break
-                split_layer_index = int.from_bytes(split_layer_bytes, "big")
 
-                # Receive data length and compressed data
-                length_data = conn.recv(4)
-                if not length_data:
-                    break
-                expected_length = int.from_bytes(length_data, "big")
+                split_layer_index = int.from_bytes(header[:LENGTH_PREFIX_SIZE], "big")
+                expected_length = int.from_bytes(header[LENGTH_PREFIX_SIZE:], "big")
+
+                # Receive data
                 compressed_data = self.compress_data.receive_full_message(
                     conn=conn, expected_length=expected_length
                 )
-                received_data = self.compress_data.decompress_data(
-                    compressed_data=compressed_data
-                )
 
-                # Process data
-                server_start_time = time.time()
-                output, original_image_size = received_data
+                # Process data with no_grad context
+                with no_grad_context:
+                    output, original_size = self.compress_data.decompress_data(
+                        compressed_data=compressed_data
+                    )
 
-                with torch.no_grad():
-                    if hasattr(output, "inner_dict"):
-                        inner_dict = output.inner_dict
-                        for key, value in inner_dict.items():
-                            if isinstance(value, torch.Tensor):
-                                inner_dict[key] = value.to(model.device)
-                    elif isinstance(output, torch.Tensor):
-                        output = output.to(model.device)
+                    # Process data
+                    processed_result, processing_time = self._process_data(
+                        experiment=experiment,
+                        output=output,
+                        original_size=original_size,
+                        split_layer_index=split_layer_index,
+                    )
 
-                    # Handle different model types
-                    task = config["dataset"]["task"]
-                    if task == "detection":
-                        result, layer_outputs = model(output, start=split_layer_index)
-                        processed_result = experiment.data_utils.postprocess(
-                            result, original_image_size
-                        )
-                        logger.info(f"Processed detections: {len(processed_result)} found")
-                        if not processed_result:
-                            logger.warning(
-                                f"No detections found for input with size {original_image_size}"
-                            )
-                    else:  # classification
-                        result = model(output, start=split_layer_index)
-                        # Log raw output shape and values for debugging
-                        logger.info(f"Raw output shape: {result.shape}")
-                        logger.info(f"Raw output max value: {torch.max(result).item()}")
-                        logger.info(f"Raw output min value: {torch.min(result).item()}")
-                        
-                        # Get top probabilities and indices
-                        probabilities = torch.nn.functional.softmax(result[0], dim=0)
-                        top_probs, top_indices = torch.topk(probabilities, 5)
-                        
-                        # Log top 5 predictions with indices
-                        for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
-                            class_name = experiment.data_utils.class_names[idx.item()]
-                            logger.info(f"Top {i+1}: Class {idx.item()} ({class_name}) - {prob.item():.2%}")
-                        
-                        # Process final result
-                        class_name, confidence = experiment.data_utils.postprocess(result)
-                        processed_result = {"class_name": class_name, "confidence": confidence}
-                        logger.info(f"Final classification: {class_name} ({confidence:.2%} confidence)")
-
-                server_processing_time = time.time() - server_start_time
-
-                # Send back predictions and processing time
-                response = (processed_result, server_processing_time)
-                logger.debug(f"Sending response: {response}")
+                # Send back results
+                response = (processed_result, processing_time)
                 self.compress_data.send_result(conn=conn, result=response)
 
         except Exception as e:
@@ -219,27 +245,51 @@ class Server:
         finally:
             conn.close()
 
+    def _update_compression(self, config: dict) -> None:
+        """Update compression settings from received configuration."""
+        if "compression" in config:
+            logger.debug("Updating compression settings from received config")
+            self.compress_data = DataCompression(config["compression"])
+        else:
+            logger.warning(
+                "No compression settings in config, keeping minimal settings"
+            )
+
     def cleanup(self) -> None:
         """Clean up server resources and close the socket."""
         logger.info("Starting server cleanup...")
         if self.server_socket:
             try:
                 self.server_socket.shutdown(socket.SHUT_RDWR)
-            except Exception as e:
-                logger.error(f"Error shutting down socket: {e}")
-            try:
                 self.server_socket.close()
+                self.server_socket = None
+                logger.info("Server socket cleaned up")
             except Exception as e:
-                logger.error(f"Error closing socket: {e}")
-            self.server_socket = None
-            logger.info("Server socket cleaned up")
+                logger.error(f"Error during socket cleanup: {e}")
 
         if logging_server:
             shutdown_logging_server(logging_server)
 
 
 if __name__ == "__main__":
-    server = Server()
+    parser = argparse.ArgumentParser(description="Run server for split computing")
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Run experiment locally instead of as a network server",
+    )
+    parser.add_argument(
+        "--config",
+        type=str,
+        help="Path to configuration file (required for local mode)",
+        required=False,
+    )
+    args = parser.parse_args()
+
+    if args.local and not args.config:
+        parser.error("--config is required when running in local mode")
+
+    server = Server(local_mode=args.local, config_path=args.config)
     try:
         server.start()
     except KeyboardInterrupt:

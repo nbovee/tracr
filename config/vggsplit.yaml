@@ -1,4 +1,4 @@
-# config/alexnetsplit.yaml
+# config/vggsplit.yaml
 
 # DEFAULT CONFIGURATIONS
 default:
@@ -13,19 +13,19 @@ logging:
 
 # MODEL CONFIGURATIONS
 model:
-  model_name: alexnet
+  model_name: vgg16
   version: null
   pretrained: true
   weight_path: null
   input_size: [3, 224, 224]
-  split_layer: 12
-  save_layers: [2, 4, 6]
+  split_layer: 16  # Split after 4th max pooling layer
+  save_layers: [4, 8, 16]
   num_classes: 1000
   mode: eval
   depth: 2
   flush_buffer_size: 100
   warmup_iterations: 10
-  log_file: logs/alexnetsplit.log
+  log_file: logs/vggsplit.log
 
 # DATASET CONFIGURATIONS
 dataset:
@@ -49,4 +49,4 @@ dataloader:
 compression:
   clevel: 3
   filter: SHUFFLE
-  codec: ZSTD
+  codec: ZSTD 

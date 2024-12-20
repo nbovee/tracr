@@ -1,58 +1,105 @@
 # src/interface/bridge.py
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Union
+from dataclasses import dataclass
+from typing import Any, Dict, Union, Protocol, runtime_checkable
 import numpy as np
 
 
+@dataclass
+class ModelConfig:
+    """Configuration settings for model initialization."""
+
+    config: Dict[str, Any]
+
+
+@dataclass
+class ExperimentConfig:
+    """Configuration settings for experiment initialization."""
+
+    config: Dict[str, Any]
+    host: str
+    port: int
+
+
+@runtime_checkable
+class ModelState(Protocol):
+    """Protocol defining required model state operations."""
+
+    def get_state(self) -> Dict[str, Any]: ...
+    def set_state(self, state: Dict[str, Any]) -> None: ...
+
+
 class ModelInterface(ABC):
-    """Abstract base class defining the interface for model implementations."""
+    """Abstract interface for model implementations."""
 
     @abstractmethod
-    def __init__(self, config: Dict[str, Any]):
-        """Initializes the model with configuration."""
+    def __init__(self, config: ModelConfig) -> None:
+        """Initialize model with configuration."""
         pass
 
     @abstractmethod
     def forward(self, x: Any, start: int = 0, end: Union[int, float] = np.inf) -> Any:
-        """Performs a forward pass through the model from start to end layer."""
+        """Execute forward pass through model layers."""
         pass
 
     @abstractmethod
     def get_state_dict(self) -> Dict[str, Any]:
-        """Returns the model's state dictionary."""
+        """Retrieve model state dictionary."""
         pass
 
     @abstractmethod
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
-        """Loads a state dictionary into the model."""
+        """Load state dictionary into model."""
         pass
 
 
 class ExperimentInterface(ABC):
-    """Abstract base class defining the interface for experiment implementations."""
+    """Abstract interface for experiment implementations."""
 
     @abstractmethod
-    def __init__(self, config: Dict[str, Any], host: str, port: int):
-        """Initializes the experiment with configuration and network details."""
+    def __init__(self, config: ExperimentConfig) -> None:
+        """Initialize experiment with configuration."""
         pass
 
     @abstractmethod
     def initialize_model(self) -> ModelInterface:
-        """Initializes the model for the experiment."""
+        """Create and initialize model instance."""
         pass
 
     @abstractmethod
     def process_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Processes the input data for the experiment."""
+        """Process input data for experiment."""
         pass
 
     @abstractmethod
     def run(self) -> None:
-        """Runs the experiment."""
+        """Execute experiment workflow."""
         pass
 
     @abstractmethod
     def save_results(self, results: Dict[str, Any]) -> None:
-        """Saves the results of the experiment."""
+        """Save experiment results."""
         pass
+
+
+def validate_model_implementation(model_class: type) -> bool:
+    """Validate that a class properly implements ModelInterface."""
+    return all(
+        hasattr(model_class, method)
+        for method in ["__init__", "forward", "get_state_dict", "load_state_dict"]
+    )
+
+
+def validate_experiment_implementation(experiment_class: type) -> bool:
+    """Validate that a class properly implements ExperimentInterface."""
+    return all(
+        hasattr(experiment_class, method)
+        for method in [
+            "__init__",
+            "initialize_model",
+            "process_data",
+            "run",
+            "save_results",
+        ]
+    )

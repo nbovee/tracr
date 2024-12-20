@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # host.py
 
 import argparse
@@ -5,20 +6,28 @@ import logging
 from pathlib import Path
 import sys
 import torch
+from functools import lru_cache
+from typing import Optional, Dict, Any, Final
+import time
 
 # Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api.experiment_mgmt import ExperimentManager
-from src.api.device_mgmt import DeviceManager
-from src.experiment_design.datasets.dataloader import DataManager
-from src.utils.compression import CompressData
-from src.utils.experiment_utils import SplitExperimentRunner
-from src.utils.system_utils import read_yaml_file
-from src.utils.network_utils import NetworkManager
-from src.utils.logger import setup_logger, DeviceType
+from src.api import (  # noqa: E402
+    DeviceType,
+    ExperimentManager,
+    start_logging_server,
+)
+from src.experiment_design.datasets import DataManager  # noqa: E402
+from src.utils import read_yaml_file  # noqa: E402
+from src.api.remote_connection import create_ssh_client
+
+DEFAULT_SOURCE_DIR: Final[str] = "results"
+
+# Destination directory on server to copy results over to from host when experiment is complete
+DEFAULT_DEST_DIR: Final[str] = "/mnt/c/Users/racr/Desktop/tracr/results"
 
 
 class ExperimentHost:
@@ -26,28 +35,21 @@ class ExperimentHost:
 
     def __init__(self, config_path: str) -> None:
         """Initialize with configuration and set up components."""
-        self.config = read_yaml_file(config_path)
+        self.config = self._load_config(config_path)
         self._setup_logger(config_path)
-        self.device_manager = DeviceManager()
-        self.compress_data = CompressData(self.config["compression"])
-
-        # Initialize experiment manager and get model
-        self.experiment_manager = ExperimentManager(config_path)
-        experiment = self.experiment_manager.setup_experiment()
-        self.model = experiment.model
-        self.device = self.model.device
-
+        self.experiment_manager = ExperimentManager(self.config)
+        self.experiment = self.experiment_manager.setup_experiment()
+        self._setup_network_connection()
         self.setup_dataloader()
-        self.network_manager = NetworkManager(self.config)
-        self.network_manager.connect(self.config)
-        self.experiment_runner = SplitExperimentRunner(
-            config=self.config,
-            model=self.model,
-            data_loader=self.data_loader,
-            network_manager=self.network_manager,
-            device=self.device,
-        )
-        logger.info("Experiment host initialization complete")
+        self.experiment.data_loader = self.data_loader
+
+        logger.debug("Experiment host initialization complete")
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _load_config(config_path: str) -> Dict[str, Any]:
+        """Cache config loading since it's used multiple times."""
+        return read_yaml_file(config_path)
 
     def _setup_logger(self, config_path: str) -> None:
         """Initialize logger with configuration."""
@@ -59,111 +61,164 @@ class ExperimentHost:
             "logging": {"log_file": default_log_file, "log_level": default_log_level},
             "model": {"log_file": model_log_file} if model_log_file else {},
         }
-        logger = setup_logger(device=DeviceType.PARTICIPANT, config=logger_config)
+        self.logging_host = start_logging_server(
+            device=DeviceType.PARTICIPANT, config=logger_config
+        )
+        logger = logging.getLogger("split_computing_logger")
         logger.info(f"Initializing experiment host with config from {config_path}")
 
     def setup_dataloader(self) -> None:
         """Set up the data loader with the specified configuration."""
-        logger.info("Setting up data loader...")
+        logger.debug("Setting up data loader...")
         dataset_config = self.config.get("dataset", {})
         dataloader_config = self.config.get("dataloader", {})
-
-        # Import collate function if specified
-        collate_fn = None
-        if dataloader_config.get("collate_fn"):
-            try:
-                from src.experiment_design.datasets.collate import COLLATE_FUNCTIONS
-
-                collate_fn = COLLATE_FUNCTIONS[dataloader_config["collate_fn"]]
-                logger.debug(
-                    f"Using custom collate function: {dataloader_config['collate_fn']}"
-                )
-            except KeyError:
-                logger.warning(
-                    f"Collate function '{dataloader_config['collate_fn']}' not found. "
-                    "Using default collation."
-                )
+        collate_fn = self._get_collate_fn(dataloader_config)
+        batch_size = dataloader_config.get("batch_size")
+        shuffle = dataloader_config.get("shuffle")
+        num_workers = dataloader_config.get("num_workers")
 
         dataset = DataManager.get_dataset(
             {"dataset": dataset_config, "dataloader": dataloader_config}
         )
+
+        # Create dataloader with pre-fetched configs
         self.data_loader = torch.utils.data.DataLoader(
             dataset,
-            batch_size=dataloader_config.get("batch_size", 32),
-            shuffle=dataloader_config.get("shuffle", False),
-            num_workers=dataloader_config.get("num_workers", 4),
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=num_workers,
             collate_fn=collate_fn,
         )
-        logger.info("Data loader setup complete")
+        logger.debug("Data loader setup complete")
+
+    @staticmethod
+    def _get_collate_fn(dataloader_config: Dict[str, Any]) -> Optional[Any]:
+        """Get collate function with error handling."""
+        if collate_fn_name := dataloader_config.get("collate_fn"):
+            try:
+                from src.experiment_design.datasets.collate_fns import COLLATE_FUNCTIONS
+
+                return COLLATE_FUNCTIONS[collate_fn_name]
+            except KeyError:
+                logger.warning(
+                    f"Collate function '{collate_fn_name}' not found. Using default collation."
+                )
+        return None
 
     def run_experiment(self) -> None:
-        """Execute the split inference experiment."""
-        self.experiment_runner.run_experiment()
+        """Execute the experiment."""
+        logger.info("Starting experiment execution...")
+        self.experiment.run()
 
     def _copy_results_to_server(self) -> None:
         """Copy results to the server using SSH utilities."""
         try:
-            from src.utils.ssh import SSHSession
-
-            server_devices = self.device_manager.get_devices(
-                available_only=True, device_type="SERVER"
+            server_device = self.experiment_manager.device_manager.get_device_by_type(
+                "SERVER"
             )
-            if not server_devices:
-                logger.error("No available server devices found for copying results.")
+            if not server_device:
+                logger.error("No server device found for copying results")
                 return
 
-            server_device = server_devices[0]
-            if not server_device.working_cparams:
-                logger.error("Server device has no working connection parameters.")
-                return
+            # Wait for network connection to close completely
+            if hasattr(self.experiment, "network_client"):
+                self.experiment.network_client.cleanup()
+                time.sleep(2)
 
-            # Get SSH configuration from server device
-            ssh_config = {
-                "host": server_device.working_cparams.host,
-                "user": server_device.working_cparams.username,
-                "private_key_path": str(server_device.working_cparams.private_key_path),
-                "port": server_device.working_cparams.port
-                or 22,  # Default to 22 if not specified
-            }
-
-            # You can add source and destination paths as configuration options if needed
             source_dir = Path(
                 self.config.get("results", {}).get("source_dir", "results")
             )
             destination_dir = Path(
                 self.config.get("results", {}).get(
-                    "destination_dir", "/mnt/d/github/RACR_AI/results"
+                    "destination_dir", "/home/racr/Desktop/tracr/results"
                 )
             )
 
+            # Use default SSH port (22) instead of the experiment port
+            ssh_port = 22
             logger.info(
-                f"Establishing SSH connection to server {ssh_config['host']}..."
+                f"Establishing SSH connection to server {server_device.get_host()}..."
             )
-            with SSHSession(**ssh_config) as ssh:
-                success = ssh.copy_results_to_server(
-                    source_dir=source_dir, destination_dir=destination_dir
-                )
 
-                if success:
+            max_retries = 3
+            retry_delay = 2
+
+            for attempt in range(max_retries):
+                try:
+                    ssh_client = create_ssh_client(
+                        host=server_device.get_host(),
+                        user=server_device.get_username(),
+                        private_key_path=server_device.get_private_key_path(),
+                        port=ssh_port,
+                        timeout=10.0,
+                    )
+
+                    # Transfer the results directory
+                    ssh_client.transfer_directory(source_dir, destination_dir)
                     logger.info(
                         f"Results successfully copied to {destination_dir} on server"
                     )
-                else:
-                    logger.error("Failed to copy results to server")
+                    break  # Success, exit retry loop
+
+                except Exception as e:
+                    logger.warning(
+                        f"SSH connection attempt {attempt + 1} failed: {str(e)}"
+                    )
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                    else:
+                        raise
+                finally:
+                    if "ssh_client" in locals():
+                        ssh_client.close()
 
         except Exception as e:
-            logger.error(f"Error copying results to server: {e}")
+            logger.error(f"Error copying results to server: {e}", exc_info=True)
 
     def cleanup(self) -> None:
         """Clean up resources and copy results."""
         logger.info("Starting cleanup process...")
         try:
-            self.network_manager.cleanup()
+            if hasattr(self.experiment, "network_client"):
+                self.experiment.network_client.cleanup()
             self._copy_results_to_server()
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
         finally:
             logger.info("Cleanup complete")
+
+    def _setup_network_connection(self) -> None:
+        """Establish connection to the server with detailed logging."""
+        logger.debug("Setting up network connection...")
+        try:
+            server_device = self.experiment_manager.device_manager.get_device_by_type(
+                "SERVER"
+            )
+
+            if not server_device or not server_device.is_reachable():
+                logger.info(
+                    "No server device configured or unreachable - running locally"
+                )
+                return
+
+            logger.debug(
+                f"Server device info - Host: {server_device.get_host()}, Port: {server_device.get_port()}"
+            )
+
+            if hasattr(self.experiment, "network_client"):
+                logger.debug("Attempting to connect to server...")
+                self.experiment.network_client.connect()
+                logger.info(
+                    f"Successfully connected to server at {server_device.get_host()}:{server_device.get_port()}"
+                )
+            else:
+                logger.debug("No network client found - running locally")
+
+        except Exception as e:
+            logger.warning(
+                f"Network connection failed, falling back to local execution: {str(e)}"
+            )
+            logger.debug("Connection error details:", exc_info=True)
 
 
 if __name__ == "__main__":
@@ -177,9 +232,7 @@ if __name__ == "__main__":
     host = None
     try:
         host = ExperimentHost(str(config_path))
-        # Add debug statement to verify logger
         logger = logging.getLogger("split_computing_logger")
-        logger.info("About to start experiment - logger check")
         host.run_experiment()
     except KeyboardInterrupt:
         if logger:

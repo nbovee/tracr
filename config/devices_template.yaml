@@ -1,12 +1,13 @@
 # DEVICE CONFIGURATION TEMPLATE
-
-# Rename this file to devices_config.yaml after you have set up the SSH keys and tested connectivity.
-
-# This file defines the network configuration for split inference experiments.
+# This file contains device configuration parameters for split inference experiments.
 # It requires proper setup of SSH keys and network connectivity between devices.
 
+# ---------------------------------------------------------------------------------
+# Rename this file to devices_config.yaml after you have updated it appropriately.
+# ---------------------------------------------------------------------------------
+
 # NETWORK SETUP CHECKLIST:
-# 1. Ensure all devices are on the same network
+# 1. Ensure server and host devices are on the same network
 # 2. Configure SSH keys between devices
 # 3. Test connectivity before running experiments
 
@@ -17,18 +18,53 @@
 # FINDING DEVICE IP ADDRESSES:
 # Linux/WSL: hostname -I | awk '{print $1}'
 # Windows: ipconfig
-# Note: IP addresses must be on the same subnet for devices to communicate
+# macOS: ifconfig | grep "inet " | grep -v 127.0.0.1
+
+# WSL-SPECIFIC SETUP:
+# 1. Network Configuration:
+#    - Check WSL network mount: mount | grep '^C:'
+#    - Configure /etc/wsl.conf:
+#      [automount]
+#      enabled = true
+#      options = "metadata,umask=22,fmask=11"
+#
+# 2. Port Forwarding (Run in PowerShell as Administrator):
+#    - Get WSL IP: wsl hostname -I
+#    - Forward SSH ports:
+#      netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=22 connectaddress=<wsl_ip> connectport=22
+#      netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=12345 connectaddress=<wsl_ip> connectport=12345
+#
+# 3. Windows Firewall Rules:
+#    New-NetFirewallRule -DisplayName "WSL SSH Port 22" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 22
+#    New-NetFirewallRule -DisplayName "WSL SSH Port 12345" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 12345
+#
+# 4. Restart SSH Service in WSL:
+#    sudo service ssh restart
+
+# CONNECTING REMOTE DEVICE TO WIFI (JETSON):
+# 1. Install network-manager: sudo apt-get install -y network-manager
+# 2. List available wifi networks: nmcli device wifi
+# 3. Connect to wifi: nmcli device wifi connect "<SSID>" password "<PASSWORD>"
 
 # SSH KEY SETUP:
 # 1. Generate SSH key pair on source device:
 #    ssh-keygen -t rsa -b 4096 -f ~/.ssh/device_name_key
 # 2. Copy public key to destination device:
 #    ssh-copy-id -i ~/.ssh/device_name_key.pub user@device_ip
-# 3. Place private keys in config/pkeys/ directory
+# 3. Place private keys in config/pkeys/ directory:
+#    mkdir -p config/pkeys/
+#    cp ~/.ssh/device_name_key config/pkeys/device_name.rsa
+#    chmod 600 config/pkeys/*.rsa
 # 4. Test connection: ssh -i ~/.ssh/device_name_key user@device_ip
 
 # TROUBLESHOOTING:
-# 1. Connection issues:
+# 1. WSL Connection Issues:
+#    - Verify WSL IP address is correct: wsl hostname -I
+#    - Check port forwarding rules: netsh interface portproxy show all
+#    - Verify firewall rules are active: Get-NetFirewallRule | Where DisplayName -like "*WSL*"
+#    - Test SSH service: sudo service ssh status
+#
+# 2. General Connection Issues:
 #    - Verify IP addresses are correct and devices are on same network
 #    - Check SSH key permissions (should be 600)
 #    - Ensure private keys are in config/pkeys/ directory
@@ -37,16 +73,16 @@
 devices:
   - device_type: SERVER                 # Main computing device
     connection_params:
-      - host: <server_ip_address>       # e.g., 192.168.1.100
+      - host: <server_ip_address>       # (for WSL, use the windows IP)
         user: <username>                # SSH username
         pkey_fp: <server_key.rsa>       # Private key filename in config/pkeys/
-        port: <port_number>             # Port number to use for communication or default to ssh port 22
+        port: <port_number>             # Default: 22 (for WSL, ensure port is forwarded)
         default: true                   # Primary connection parameters
 
   - device_type: PARTICIPANT            # Edge device
     connection_params:
-      - host: <participant_ip_address>  # e.g., 192.168.1.101
+      - host: <participant_ip_address> 
         user: <username>                # SSH username
         pkey_fp: <participant_key.rsa>  # Private key filename in config/pkeys/
-        port: <port_number>             # Port number to use for communication or default to ssh port 22
+        port: <port_number>             # Default: 22
         default: true                   # Primary connection parameters
