@@ -1,6 +1,6 @@
 # SplitTracr: An Experimental Test-bed for Cooperative Inference using Split Computing
 
-An experimental framework for distributed AI experiments, enabling split inference between **server** and **host** devices. `tracr` allows you to distribute deep learning model computations across multiple devices, optimizing resource utilization and enabling edge computing scenarios.
+An experimental framework for distributed AI experiments, enabling split inference between **server** and **host** devices. `tracr` allows you to distribute deep learning model computations across multiple devices, optimizing resource utilization and enabling edge computing scenarios. It has the flexibility to allow you to perform cooperative inference using different deep learning models on different type of devices, with automatic network management and experiment coordination.
 
 > [!Warning]
 > `tracr` is currently an experimental framework intended to explore distributed AI inference patterns. While functional, it is primarily for research and educational purposes.
