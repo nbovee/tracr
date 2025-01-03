@@ -47,6 +47,11 @@ graph TD
         NetworkClient --> DataComp
     end
 
+    %% Add invisible nodes for vertical alignment
+    InvisibleNode1[" "]
+    InvisibleNode2[" "]
+    InvisibleNode3[" "]
+    
     subgraph Model_Layer["Model Layer"]
         direction LR
         BaseModel --> WrappedModel
@@ -72,3 +77,8 @@ graph TD
     style Model_Layer fill:#bfb3,stroke:#333,stroke-width:2px
     style Data_Layer fill:#fbb3,stroke:#333,stroke-width:2px
     style Partitioning_Layer fill:#ffb3,stroke:#333,stroke-width:2px
+    
+    %% Hide invisible nodes
+    style InvisibleNode1 fill:none,stroke:none
+    style InvisibleNode2 fill:none,stroke:none
+    style InvisibleNode3 fill:none,stroke:none
