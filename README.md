@@ -478,3 +478,19 @@ This project uses the DejaVu Sans font for detection and classification overlays
   url = {https://github.com/nbovee/tracr}
 }
 ```
+
+## System Architecture
+
+The system architecture diagram can be found in [diagram.md](diagram.md). The diagram shows the relationships between different components of the system, with color-coding to indicate component types:
+
+- 🟪 **Managers (Pink)**: Core management components like ExperimentManager and DeviceManager
+- 🟦 **API Components (Blue)**: Core API functionality like DataCompression and NetworkClient
+- 🟩 **Model Components (Green)**: Model-related components like BaseModel and ModelRegistry
+- 🟥 **Dataset Components (Red)**: Dataset handling components like BaseDataset and DataManager
+- 🟨 **Partitioner Components (Yellow)**: Split computing components like CyclePartitioner
+
+Each layer in the architecture is grouped and color-coded with a transparent background for better organization:
+- API Layer (Light Pink)
+- Model Layer (Light Green)
+- Data Layer (Light Red)
+- Partitioning Layer (Light Yellow)
