@@ -6,7 +6,6 @@ graph TD
     classDef model fill:#bfb,stroke:#333,stroke-width:1px,color:#000
     classDef dataset fill:#fbb,stroke:#333,stroke-width:1px,color:#000
     classDef partitioner fill:#ffb,stroke:#333,stroke-width:1px,color:#000
-    classDef spacing fill:none,stroke:none
 
     %% Main Components
     ExperimentMgmt[ExperimentManager]:::manager
@@ -75,14 +74,6 @@ graph TD
     style Partitioning_Layer fill:#ffb3,stroke:#333,stroke-width:2px,color:#000
 
     %% Vertical spacing connections
-    SpacingNode1[" "]:::spacing
-    SpacingNode2[" "]:::spacing
-    SpacingNode3[" "]:::spacing
-    SpacingNode4[" "]:::spacing
-    
-    API_Layer --> SpacingNode1
-    SpacingNode1 --> Model_Layer
-    Model_Layer --> SpacingNode2
-    SpacingNode2 --> Data_Layer
-    Data_Layer --> SpacingNode3
-    SpacingNode3 --> Partitioning_Layer
+    API_Layer ~~~ Model_Layer
+    Model_Layer ~~~ Data_Layer
+    Data_Layer ~~~ Partitioning_Layer
