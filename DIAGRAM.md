@@ -1,11 +1,11 @@
 ```mermaid
 graph TD
     %% Styling
-    classDef manager fill:#f9f,stroke:#333,stroke-width:2px
-    classDef component fill:#bbf,stroke:#333,stroke-width:1px
-    classDef model fill:#bfb,stroke:#333,stroke-width:1px
-    classDef dataset fill:#fbb,stroke:#333,stroke-width:1px
-    classDef partitioner fill:#ffb,stroke:#333,stroke-width:1px
+    classDef manager fill:#f9f,stroke:#333,stroke-width:2px,color:#000
+    classDef component fill:#bbf,stroke:#333,stroke-width:1px,color:#000
+    classDef model fill:#bfb,stroke:#333,stroke-width:1px,color:#000
+    classDef dataset fill:#fbb,stroke:#333,stroke-width:1px,color:#000
+    classDef partitioner fill:#ffb,stroke:#333,stroke-width:1px,color:#000
     classDef invisible fill:none,stroke:none
 
     %% Main Components
@@ -69,13 +69,13 @@ graph TD
     end
 
     %% Layer styling
-    style API_Layer fill:#f9f3,stroke:#333,stroke-width:2px
-    style Model_Layer fill:#bfb3,stroke:#333,stroke-width:2px
-    style Data_Layer fill:#fbb3,stroke:#333,stroke-width:2px
-    style Partitioning_Layer fill:#ffb3,stroke:#333,stroke-width:2px
+    style API_Layer fill:#f9f3,stroke:#333,stroke-width:2px,color:#000
+    style Model_Layer fill:#bfb3,stroke:#333,stroke-width:2px,color:#000
+    style Data_Layer fill:#fbb3,stroke:#333,stroke-width:2px,color:#000
+    style Partitioning_Layer fill:#ffb3,stroke:#333,stroke-width:2px,color:#000
 
     %% Invisible connections for vertical alignment
-    linkStyle default stroke:none
-    API_Layer --> Model_Layer
-    Model_Layer --> Data_Layer
-    Data_Layer --> Partitioning_Layer
+    linkStyle default stroke:none,fill:none,color:none
+    API_Layer --- Model_Layer
+    Model_Layer --- Data_Layer
+    Data_Layer --- Partitioning_Layer
