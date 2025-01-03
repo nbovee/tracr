@@ -6,6 +6,7 @@ graph TD
     classDef model fill:#bfb,stroke:#333,stroke-width:1px
     classDef dataset fill:#fbb,stroke:#333,stroke-width:1px
     classDef partitioner fill:#ffb,stroke:#333,stroke-width:1px
+    classDef invisible fill:none,stroke:none
 
     %% Main Components
     ExperimentMgmt[ExperimentManager]:::manager
@@ -47,11 +48,6 @@ graph TD
         NetworkClient --> DataComp
     end
 
-    %% Add invisible nodes for vertical alignment
-    InvisibleNode1[" "]
-    InvisibleNode2[" "]
-    InvisibleNode3[" "]
-    
     subgraph Model_Layer["Model Layer"]
         direction LR
         BaseModel --> WrappedModel
@@ -77,8 +73,9 @@ graph TD
     style Model_Layer fill:#bfb3,stroke:#333,stroke-width:2px
     style Data_Layer fill:#fbb3,stroke:#333,stroke-width:2px
     style Partitioning_Layer fill:#ffb3,stroke:#333,stroke-width:2px
-    
-    %% Hide invisible nodes
-    style InvisibleNode1 fill:none,stroke:none
-    style InvisibleNode2 fill:none,stroke:none
-    style InvisibleNode3 fill:none,stroke:none
+
+    %% Invisible connections for vertical alignment
+    linkStyle default stroke:none
+    API_Layer --> Model_Layer
+    Model_Layer --> Data_Layer
+    Data_Layer --> Partitioning_Layer
