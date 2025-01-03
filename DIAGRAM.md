@@ -34,62 +34,37 @@ graph TD
     CyclePartitioner[CyclePartitioner]:::partitioner
     RegressionPartitioner[RegressionPartitioner]:::partitioner
 
-    %% Relationships
-    ExperimentMgmt --> |uses| DeviceMgmt
-    ExperimentMgmt --> |uses| DataComp
-    ExperimentMgmt --> |uses| LogMgmt
-    ExperimentMgmt --> |uses| MasterDict
-    ExperimentMgmt --> |uses| NetworkClient
-    ExperimentMgmt --> |uses| PowerMon
-
-    DeviceMgmt --> |uses| RemoteConn
-    NetworkClient --> |uses| DataComp
-
-    BaseModel --> |extends| WrappedModel
-    ModelRegistry --> |registers| CustomModel
-    ModelRegistry --> |manages| BaseModel
-
-    BaseDataset --> |extends| ImageNetDataset
-    BaseDataset --> |extends| OnionDataset
-    DataManager --> |manages| BaseDataset
-
-    Partitioner --> |extends| CyclePartitioner
-    Partitioner --> |extends| RegressionPartitioner
-
     %% Subgraphs with styling
     subgraph API_Layer["API Layer"]
-        direction TB
-        ExperimentMgmt
-        DeviceMgmt
-        DataComp
-        LogMgmt
-        MasterDict
-        NetworkClient
-        RemoteConn
-        PowerMon
+        direction LR
+        ExperimentMgmt --> DeviceMgmt
+        ExperimentMgmt --> DataComp
+        ExperimentMgmt --> LogMgmt
+        ExperimentMgmt --> MasterDict
+        ExperimentMgmt --> NetworkClient
+        ExperimentMgmt --> PowerMon
+        DeviceMgmt --> RemoteConn
+        NetworkClient --> DataComp
     end
 
     subgraph Model_Layer["Model Layer"]
-        direction TB
-        BaseModel
-        WrappedModel
-        ModelRegistry
-        CustomModel
+        direction LR
+        BaseModel --> WrappedModel
+        ModelRegistry --> CustomModel
+        ModelRegistry --> BaseModel
     end
 
     subgraph Data_Layer["Data Layer"]
-        direction TB
-        BaseDataset
-        ImageNetDataset
-        OnionDataset
-        DataManager
+        direction LR
+        BaseDataset --> ImageNetDataset
+        BaseDataset --> OnionDataset
+        DataManager --> BaseDataset
     end
 
     subgraph Partitioning_Layer["Partitioning Layer"]
-        direction TB
-        Partitioner
-        CyclePartitioner
-        RegressionPartitioner
+        direction LR
+        Partitioner --> CyclePartitioner
+        Partitioner --> RegressionPartitioner
     end
 
     %% Layer styling
@@ -97,3 +72,8 @@ graph TD
     style Model_Layer fill:#bfb3,stroke:#333,stroke-width:2px
     style Data_Layer fill:#fbb3,stroke:#333,stroke-width:2px
     style Partitioning_Layer fill:#ffb3,stroke:#333,stroke-width:2px
+
+    %% Layer connections
+    API_Layer --> Model_Layer
+    Model_Layer --> Data_Layer
+    Data_Layer --> Partitioning_Layer
