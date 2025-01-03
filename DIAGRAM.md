@@ -73,8 +73,8 @@ graph TD
     style Data_Layer fill:#fbb3,stroke:#333,stroke-width:2px,color:#000
     style Partitioning_Layer fill:#ffb3,stroke:#333,stroke-width:2px,color:#000
 
-    %% Invisible connections for vertical alignment
-    linkStyle default stroke:none,fill:none,color:none
+    %% Vertical spacing connections
     API_Layer --- Model_Layer
     Model_Layer --- Data_Layer
     Data_Layer --- Partitioning_Layer
+    linkStyle 12,13,14 stroke:none,fill:none,color:none
