@@ -6,7 +6,6 @@ graph TD
     classDef model fill:#bfb,stroke:#333,stroke-width:1px,color:#000
     classDef dataset fill:#fbb,stroke:#333,stroke-width:1px,color:#000
     classDef partitioner fill:#ffb,stroke:#333,stroke-width:1px,color:#000
-    classDef invisible fill:none,stroke:none
 
     %% Main Components
     ExperimentMgmt[ExperimentManager]:::manager
