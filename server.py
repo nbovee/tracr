@@ -237,8 +237,22 @@ class Server:
                     )
 
                 # Send back results
-                response = (processed_result, processing_time)
-                self.compress_data.send_result(conn=conn, result=response)
+                # Compress the processed result
+                compressed_result, result_size = self.compress_data.compress_data(
+                    processed_result
+                )
+
+                # Send result size
+                conn.sendall(result_size.to_bytes(LENGTH_PREFIX_SIZE, "big"))
+                # Send processing time as fixed-length bytes
+                time_bytes = (
+                    str(processing_time)
+                    .ljust(LENGTH_PREFIX_SIZE)
+                    .encode()[:LENGTH_PREFIX_SIZE]
+                )
+                conn.sendall(time_bytes)
+                # Send compressed result
+                conn.sendall(compressed_result)
 
         except Exception as e:
             logger.error(f"Error handling connection: {e}", exc_info=True)

@@ -80,12 +80,24 @@ class SplitComputeClient:
             ).to_bytes(HEADER_SIZE, "big")
             self.socket.sendall(header + intermediate_output)
 
-            # Receive result
+            # Receive result length and server time
             response_length = int.from_bytes(self.socket.recv(HEADER_SIZE), "big")
+            server_time_bytes = self.socket.recv(HEADER_SIZE)
+            try:
+                server_time = float(server_time_bytes.decode().strip())
+            except ValueError:
+                logger.error(f"Invalid server time received: {server_time_bytes}")
+                server_time = 0.0
+
+            # Receive processed data
             response_data = self.compressor.receive_full_message(
                 conn=self.socket, expected_length=response_length
             )
-            return self.compressor.decompress_data(compressed_data=response_data)
+            processed_result = self.compressor.decompress_data(
+                compressed_data=response_data
+            )
+
+            return processed_result, server_time
 
         except Exception as e:
             logger.error(f"Split computation failed: {e}")

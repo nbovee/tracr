@@ -305,14 +305,15 @@ class NetworkedExperiment(BaseExperiment):
                 server_response = self.network_client.process_split_computation(
                     split_layer, compressed_output
                 )
-                travel_time = time.time() - travel_start
+                travel_end = time.time()
 
                 if not server_response or not isinstance(server_response, tuple):
                     logger.warning("Invalid server response")
                     return None
 
                 processed_result, server_time = server_response
-                travel_time -= server_time
+                # Calculate actual network travel time by subtracting server processing time
+                travel_time = (travel_end - travel_start) - server_time
 
                 # Collect power metrics
                 metrics = pm.get_power_metrics()
