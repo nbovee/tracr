@@ -6,6 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import Dict
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -54,41 +55,20 @@ def plot_layer_metrics_tab(
     ]
     validate_dataframe(df, required_cols, "Layer Metrics")
 
-    # Validate split_df columns
-    required_split_cols = [
-        "Split Layer Index",
-        "Host Time",
-        "Travel Time",
-        "Server Time",
-        "Total Processing Time",
-    ]
-    validate_dataframe(split_df, required_split_cols, "Overall Performance")
-
     # Set style
     _set_plot_style()
 
-    # Create figure
-    fig, ax1 = plt.subplots(figsize=(8, 3))
+    # Create figure with reduced height
+    fig, ax1 = plt.subplots(figsize=(8, 2))  # Reduced height from 3 to 2
     ax2 = ax1.twinx()
-    ax3 = ax1.twinx()
-    ax3.spines["right"].set_position(("outward", 50))
 
-    # Extract layer number from Layer ID
-    def extract_layer_num(layer_id):
-        if isinstance(layer_id, str):
-            import re
+    # Get valid layer IDs from overall performance tab
+    valid_layer_ids = split_df["Split Layer Index"].unique()
 
-            match = re.search(r"\d+", layer_id)
-            return int(match.group()) if match else 0
-        elif isinstance(layer_id, (int, float)):
-            return int(layer_id)
-        else:
-            return 0
-
-    # Process layer metrics
-    df["Layer Num"] = df["Layer ID"].apply(extract_layer_num)
+    # Process layer metrics - use Layer ID directly for ordering
     grouped = (
-        df.groupby("Layer Num")
+        df[df["Layer ID"].isin(valid_layer_ids)]
+        .groupby("Layer ID")
         .agg(
             {
                 "Layer Type": "first",
@@ -98,16 +78,15 @@ def plot_layer_metrics_tab(
         )
         .reset_index()
     )
-    grouped = grouped.sort_values("Layer Num")
+    grouped = grouped.sort_values("Layer ID")
 
     # Set bar width and positions
-    bar_width = 0.25
+    bar_width = 0.35
     x = np.arange(len(grouped))
 
-    # Color scheme (colorblind-friendly)
+    # Color scheme (matching JMLR style)
     color_latency = "#a1c9f4"  # Light blue
     color_size = "#2c3e50"  # Dark blue
-    color_time = "#8b0000"  # Dark red for total time
 
     # Plot layer metrics
     latency_bars = ax1.bar(
@@ -124,46 +103,24 @@ def plot_layer_metrics_tab(
         x + bar_width / 2,
         grouped["Output Size (MB)"],
         bar_width,
-        label="Output size",
+        label="Size of output data",
         color=color_size,
         edgecolor="black",
         linewidth=0.5,
     )
 
-    # Calculate and plot total processing time
-    x_time = np.arange(len(split_df))
-    total_time_line = ax3.plot(
-        x_time,
-        split_df["Total Processing Time"],
-        color=color_time,
-        linestyle="-",
-        linewidth=1,
-        label="Total processing time",
-    )
-
-    # Find optimal split
-    optimal_idx = split_df["Total Processing Time"].idxmin()
-    optimal_time = split_df["Total Processing Time"].min()
-
-    # Add vertical line for optimal split
-    ax1.axvline(
-        x=optimal_idx, color=color_time, linestyle="--", linewidth=0.8, alpha=0.4
-    )
-
-    # Add grid
-    ax1.grid(True, linestyle=":", alpha=0.3, color="gray")
+    # Add only horizontal grid lines
+    ax1.yaxis.grid(True, linestyle=":", alpha=0.3, color="gray")
+    ax1.xaxis.grid(False)  # Disable vertical grid lines
     ax1.set_axisbelow(True)
 
     # Customize axes
-    ax1.set_ylabel("Layer latency (ms)")
-    ax2.set_ylabel("Output size (MB)")
-    ax3.set_ylabel("Total processing time (s)", color=color_time)
-    ax3.tick_params(axis="y", labelcolor=color_time)
+    ax1.set_ylabel("Latency (ms)")
+    ax2.set_ylabel("Data size (MB)")
 
     # Set axis limits and ticks with specific increments
     max_latency = max(grouped["Layer Latency (ms)"])
     max_size = max(grouped["Output Size (MB)"])
-    max_total_time = max(split_df["Total Processing Time"])
 
     # Left y-axis (Latency): increments of 10
     max_latency_rounded = np.ceil(max_latency / 10) * 10
@@ -171,71 +128,50 @@ def plot_layer_metrics_tab(
     ax1.set_ylim(0, max_latency_rounded)
     ax1.set_yticks(latency_ticks)
 
-    # Middle y-axis (Output size): increments of 0.3
+    # Right y-axis (Output size): increments of 0.3
     max_size_rounded = np.ceil(max_size / 0.3) * 0.3
     size_ticks = np.arange(0, max_size_rounded + 0.3, 0.3)
     ax2.set_ylim(0, max_size_rounded)
     ax2.set_yticks(size_ticks)
 
-    # Right y-axis (Total time): adaptive increments
-    if max_total_time < 50:  # YOLOv8 case
-        increment = 5
-    else:  # ResNet case
-        increment = 30
-
-    max_time_rounded = np.ceil(max_total_time / increment) * increment
-    time_ticks = np.arange(0, max_time_rounded + increment, increment)
-    ax3.set_ylim(0, max_time_rounded)
-    ax3.set_yticks(time_ticks)
-
-    # Set x-axis labels
+    # Set x-axis labels with reduced padding
     ax1.set_xticks(x)
     ax1.set_xticklabels(
         grouped["Layer Type"], rotation=90, ha="center", va="top", fontsize=7
     )
+    ax1.tick_params(axis="x", pad=2)  # Reduce padding between ticks and labels
 
-    # Add subtle annotation for optimal split
-    min_time_text = f"(min: {optimal_time:.2f}s)"
-    ax3.annotate(
-        min_time_text,
-        xy=(optimal_idx, optimal_time),
-        xytext=(5, 5),
-        textcoords="offset points",
-        fontsize=7,
-        color=color_time,
-        alpha=0.7,
-        bbox=dict(facecolor="white", edgecolor="none", alpha=0.8),
-    )
-
-    # Add legend
+    # Add legend with adjusted position
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
-    lines3, labels3 = ax3.get_legend_handles_labels()
     ax1.legend(
-        lines1 + lines2 + lines3,
-        labels1 + labels2 + labels3,
+        lines1 + lines2,
+        labels1 + labels2,
         loc="upper right",
         frameon=True,
         framealpha=0.9,
         edgecolor="none",
-        ncol=3,
+        ncol=2,
         columnspacing=1,
         handletextpad=0.5,
-        borderaxespad=0.5,
-    )
+        borderaxespad=0.2,
+    )  # Reduced borderaxespad
 
     # Clean up spines
     ax1.spines["top"].set_visible(False)
     ax2.spines["top"].set_visible(False)
-    ax3.spines["top"].set_visible(False)
 
-    # Adjust layout and save
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches="tight", pad_inches=0.02)
+    # Adjust layout and save with reduced padding
+    plt.tight_layout(pad=0.2)  # Reduced padding in tight_layout
+    plt.savefig(
+        output_path, dpi=300, bbox_inches="tight", pad_inches=0.01
+    )  # Reduced pad_inches
     plt.close()
 
 
-def plot_overall_performance_tab(df: pd.DataFrame, output_path: str) -> None:
+def plot_overall_performance_tab(
+    df: pd.DataFrame, layer_metrics_df: pd.DataFrame, output_path: str
+) -> None:
     """Create visualization for 'Overall Performance' tab with stacked latency bars."""
     # Validate required columns
     required_cols = [
@@ -279,12 +215,18 @@ def plot_overall_performance_tab(df: pd.DataFrame, output_path: str) -> None:
         )
         bottom += df[metric]
 
+    # Get layer names from layer_metrics_df
+    layer_names = []
+    for idx in df["Split Layer Index"]:
+        layer_name = layer_metrics_df[layer_metrics_df["Layer ID"] == idx][
+            "Layer Type"
+        ].iloc[0]
+        layer_names.append(layer_name)
+
     # Customize axes
     ax.set_ylabel("Latency (s)")
     ax.set_xticks(x)
-    ax.set_xticklabels(
-        df["Split Layer Index"], rotation=90, ha="center", va="top", fontsize=7
-    )
+    ax.set_xticklabels(layer_names, rotation=90, ha="center", va="top", fontsize=7)
 
     # Set y-axis limits and ticks
     y_max = 35
@@ -317,27 +259,41 @@ def plot_overall_performance_tab(df: pd.DataFrame, output_path: str) -> None:
     best_idx = total_latencies.idxmin()
     best_latency = total_latencies[best_idx]
 
-    # Calculate consistent spacing (3 units between elements)
-    spacing = 3
-    star_height = best_latency + 12
-    text_height = star_height - spacing
-    arrow_start = text_height - spacing
+    # Calculate positions for annotation with consistent spacing
+    spacing = 1.5  # Consistent spacing between elements
+    text_height = best_latency + 8  # Text at top
+    star_height = text_height - spacing  # Star below text
+    arrow_end = best_latency  # Arrow end at bar top
 
-    # Add star at the top
-    ax.plot(best_idx, star_height, marker="*", markersize=10, color="#ffd700", zorder=5)
-
-    # Add "Best latency" text below the star
+    # Add "Best latency" text at top
     ax.text(best_idx, text_height, "Best latency", ha="center", va="bottom", fontsize=7)
 
-    # Add arrow at the bottom
+    # Add star below text with black edge
+    ax.plot(
+        best_idx,
+        star_height,
+        marker="*",
+        markersize=10,
+        color="#ffd700",
+        markeredgecolor="black",
+        markeredgewidth=0.5,
+        zorder=5,
+    )
+
+    # Add simple vertical arrow pointing down to the bar
     ax.annotate(
         "",
-        xy=(best_idx, best_latency),  # arrow tip at bar top
-        xytext=(best_idx, arrow_start),  # arrow starts higher
+        xy=(best_idx, arrow_end),  # arrow tip at bar top
+        xytext=(best_idx, star_height - spacing),  # arrow starts below star
         ha="center",
         va="bottom",
         arrowprops=dict(
-            arrowstyle="-|>", color="black", linewidth=1.5, mutation_scale=12
+            arrowstyle="-|>",
+            color="black",
+            linewidth=0.8,
+            mutation_scale=8,
+            shrinkA=0,
+            shrinkB=0,
         ),
     )
 
@@ -388,256 +344,192 @@ def plot_raw_power_metrics_tab(df: pd.DataFrame, output_path: str) -> None:
     plt.close()
 
 
-def plot_layer_energy_metrics_tab(df: pd.DataFrame, output_path: str) -> None:
-    """Create visualization for layer-specific energy metrics."""
-    # Validate required columns
-    required_cols = [
-        "Split Layer",
-        "Layer ID",
-        "Layer Type",
-        "Processing Energy (J)",
-        "Communication Energy (J)",
-        "Power Reading (W)",
-        "GPU Utilization (%)",
-        "Total Energy (J)",
-    ]
-    validate_dataframe(df, required_cols, "Layer Metrics")
-
+def plot_energy_analysis_tab(
+    df: pd.DataFrame, layer_metrics_df: pd.DataFrame, output_path: str
+) -> None:
+    """Plot energy analysis metrics showing mobile processing and data communication energy."""
     # Set style
     _set_plot_style()
 
-    # Create figure with two subplots
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), height_ratios=[1.2, 1])
+    # Create figure with extra space at top for legend
+    fig, ax = plt.subplots(figsize=(8, 3))
+    ax2 = ax.twinx()  # Create second y-axis for power metrics
 
-    # Plot energy metrics in first subplot
-    x = range(len(df))
-    bar_width = 0.35
+    # Get valid layer IDs from overall performance tab
+    valid_layer_ids = df[df["Layer Type"] != "Detect"]["Layer ID"].unique()
 
-    # Colors (colorblind-friendly)
-    color_proc = "#4a6fa5"  # Dark blue for processing
-    color_comm = "#93b7be"  # Light blue for communication
-    color_total = "#2c3e50"  # Dark gray for total
-
-    # Create stacked bars for energy metrics
-    ax1.bar(
-        x,
-        df["Processing Energy (J)"],
-        bar_width,
-        label="Processing Energy",
-        color=color_proc,
+    # Extract data for each split layer
+    split_layers = sorted(
+        df[df["Layer ID"].isin(valid_layer_ids)]["Split Layer"].unique()
     )
-    ax1.bar(
+    mobile_energy = []
+    comm_energy = []
+    power_readings = []
+
+    for split in split_layers:
+        split_df = df[df["Split Layer"] == split]
+        # Sum processing energy up to split point
+        mobile_energy.append(
+            split_df[split_df["Layer ID"] <= split]["Processing Energy (J)"].sum()
+        )
+        # Get communication energy at split point
+        comm_energy.append(
+            split_df[split_df["Layer ID"] == split]["Communication Energy (J)"].iloc[0]
+        )
+        # Get power reading at split point
+        power_readings.append(
+            split_df[split_df["Layer ID"] == split]["Power Reading (W)"].iloc[0] * 1000
+        )  # Convert W to mW
+
+    # Colors matching the reference image
+    color_comm = "#e67e22"  # Darker orange for data communication
+    color_mobile = "#ffd4b2"  # Light orange for mobile processing
+    color_power = "#2c3e50"  # Dark blue for power line (JMLR style)
+
+    # Plot stacked bars
+    x = np.arange(len(split_layers))
+
+    # First plot data communication (darker orange, bottom)
+    bars1 = ax.bar(
         x,
-        df["Communication Energy (J)"],
-        bar_width,
-        bottom=df["Processing Energy (J)"],
-        label="Communication Energy",
+        comm_energy,
         color=color_comm,
+        edgecolor="black",
+        linewidth=0.5,
+        label="Data communication",
+        width=0.65,
     )
 
-    # Add total energy line
-    ax1_twin = ax1.twinx()
-    ax1_twin.plot(
+    # Then plot mobile processing on top (lighter orange)
+    bars2 = ax.bar(
         x,
-        df["Total Energy (J)"],
-        color=color_total,
-        linestyle="--",
-        label="Total Energy",
-        linewidth=1.5,
-        marker="o",
+        mobile_energy,
+        bottom=comm_energy,
+        color=color_mobile,
+        edgecolor="black",
+        linewidth=0.5,
+        label="Mobile processing",
+        width=0.65,
     )
 
-    # Customize first subplot
-    ax1.set_ylabel("Energy (J)")
-    ax1_twin.set_ylabel("Total Energy (J)")
-    ax1.grid(True, alpha=0.15)
-
-    # Add layer type labels
-    plt.xticks(x, df["Layer Type"], rotation=45, ha="right")
-
-    # Combine legends from both y-axes
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax1_twin.get_legend_handles_labels()
-    ax1.legend(
-        lines1 + lines2,
-        labels1 + labels2,
-        loc="upper left",
-        ncol=3,
-        bbox_to_anchor=(0, 1.15),
-    )
-
-    # Plot GPU metrics in second subplot
-    color_power = "#c0504d"  # Red for power
-    color_gpu = "#9bbb59"  # Green for GPU
-
-    # Create line plots for power and GPU utilization
-    ax2.plot(
+    # Plot power reading as a line with improved JMLR styling
+    line_power = ax2.plot(
         x,
-        df["Power Reading (W)"],
+        power_readings,
         color=color_power,
-        label="Power Reading",
-        linewidth=1.5,
+        linestyle="-",
+        linewidth=1.0,
+        label="Power (mW)",
+        zorder=3,
         marker="o",
-    )
-    ax2_twin = ax2.twinx()
-    ax2_twin.plot(
-        x,
-        df["GPU Utilization (%)"],
-        color=color_gpu,
-        label="GPU Utilization",
-        linewidth=1.5,
-        marker="s",
+        markersize=3,
+        markerfacecolor="white",
+        markeredgecolor=color_power,
+        markeredgewidth=1,
     )
 
-    # Customize second subplot
-    ax2.set_xlabel("Layer Type")
-    ax2.set_ylabel("Power (W)")
-    ax2_twin.set_ylabel("GPU Utilization (%)")
-    ax2.grid(True, alpha=0.15)
-    plt.xticks(x, df["Layer Type"], rotation=45, ha="right")
+    # Get layer names from layer_metrics_df
+    layer_names = []
+    for split in split_layers:
+        layer_type = layer_metrics_df[layer_metrics_df["Layer ID"] == split][
+            "Layer Type"
+        ].iloc[0]
+        layer_names.append(layer_type)
 
-    # Combine legends for second subplot
-    lines3, labels3 = ax2.get_legend_handles_labels()
-    lines4, labels4 = ax2_twin.get_legend_handles_labels()
-    ax2.legend(lines3 + lines4, labels3 + labels4, loc="upper left", ncol=2)
+    # Customize axes
+    ax.set_ylabel("Energy (J)")
+    ax2.set_ylabel("Power (mW)", color=color_power)  # Match power line color
+    ax.set_xticks(x)
+    ax.set_xticklabels(layer_names, rotation=90, ha="center", va="top", fontsize=7)
 
-    # Add split layer markers
-    split_layers = df[df["Split Layer"] == 1].index
-    for split_idx in split_layers:
-        ax1.axvline(x=split_idx, color="red", linestyle=":", alpha=0.5)
-        ax2.axvline(x=split_idx, color="red", linestyle=":", alpha=0.5)
+    # Calculate total energy and find the best index
+    total_energy = [m + c for m, c in zip(mobile_energy, comm_energy)]
+    best_idx = np.argmin(total_energy)
+    best_latency = total_energy[best_idx]
 
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches="tight", pad_inches=0.02)
-    plt.close()
+    # Calculate positions for annotation with consistent spacing
+    spacing = 0.05  # Consistent spacing between elements
+    text_height = best_latency + 0.2  # Text at top
+    star_height = text_height - spacing  # Star below text
+    arrow_end = best_latency  # Arrow end at bar top
 
+    # Add "Best energy" text at top
+    ax.text(best_idx, text_height, "Best energy", ha="center", va="bottom", fontsize=7)
 
-def plot_energy_analysis_tab(df: pd.DataFrame, output_path: str) -> None:
-    """Create visualization for energy analysis showing metrics per split point."""
-    # Update required columns to match new format
-    required_cols = [
-        "Split Layer",
-        "Processing Energy (J)",
-        "Communication Energy (J)",
-        "Total Energy (J)",
-        "Power Reading (W)",
-        "GPU Utilization (%)",
-    ]
-    validate_dataframe(df, required_cols, "Energy Analysis")
-
-    # Set style
-    _set_plot_style()
-
-    # Create figure with two subplots
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6), height_ratios=[1, 1])
-
-    # Plot energy metrics in first subplot
-    x = df["Split Layer"]
-    bar_width = 0.35
-
-    # Colors (colorblind-friendly)
-    color_proc = "#4a6fa5"  # Dark blue for processing
-    color_comm = "#93b7be"  # Light blue for communication
-    color_total = "#2c3e50"  # Dark gray for total
-
-    # Create grouped bars for energy metrics
-    ax1.bar(
-        x - bar_width / 2,
-        df["Processing Energy (J)"],
-        bar_width,
-        label="Processing Energy",
-        color=color_proc,
-    )
-    ax1.bar(
-        x + bar_width / 2,
-        df["Communication Energy (J)"],
-        bar_width,
-        label="Communication Energy",
-        color=color_comm,
-    )
-
-    # Add total energy line
-    ax1_twin = ax1.twinx()
-    ax1_twin.plot(
-        x,
-        df["Total Energy (J)"],
-        color=color_total,
-        linestyle="--",
-        label="Total Energy",
-        linewidth=1.5,
-        marker="o",
-    )
-
-    # Customize first subplot
-    ax1.set_ylabel("Energy (J)")
-    ax1_twin.set_ylabel("Total Energy (J)")
-    ax1.grid(True, alpha=0.15)
-
-    # Combine legends from both y-axes
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax1_twin.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper left", ncol=3)
-
-    # Plot GPU metrics in second subplot
-    color_power = "#c0504d"  # Red for power
-    color_gpu = "#9bbb59"  # Green for GPU
-
-    # Create line plots for power and GPU utilization
-    ax2.plot(
-        x,
-        df["Power Reading (W)"],
-        color=color_power,
-        label="Power Reading",
-        linewidth=1.5,
-        marker="o",
-    )
-    ax2_twin = ax2.twinx()
-    ax2_twin.plot(
-        x,
-        df["GPU Utilization (%)"],
-        color=color_gpu,
-        label="GPU Utilization",
-        linewidth=1.5,
-        marker="s",
-    )
-
-    # Customize second subplot
-    ax2.set_xlabel("Split Layer")
-    ax2.set_ylabel("Power (W)")
-    ax2_twin.set_ylabel("GPU Utilization (%)")
-    ax2.grid(True, alpha=0.15)
-
-    # Set integer ticks for x-axis
-    for ax in [ax1, ax2]:
-        ax.set_xticks(x)
-        ax.set_xticklabels([f"{int(i)}" for i in x])
-
-    # Combine legends from both y-axes for second subplot
-    lines3, labels3 = ax2.get_legend_handles_labels()
-    lines4, labels4 = ax2_twin.get_legend_handles_labels()
-    ax2.legend(lines3 + lines4, labels3 + labels4, loc="upper left", ncol=2)
-
-    # Find and mark minimum total energy point
-    min_energy_idx = df["Total Energy (J)"].idxmin()
-    min_energy_split = df.iloc[min_energy_idx]["Split Layer"]
-    min_energy_value = df.iloc[min_energy_idx]["Total Energy (J)"]
-
-    ax1_twin.plot(
-        min_energy_split,
-        min_energy_value,
-        "r*",
+    # Add star below text with black edge
+    ax.plot(
+        best_idx,
+        star_height,
+        marker="*",
         markersize=10,
-        label=f"Min Energy\n(Split {int(min_energy_split)})",
-    )
-    ax1_twin.annotate(
-        f"Min: {min_energy_value:.3f}J",
-        (min_energy_split, min_energy_value),
-        xytext=(10, 10),
-        textcoords="offset points",
-        fontsize=7,
-        bbox=dict(facecolor="white", edgecolor="none", alpha=0.8),
+        color="#ffd700",
+        markeredgecolor="black",
+        markeredgewidth=0.5,
+        zorder=5,
     )
 
+    # Add simple vertical arrow pointing down to the bar
+    ax.annotate(
+        "",
+        xy=(best_idx, arrow_end),  # arrow tip at bar top
+        xytext=(best_idx, star_height - spacing),  # arrow starts below star
+        ha="center",
+        va="bottom",
+        arrowprops=dict(
+            arrowstyle="-|>",
+            color="black",
+            linewidth=0.8,
+            mutation_scale=8,
+            shrinkA=0,
+            shrinkB=0,
+        ),
+    )
+
+    # Clean up plot
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax2.spines["top"].set_visible(False)
+    ax.grid(False)
+    ax.yaxis.grid(True, linestyle="-", alpha=0.08, color="gray", zorder=0)
+    ax.set_axisbelow(True)
+    ax.tick_params(axis="y", which="both", right=False)
+    ax2.tick_params(axis="y", colors=color_power)  # Match power line color
+
+    # Add legend at the top of the plot
+    # Get handles and labels in the correct order
+    handles = [bars1, bars2] + line_power
+    labels = ["Data communication", "Mobile processing", "Power (mW)"]
+
+    legend = ax.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.15),
+        ncol=3,
+        frameon=False,
+        handletextpad=0.3,
+        columnspacing=1.0,
+        fontsize=7,
+    )
+
+    # Set y-axis limits and ticks for energy
+    ymax = max(total_energy)
+    # Round up to nearest 0.1
+    ymax_rounded = np.ceil(ymax * 10) / 10
+    ax.set_ylim(0, ymax_rounded)
+    # Set ticks at 0.1 intervals
+    yticks = np.arange(0, ymax_rounded + 0.1, 0.1)
+    ax.set_yticks(yticks)
+    # Format tick labels to 1 decimal place
+    ax.set_yticklabels([f"{x:.1f}" for x in yticks])
+
+    # Set y-axis limits for power
+    max_power = max(power_readings)
+    power_limit = np.ceil(max_power / 100) * 100  # Round up to nearest 100
+    ax2.set_ylim(0, power_limit)
+    ax2.yaxis.set_major_locator(plt.MultipleLocator(200))  # 100-unit increments
+
+    # Save plot
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches="tight", pad_inches=0.02)
     plt.close()
@@ -687,22 +579,13 @@ def main():
 
     try:
         # Create output directory
-        import os
-
         os.makedirs(args.output_dir, exist_ok=True)
 
         # Read all data at once
         data = read_excel_data(args.excel_path)
 
-        # Generate requested plots
         if args.plot_type in ["layer_metrics", "all"]:
             if data["layer_metrics"] is not None:
-                # Plot layer energy metrics
-                output_path = os.path.join(args.output_dir, "layer_energy_metrics.png")
-                plot_layer_energy_metrics_tab(data["layer_metrics"], output_path)
-                print(f"Layer energy metrics plot saved to: {output_path}")
-
-                # Plot other layer metrics
                 output_path = os.path.join(args.output_dir, "layer_metrics.png")
                 plot_layer_metrics_tab(
                     data["layer_metrics"], data["overall_performance"], output_path
@@ -710,13 +593,15 @@ def main():
                 print(f"Layer metrics plot saved to: {output_path}")
             else:
                 print(
-                    "Warning: Could not generate layer metrics plots - required sheets not found"
+                    "Warning: Could not generate layer metrics plot - required sheet not found"
                 )
 
         if args.plot_type in ["overall_performance", "all"]:
             if data["overall_performance"] is not None:
                 output_path = os.path.join(args.output_dir, "overall_performance.png")
-                plot_overall_performance_tab(data["overall_performance"], output_path)
+                plot_overall_performance_tab(
+                    data["overall_performance"], data["layer_metrics"], output_path
+                )
                 print(f"Overall performance plot saved to: {output_path}")
             else:
                 print(
@@ -724,9 +609,11 @@ def main():
                 )
 
         if args.plot_type in ["energy_analysis", "all"]:
-            if data["energy_analysis"] is not None:
+            if data["layer_metrics"] is not None:
                 output_path = os.path.join(args.output_dir, "energy_analysis.png")
-                plot_energy_analysis_tab(data["energy_analysis"], output_path)
+                plot_energy_analysis_tab(
+                    data["layer_metrics"], data["layer_metrics"], output_path
+                )
                 print(f"Energy analysis plot saved to: {output_path}")
             else:
                 print(
