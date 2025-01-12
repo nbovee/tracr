@@ -233,6 +233,7 @@ class BaseExperiment(ExperimentInterface):
             # Get layer information and timing data from the model
             layer_info = self.model.forward_info
             timing_data = self.model.layer_timing_data
+            energy_data = getattr(self.model, "layer_energy_data", {})
 
             for layer_idx, info in layer_info.items():
                 output_bytes = info.get("output_bytes")
@@ -241,33 +242,69 @@ class BaseExperiment(ExperimentInterface):
                 layer_times = timing_data.get(layer_idx, [])
                 avg_time = sum(layer_times) / len(layer_times) if layer_times else None
 
+                # Calculate average energy metrics if available
+                layer_energy = energy_data.get(layer_idx, [])
+                if layer_energy:
+                    try:
+                        avg_processing_energy = sum(
+                            float(e.get("processing_energy", 0.0)) for e in layer_energy
+                        ) / len(layer_energy)
+                        avg_communication_energy = sum(
+                            float(e.get("communication_energy", 0.0))
+                            for e in layer_energy
+                        ) / len(layer_energy)
+                        avg_power_reading = sum(
+                            float(e.get("power_reading", 0.0)) for e in layer_energy
+                        ) / len(layer_energy)
+                        avg_gpu_utilization = sum(
+                            float(e.get("gpu_utilization", 0.0)) for e in layer_energy
+                        ) / len(layer_energy)
+                        avg_total_energy = (
+                            avg_processing_energy + avg_communication_energy
+                        )
+                    except (TypeError, ValueError) as e:
+                        logger.error(
+                            f"Error calculating averages for layer {layer_idx}: {e}"
+                        )
+                        avg_processing_energy = 0.0
+                        avg_communication_energy = 0.0
+                        avg_power_reading = 0.0
+                        avg_gpu_utilization = 0.0
+                        avg_total_energy = 0.0
+                else:
+                    avg_processing_energy = 0.0
+                    avg_communication_energy = 0.0
+                    avg_power_reading = 0.0
+                    avg_gpu_utilization = 0.0
+                    avg_total_energy = 0.0
+
                 logger.debug(
-                    f"Layer {layer_idx} - Time: {avg_time}, Bytes: {output_bytes}"
+                    f"Layer {layer_idx} - "
+                    f"Time: {avg_time if avg_time is not None else 'N/A'}, "
+                    f"Bytes: {output_bytes if output_bytes is not None else 'N/A'}, "
+                    f"Processing Energy: {avg_processing_energy:.6f}J, "
+                    f"Communication Energy: {avg_communication_energy:.6f}J, "
+                    f"Total Energy: {avg_total_energy:.6f}J"
                 )
 
                 metrics_entry = {
                     "Split Layer": split_idx,
                     "Layer ID": layer_idx,
                     "Layer Type": info.get("layer_type", "Unknown"),
+                    "Layer Latency (ms)": (
+                        float(avg_time) * 1e3 if avg_time is not None else 0.0
+                    ),
+                    "Output Size (MB)": (
+                        float(output_bytes) / (1024 * 1024)
+                        if output_bytes is not None
+                        else 0.0
+                    ),
+                    "Processing Energy (J)": float(avg_processing_energy),
+                    "Communication Energy (J)": float(avg_communication_energy),
+                    "Power Reading (W)": float(avg_power_reading),
+                    "GPU Utilization (%)": float(avg_gpu_utilization),
+                    "Total Energy (J)": float(avg_total_energy),
                 }
-
-                # Safely convert inference time to ms
-                if avg_time is not None:
-                    metrics_entry["Layer Latency (ms)"] = float(avg_time) * 1e3
-                    logger.debug(
-                        f"Layer {layer_idx} latency: {metrics_entry['Layer Latency (ms)']:.3f} ms"
-                    )
-                else:
-                    metrics_entry["Layer Latency (ms)"] = 0.0
-                    logger.warning(f"No timing data for layer {layer_idx}")
-
-                # Safely convert output bytes to MB
-                if output_bytes is not None:
-                    metrics_entry["Output Size (MB)"] = float(output_bytes) / (
-                        1024 * 1024
-                    )
-                else:
-                    metrics_entry["Output Size (MB)"] = 0.0
 
                 layer_metrics.append(metrics_entry)
 
@@ -291,6 +328,25 @@ class BaseExperiment(ExperimentInterface):
             if not layer_metrics_df.empty:
                 layer_metrics_df.to_excel(
                     writer, sheet_name="Layer Metrics", index=False
+                )
+
+                # Create energy summary DataFrame
+                energy_summary = (
+                    layer_metrics_df.groupby("Split Layer")
+                    .agg(
+                        {
+                            "Processing Energy (J)": "sum",
+                            "Communication Energy (J)": "sum",
+                            "Total Energy (J)": "sum",
+                            "Power Reading (W)": "mean",
+                            "GPU Utilization (%)": "mean",
+                        }
+                    )
+                    .reset_index()
+                )
+
+                energy_summary.to_excel(
+                    writer, sheet_name="Energy Analysis", index=False
                 )
             else:
                 logger.warning("No layer metrics were collected during the experiment")

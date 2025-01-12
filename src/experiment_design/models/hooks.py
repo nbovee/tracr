@@ -58,6 +58,14 @@ def create_forward_prehook(
             if layer_index == 0:
                 wrapped_model.banked_output = {}
                 wrapped_model.layer_times = {}  # Initialize timing storage
+                # Start energy measurement for the entire forward pass
+                if (
+                    hasattr(wrapped_model, "energy_monitor")
+                    and wrapped_model.energy_monitor
+                ):
+                    wrapped_model.energy_monitor.start_measurement()
+                    wrapped_model.current_energy_start = time.time()
+                    logger.debug("Started energy monitoring for forward pass")
 
         # case if we are on the Cloud Device
         else:
@@ -65,7 +73,7 @@ def create_forward_prehook(
                 wrapped_model.banked_output = layer_input[0]()
                 hook_output = torch.randn(1, *wrapped_model.input_size).to(device)
 
-        # Start timing the layer execution
+        # Start timing measurement
         if wrapped_model.log:
             start_time = time.perf_counter()
             wrapped_model.layer_times[layer_index] = start_time
@@ -102,6 +110,160 @@ def create_forward_posthook(
                 logger.debug(
                     f"Layer {layer_index} elapsed time: {elapsed_time:.6f} seconds"
                 )
+
+                # Store output size
+                if isinstance(output, torch.Tensor):
+                    output_bytes = output.element_size() * output.nelement()
+                    wrapped_model.forward_info[layer_index][
+                        "output_bytes"
+                    ] = output_bytes
+
+                # Collect energy metrics at the end of the forward pass
+                if (
+                    layer_index == wrapped_model.stop_i
+                    and hasattr(wrapped_model, "energy_monitor")
+                    and wrapped_model.energy_monitor
+                ):
+                    try:
+                        # Get energy measurements
+                        energy_result = wrapped_model.energy_monitor.end_measurement()
+                        if (
+                            not isinstance(energy_result, tuple)
+                            or len(energy_result) != 2
+                        ):
+                            raise ValueError("Invalid energy measurement result")
+                        energy, elapsed_time = energy_result
+
+                        # Get system metrics
+                        metrics = wrapped_model.energy_monitor.get_system_metrics()
+                        if not isinstance(metrics, dict):
+                            metrics = {}
+
+                        # Calculate energy per layer based on time proportion
+                        total_inference_time = 0.0
+                        layer_times = {}
+
+                        # First pass: collect valid timing data
+                        for idx in wrapped_model.forward_info:
+                            time_value = wrapped_model.forward_info[idx].get(
+                                "inference_time"
+                            )
+                            if isinstance(time_value, (int, float)) and time_value > 0:
+                                layer_times[idx] = float(time_value)
+                                total_inference_time += float(time_value)
+
+                        # Second pass: calculate and store energy metrics
+                        for idx in wrapped_model.forward_info:
+                            try:
+                                # Calculate processing energy
+                                layer_time = layer_times.get(idx, 0.0)
+                                if (
+                                    total_inference_time > 0
+                                    and isinstance(energy, (int, float))
+                                    and energy > 0
+                                ):
+                                    layer_proportion = layer_time / total_inference_time
+                                    layer_energy = float(energy * layer_proportion)
+                                else:
+                                    layer_energy = 0.0
+
+                                # Calculate communication energy
+                                output_bytes = wrapped_model.forward_info[idx].get(
+                                    "output_bytes"
+                                )
+                                if (
+                                    isinstance(output_bytes, (int, float))
+                                    and output_bytes > 0
+                                ):
+                                    NETWORK_ENERGY_PER_BYTE = (
+                                        0.00000035  # Joules per byte for WiFi
+                                    )
+                                    comm_energy = float(
+                                        output_bytes * NETWORK_ENERGY_PER_BYTE
+                                    )
+                                else:
+                                    comm_energy = 0.0
+
+                                # Get power metrics with validation
+                                try:
+                                    power_reading = float(
+                                        metrics.get("power_reading", 0.0)
+                                    )
+                                    gpu_utilization = float(
+                                        metrics.get("gpu_utilization", 0.0)
+                                    )
+                                except (TypeError, ValueError):
+                                    power_reading = 0.0
+                                    gpu_utilization = 0.0
+
+                                # Calculate total energy
+                                total_energy = layer_energy + comm_energy
+
+                                # Prepare metrics dictionary
+                                energy_metrics = {
+                                    "processing_energy": layer_energy,
+                                    "communication_energy": comm_energy,
+                                    "power_reading": power_reading,
+                                    "gpu_utilization": gpu_utilization,
+                                    "total_energy": total_energy,
+                                }
+
+                                # Initialize storage if needed
+                                if not hasattr(wrapped_model, "layer_energy_data"):
+                                    wrapped_model.layer_energy_data = {}
+                                if idx not in wrapped_model.layer_energy_data:
+                                    wrapped_model.layer_energy_data[idx] = []
+
+                                # Store metrics
+                                wrapped_model.layer_energy_data[idx].append(
+                                    energy_metrics
+                                )
+                                wrapped_model.forward_info[idx].update(energy_metrics)
+
+                                logger.debug(
+                                    f"Layer {idx} - Processing Energy: {layer_energy:.6f}J, "
+                                    f"Communication Energy: {comm_energy:.6f}J, "
+                                    f"Power: {power_reading:.3f}W, "
+                                    f"GPU Util: {gpu_utilization:.1f}%"
+                                )
+
+                            except Exception as layer_error:
+                                logger.error(
+                                    f"Error processing energy metrics for layer {idx}: {layer_error}"
+                                )
+                                # Set safe defaults for this layer
+                                safe_metrics = {
+                                    "processing_energy": 0.0,
+                                    "communication_energy": 0.0,
+                                    "power_reading": 0.0,
+                                    "gpu_utilization": 0.0,
+                                    "total_energy": 0.0,
+                                }
+                                wrapped_model.forward_info[idx].update(safe_metrics)
+                                if (
+                                    hasattr(wrapped_model, "layer_energy_data")
+                                    and idx in wrapped_model.layer_energy_data
+                                ):
+                                    wrapped_model.layer_energy_data[idx].append(
+                                        safe_metrics
+                                    )
+
+                        logger.debug(
+                            "Successfully stored energy metrics for all layers"
+                        )
+
+                    except Exception as e:
+                        logger.error(f"Error collecting energy metrics: {e}")
+                        # Initialize all layers with safe defaults
+                        safe_metrics = {
+                            "processing_energy": 0.0,
+                            "communication_energy": 0.0,
+                            "power_reading": 0.0,
+                            "gpu_utilization": 0.0,
+                            "total_energy": 0.0,
+                        }
+                        for idx in wrapped_model.forward_info:
+                            wrapped_model.forward_info[idx].update(safe_metrics)
 
         # case if we are on the Edge Device
         if wrapped_model.start_i == 0:

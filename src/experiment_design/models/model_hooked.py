@@ -22,6 +22,7 @@ from .hooks import (
 from .templates import LAYER_TEMPLATE
 from src.api import MasterDict
 from src.interface import ModelInterface
+from .power_monitor import GPUEnergyMonitor
 
 atexit.register(torch.cuda.empty_cache)
 logger = logging.getLogger("split_computing_logger")
@@ -56,16 +57,31 @@ class WrappedModel(BaseModel, ModelInterface):
         self.save_layers = getattr(self.model, "save", {})
         self.layer_times = {}  # Add timing storage
         self.layer_timing_data = {}  # Add persistent timing data storage
+        self.layer_energy_data = {}  # Add persistent energy data storage
+
+        # Initialize GPU energy monitor
+        try:
+            self.energy_monitor = GPUEnergyMonitor()
+            logger.info("GPU energy monitoring initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize GPU energy monitoring: {e}")
+            self.energy_monitor = None
 
         # Initialize hook-related attributes
         self.start_i: Optional[int] = None
         self.stop_i: Optional[int] = None
         self.banked_output: Optional[Any] = None
         self.log = False
+        self.current_energy_start = None  # Track energy measurement start
 
         # Setup model layers and hooks
         self._setup_model()
         logger.info("WrappedModel initialization complete")
+
+    def __del__(self):
+        """Cleanup resources."""
+        if hasattr(self, "energy_monitor") and self.energy_monitor:
+            self.energy_monitor.cleanup()
 
     def _setup_model(self) -> None:
         """Set up model layers, hooks, and initialize state."""
@@ -275,3 +291,20 @@ class WrappedModel(BaseModel, ModelInterface):
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
         """Load state dictionary into model."""
         self.model.load_state_dict(state_dict)
+
+    def get_layer_metrics(self) -> Dict[int, Dict[str, Any]]:
+        """Get collected metrics for all layers."""
+        metrics = {}
+        for layer_idx, info in self.forward_info.items():
+            metrics[layer_idx] = {
+                "layer_id": info.get("layer_id"),
+                "layer_type": info.get("layer_type"),
+                "inference_time": info.get("inference_time"),
+                "output_bytes": info.get("output_bytes"),
+                "processing_energy": info.get("processing_energy", 0.0),
+                "communication_energy": info.get("communication_energy", 0.0),
+                "power_reading": info.get("power_reading", 0.0),
+                "gpu_utilization": info.get("gpu_utilization", 0.0),
+                "total_energy": info.get("total_energy", 0.0),
+            }
+        return metrics
