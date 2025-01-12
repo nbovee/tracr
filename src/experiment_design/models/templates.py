@@ -3,12 +3,8 @@
 LAYER_TEMPLATE = {
     "layer_id": None,
     "layer_type": None,
-    "input_shape": None,
-    "output_shape": None,
-    "params": None,
     "inference_time": None,
     "output_bytes": None,
-    "completed_by_node": None,
 }
 
 # Dataset-specific weight mappings

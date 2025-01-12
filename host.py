@@ -181,7 +181,7 @@ class ExperimentHost:
         try:
             if hasattr(self.experiment, "network_client"):
                 self.experiment.network_client.cleanup()
-            self._copy_results_to_server()
+            # self._copy_results_to_server()
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
         finally:

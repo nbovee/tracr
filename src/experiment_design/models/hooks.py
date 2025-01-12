@@ -3,6 +3,7 @@
 import logging
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 from dataclasses import dataclass
+import time
 
 import torch
 from torch import Tensor
@@ -48,36 +49,27 @@ def create_forward_prehook(
     logger.debug(f"Creating forward pre-hook for layer {layer_index} - {layer_name}")
 
     def pre_hook(module: torch.nn.Module, layer_input: tuple) -> Any:
-        """Execute pre-nn.Module hook operations such as initializing logging & input reinsertion."""
+        """Execute pre-nn.Module hook operations."""
         logger.debug(f"Start prehook {layer_index} - {layer_name}")
         hook_output = layer_input
 
         # case if we are on the Edge Device
         if wrapped_model.start_i == 0:
-            # Handling for Edge Device first entrance to model
             if layer_index == 0:
                 wrapped_model.banked_output = {}
+                wrapped_model.layer_times = {}  # Initialize timing storage
 
         # case if we are on the Cloud Device
         else:
-            # Handling for Cloud Device first entrance to model
             if layer_index == 0:
-                # grab dictionary of saved Edge Device outputs from layer_input
                 wrapped_model.banked_output = layer_input[0]()
-                # create dummy output on device to pass to next layer
                 hook_output = torch.randn(1, *wrapped_model.input_size).to(device)
 
-        # Log metrics if needed
-        if wrapped_model.log and layer_index >= wrapped_model.start_i:
-            wrapped_model.forward_info[layer_index][
-                "completed_by_node"
-            ] = wrapped_model.node_name
-            wrapped_model.forward_info[layer_index][
-                "inference_time"
-            ] = -wrapped_model.timer()
-            wrapped_model.forward_info[layer_index][
-                "start_energy"
-            ] = wrapped_model.power_meter.get_energy()
+        # Start timing the layer execution
+        if wrapped_model.log:
+            start_time = time.perf_counter()
+            wrapped_model.layer_times[layer_index] = start_time
+            logger.debug(f"Layer {layer_index} start time recorded: {start_time}")
 
         logger.debug(f"End prehook {layer_index} - {layer_name}")
         return hook_output
@@ -97,14 +89,19 @@ def create_forward_posthook(
     logger.debug(f"Creating forward post-hook for layer {layer_index} - {layer_name}")
 
     def post_hook(module: torch.nn.Module, layer_input: tuple, output: Any) -> Any:
-        """Execute post-nn.Module hook operations such as finalizing logging & nn.Module output packing."""
+        """Execute post-nn.Module hook operations."""
         logger.debug(f"Start posthook {layer_index} - {layer_name}")
 
-        # Finish logging if needed
-        if wrapped_model.log and layer_index >= wrapped_model.start_i:
-            wrapped_model.forward_info[layer_index][
-                "inference_time"
-            ] += wrapped_model.timer()
+        # Complete timing measurement
+        if wrapped_model.log:
+            if layer_index in wrapped_model.layer_times:
+                end_time = time.perf_counter()
+                start_time = wrapped_model.layer_times[layer_index]
+                elapsed_time = end_time - start_time
+                wrapped_model.forward_info[layer_index]["inference_time"] = elapsed_time
+                logger.debug(
+                    f"Layer {layer_index} elapsed time: {elapsed_time:.6f} seconds"
+                )
 
         # case if we are on the Edge Device
         if wrapped_model.start_i == 0:
@@ -113,6 +110,16 @@ def create_forward_posthook(
                 wrapped_model.banked_output[layer_index] = output
             if prepare_exit:
                 logger.info(f"Exit signal: during posthook {layer_index}")
+                # Save timing data for all completed layers before exit
+                for idx in range(layer_index + 1):
+                    if idx in wrapped_model.layer_times:
+                        end_time = time.perf_counter()
+                        start_time = wrapped_model.layer_times[idx]
+                        elapsed_time = end_time - start_time
+                        wrapped_model.forward_info[idx]["inference_time"] = elapsed_time
+                        logger.debug(
+                            f"Saved final timing for layer {idx}: {elapsed_time:.6f} seconds"
+                        )
                 raise HookExitException(wrapped_model.banked_output)
 
         # case if we are on the Cloud Device

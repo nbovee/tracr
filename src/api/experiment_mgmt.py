@@ -214,6 +214,7 @@ class BaseExperiment(ExperimentInterface):
 
     def save_results(self, results: List[Tuple[int, float, float, float]]) -> None:
         """Save experiment results and power metrics to Excel file."""
+        # Create main performance DataFrame
         df = pd.DataFrame(
             results,
             columns=[
@@ -227,23 +228,87 @@ class BaseExperiment(ExperimentInterface):
             df["Host Time"] + df["Travel Time"] + df["Server Time"]
         )
 
+        # Create layer metrics DataFrame
+        layer_metrics = []
+        for split_idx, _, _, _ in results:
+            logger.debug(f"Processing metrics for split layer {split_idx}")
+
+            # Get layer information and timing data from the model
+            layer_info = self.model.forward_info
+            timing_data = self.model.layer_timing_data
+
+            for layer_idx, info in layer_info.items():
+                output_bytes = info.get("output_bytes")
+
+                # Calculate average timing if available
+                layer_times = timing_data.get(layer_idx, [])
+                avg_time = sum(layer_times) / len(layer_times) if layer_times else None
+
+                logger.debug(
+                    f"Layer {layer_idx} - Time: {avg_time}, Bytes: {output_bytes}"
+                )
+
+                metrics_entry = {
+                    "Split Layer": split_idx,
+                    "Layer ID": layer_idx,
+                    "Layer Type": info.get("layer_type", "Unknown"),
+                }
+
+                # Safely convert inference time to ms
+                if avg_time is not None:
+                    metrics_entry["Layer Latency (ms)"] = float(avg_time) * 1e3
+                    logger.debug(
+                        f"Layer {layer_idx} latency: {metrics_entry['Layer Latency (ms)']:.3f} ms"
+                    )
+                else:
+                    metrics_entry["Layer Latency (ms)"] = 0.0
+                    logger.warning(f"No timing data for layer {layer_idx}")
+
+                # Safely convert output bytes to MB
+                if output_bytes is not None:
+                    metrics_entry["Output Size (MB)"] = float(output_bytes) / (
+                        1024 * 1024
+                    )
+                else:
+                    metrics_entry["Output Size (MB)"] = 0.0
+
+                layer_metrics.append(metrics_entry)
+
+        layer_metrics_df = (
+            pd.DataFrame(layer_metrics) if layer_metrics else pd.DataFrame()
+        )
+
+        if layer_metrics_df.empty:
+            logger.error(
+                "No layer metrics were collected! Check if hooks are running and logging is enabled."
+            )
+        else:
+            logger.info(f"Collected metrics for {len(layer_metrics_df)} layer entries")
+
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         output_file = self.paths.model_dir / f"analysis_{timestamp}.xlsx"
 
-        if self.power_metrics:
-            power_df = pd.DataFrame(self.power_metrics)
+        with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+            df.to_excel(writer, sheet_name="Overall Performance", index=False)
 
-            try:
-                power_analysis = PowerAnalyzer.analyze_metrics(self.power_metrics)
-                analysis_df, gpu_util_df, temp_df = (
-                    PowerAnalyzer.create_analysis_dataframes(power_analysis)
+            if not layer_metrics_df.empty:
+                layer_metrics_df.to_excel(
+                    writer, sheet_name="Layer Metrics", index=False
                 )
+                logger.info(f"Layer metrics summary:\n{layer_metrics_df.describe()}")
+            else:
+                logger.warning("No layer metrics were collected during the experiment")
 
-                with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
-                    df.to_excel(writer, sheet_name="Performance", index=False)
-                    power_df.to_excel(
-                        writer, sheet_name="Raw_Power_Metrics", index=False
+            if self.power_metrics:
+                power_df = pd.DataFrame(self.power_metrics)
+                power_df.to_excel(writer, sheet_name="Raw_Power_Metrics", index=False)
+
+                try:
+                    power_analysis = PowerAnalyzer.analyze_metrics(self.power_metrics)
+                    analysis_df, gpu_util_df, temp_df = (
+                        PowerAnalyzer.create_analysis_dataframes(power_analysis)
                     )
+
                     analysis_df.to_excel(
                         writer, sheet_name="Power_Analysis", index=False
                     )
@@ -253,19 +318,14 @@ class BaseExperiment(ExperimentInterface):
                     temp_df.to_excel(
                         writer, sheet_name="Temperature_Timeline", index=False
                     )
+                except Exception as e:
+                    logger.error(f"Error during power analysis: {e}")
 
-                logger.info(f"Results and power analysis saved to {output_file}")
-
-            except Exception as e:
-                logger.error(f"Error during power analysis: {e}")
-                with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
-                    df.to_excel(writer, sheet_name="Performance", index=False)
-                    power_df.to_excel(
-                        writer, sheet_name="Raw_Power_Metrics", index=False
-                    )
-        else:
-            df.to_excel(output_file, index=False)
-            logger.info(f"Results saved to {output_file}")
+        logger.info(f"Results saved to {output_file}")
+        if not layer_metrics:
+            logger.error(
+                "No layer-specific metrics were collected. Check if hooks are properly recording data."
+            )
 
 
 class NetworkedExperiment(BaseExperiment):
@@ -276,6 +336,7 @@ class NetworkedExperiment(BaseExperiment):
         super().__init__(config, host, port)
         self.network_client = create_network_client(config, host, port)
         self.compress_data = DataCompression(config.get("compression"))
+        self.layer_timing_data = {}  # Store timing data across runs
 
     def process_single_image(
         self,
@@ -291,6 +352,21 @@ class NetworkedExperiment(BaseExperiment):
                 host_start = time.time()
                 inputs = inputs.to(self.device, non_blocking=True)
                 output = self._get_model_output(inputs, split_layer)
+
+                # Collect layer timing data right after model output
+                if hasattr(self.model, "forward_info"):
+                    for layer_idx, info in self.model.forward_info.items():
+                        if info.get("inference_time") is not None:
+                            if split_layer not in self.layer_timing_data:
+                                self.layer_timing_data[split_layer] = {}
+                            if layer_idx not in self.layer_timing_data[split_layer]:
+                                self.layer_timing_data[split_layer][layer_idx] = []
+                            self.layer_timing_data[split_layer][layer_idx].append(
+                                info["inference_time"]
+                            )
+                            logger.debug(
+                                f"Collected timing for layer {layer_idx}: {info['inference_time']:.6f} seconds"
+                            )
 
                 # Move inputs back to CPU for image processing
                 original_image = self._get_original_image(inputs.cpu(), image_file)
@@ -364,6 +440,10 @@ class NetworkedExperiment(BaseExperiment):
         split_dir = self.paths.images_dir / f"split_{split_layer}"
         split_dir.mkdir(exist_ok=True)
 
+        # Initialize timing data for this split layer if not exists
+        if split_layer not in self.layer_timing_data:
+            self.layer_timing_data[split_layer] = {}
+
         with torch.no_grad():
             for batch in tqdm(
                 self.data_loader, desc=f"Processing at split {split_layer}"
@@ -374,6 +454,13 @@ class NetworkedExperiment(BaseExperiment):
             total_host = sum(t.host_time for t in times)
             total_travel = sum(t.travel_time for t in times)
             total_server = sum(t.server_time for t in times)
+
+            # Log summary of collected timing data
+            for layer_idx, timings in self.layer_timing_data[split_layer].items():
+                avg_time = sum(timings) / len(timings) if timings else 0
+                logger.debug(
+                    f"Layer {layer_idx} average time: {avg_time:.6f} seconds over {len(timings)} samples"
+                )
 
             self._log_performance_summary(total_host, total_travel, total_server)
             return split_layer, total_host, total_travel, total_server
@@ -404,6 +491,121 @@ class NetworkedExperiment(BaseExperiment):
             )
             if result is not None
         ]
+
+    def save_results(self, results: List[Tuple[int, float, float, float]]) -> None:
+        """Save experiment results and power metrics to Excel file."""
+        # Create main performance DataFrame
+        df = pd.DataFrame(
+            results,
+            columns=[
+                "Split Layer Index",
+                "Host Time",
+                "Travel Time",
+                "Server Time",
+            ],
+        )
+        df["Total Processing Time"] = (
+            df["Host Time"] + df["Travel Time"] + df["Server Time"]
+        )
+
+        # Create layer metrics DataFrame
+        layer_metrics = []
+        for split_idx, _, _, _ in results:
+            logger.debug(f"Processing metrics for split layer {split_idx}")
+
+            # Get layer information and timing data from the model
+            layer_info = self.model.forward_info
+            timing_data = self.model.layer_timing_data
+
+            for layer_idx, info in layer_info.items():
+                output_bytes = info.get("output_bytes")
+
+                # Calculate average timing if available
+                layer_times = timing_data.get(layer_idx, [])
+                avg_time = sum(layer_times) / len(layer_times) if layer_times else None
+
+                logger.debug(
+                    f"Layer {layer_idx} - Time: {avg_time}, Bytes: {output_bytes}"
+                )
+
+                metrics_entry = {
+                    "Split Layer": split_idx,
+                    "Layer ID": layer_idx,
+                    "Layer Type": info.get("layer_type", "Unknown"),
+                }
+
+                # Safely convert inference time to ms
+                if avg_time is not None:
+                    metrics_entry["Layer Latency (ms)"] = float(avg_time) * 1e3
+                    logger.debug(
+                        f"Layer {layer_idx} latency: {metrics_entry['Layer Latency (ms)']:.3f} ms"
+                    )
+                else:
+                    metrics_entry["Layer Latency (ms)"] = 0.0
+                    logger.warning(f"No timing data for layer {layer_idx}")
+
+                # Safely convert output bytes to MB
+                if output_bytes is not None:
+                    metrics_entry["Output Size (MB)"] = float(output_bytes) / (
+                        1024 * 1024
+                    )
+                else:
+                    metrics_entry["Output Size (MB)"] = 0.0
+
+                layer_metrics.append(metrics_entry)
+
+        layer_metrics_df = (
+            pd.DataFrame(layer_metrics) if layer_metrics else pd.DataFrame()
+        )
+
+        if layer_metrics_df.empty:
+            logger.error(
+                "No layer metrics were collected! Check if hooks are running and logging is enabled."
+            )
+        else:
+            logger.info(f"Collected metrics for {len(layer_metrics_df)} layer entries")
+
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        output_file = self.paths.model_dir / f"analysis_{timestamp}.xlsx"
+
+        with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+            df.to_excel(writer, sheet_name="Overall Performance", index=False)
+
+            if not layer_metrics_df.empty:
+                layer_metrics_df.to_excel(
+                    writer, sheet_name="Layer Metrics", index=False
+                )
+                logger.info(f"Layer metrics summary:\n{layer_metrics_df.describe()}")
+            else:
+                logger.warning("No layer metrics were collected during the experiment")
+
+            if self.power_metrics:
+                power_df = pd.DataFrame(self.power_metrics)
+                power_df.to_excel(writer, sheet_name="Raw_Power_Metrics", index=False)
+
+                try:
+                    power_analysis = PowerAnalyzer.analyze_metrics(self.power_metrics)
+                    analysis_df, gpu_util_df, temp_df = (
+                        PowerAnalyzer.create_analysis_dataframes(power_analysis)
+                    )
+
+                    analysis_df.to_excel(
+                        writer, sheet_name="Power_Analysis", index=False
+                    )
+                    gpu_util_df.to_excel(
+                        writer, sheet_name="GPU_Utilization_Timeline", index=False
+                    )
+                    temp_df.to_excel(
+                        writer, sheet_name="Temperature_Timeline", index=False
+                    )
+                except Exception as e:
+                    logger.error(f"Error during power analysis: {e}")
+
+        logger.info(f"Results saved to {output_file}")
+        if not layer_metrics:
+            logger.error(
+                "No layer-specific metrics were collected. Check if hooks are properly recording data."
+            )
 
 
 class LocalExperiment(BaseExperiment):

@@ -8,7 +8,7 @@ default:
 
 # LOGGING CONFIGURATIONS
 logging:
-  log_level: INFO
+  log_level: DEBUG
   log_file: logs/app.log
 
 # MODEL CONFIGURATIONS

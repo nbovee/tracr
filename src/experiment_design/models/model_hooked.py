@@ -54,6 +54,8 @@ class WrappedModel(BaseModel, ModelInterface):
         self.forward_hooks = []
         self.forward_post_hooks = []
         self.save_layers = getattr(self.model, "save", {})
+        self.layer_times = {}  # Add timing storage
+        self.layer_timing_data = {}  # Add persistent timing data storage
 
         # Initialize hook-related attributes
         self.start_i: Optional[int] = None
@@ -108,18 +110,14 @@ class WrappedModel(BaseModel, ModelInterface):
         )
 
         if layer_info:
-            # Store layer information
+            # Store only essential layer information
             self.forward_info[walk_i] = copy.deepcopy(LAYER_TEMPLATE)
             self.forward_info[walk_i].update(
                 {
-                    "depth": depth,
                     "layer_id": walk_i,
-                    "class": layer_info.class_name,
-                    "parameters": layer_info.num_params,
-                    "parameter_bytes": layer_info.param_bytes,
-                    "input_size": layer_info.input_size,
-                    "output_size": layer_info.output_size,
-                    "output_bytes": layer_info.output_bytes,
+                    "layer_type": layer_info.class_name,
+                    "output_bytes": layer_info.output_bytes,  # Size of output data
+                    "inference_time": None,  # Initialize timing metric
                 }
             )
 
@@ -155,11 +153,12 @@ class WrappedModel(BaseModel, ModelInterface):
         start_time = self.timer()
         end = self.layer_count if end == np.inf else end
         logger.info(
-            f"Starting forward pass: id={inference_id}, start={start}, end={end}"
+            f"Starting forward pass: id={inference_id}, start={start}, end={end}, log={log}"
         )
 
         # Configure forward pass
-        self.log = log
+        self.log = log  # Make sure logging is enabled
+        logger.debug(f"Logging is {'enabled' if self.log else 'disabled'}")
         self.start_i = start
         self.stop_i = end
         self._setup_inference_id(inference_id)
@@ -181,26 +180,74 @@ class WrappedModel(BaseModel, ModelInterface):
             suffix = int(suffix[0]) + 1 if suffix else 0
             self.inference_info["inference_id"] = f"{base_id}.{suffix}"
         else:
-            self.inference_info["inference_id"] = "unlogged"
-            self.log = False
+            # During warmup or when no inference_id is provided, we still want to collect timing data
+            # but we don't need to store it in the master_dict
+            self.inference_info["inference_id"] = "warmup"
 
     def _execute_forward(self, x: Union[torch.Tensor, Image.Image]) -> Any:
         """Execute model forward pass with appropriate context."""
         context = torch.no_grad() if self.get_mode() == "eval" else nullcontext()
         with context:
-            return self.model(x)
+            logger.debug("Starting model forward pass")
+            output = self.model(x)
+            logger.debug("Completed model forward pass")
+            return output
 
     def _handle_early_exit(self, exception: HookExitException) -> EarlyOutput:
         """Handle early exit from forward pass."""
         output = EarlyOutput(exception.result)
-        for i in range(self.stop_i, self.layer_count):
-            self.forward_info.pop(i, None)
+
+        # Keep timing data for completed layers
+        completed_layers = {
+            k: v for k, v in self.forward_info.items() if k <= self.stop_i
+        }
+
+        # Ensure timing data is preserved for completed layers
+        for layer_idx in completed_layers:
+            if layer_idx in self.layer_times:
+                end_time = time.perf_counter()
+                start_time = self.layer_times[layer_idx]
+                elapsed_time = end_time - start_time
+                completed_layers[layer_idx]["inference_time"] = elapsed_time
+                logger.debug(
+                    f"Preserved timing for layer {layer_idx}: {elapsed_time:.6f} seconds"
+                )
+
+        # Store the completed layers back
+        self.forward_info = completed_layers
+        logger.debug(
+            f"Preserved timing data for {len(completed_layers)} layers during early exit"
+        )
         return output
 
     def _handle_results(self, start_time: int) -> None:
         """Handle forward pass results and logging."""
-        self.inference_info["total_time"] = self.timer() - start_time
-        self.inference_info["layer_information"] = self.forward_info
+        total_time = self.timer() - start_time
+        self.inference_info["total_time"] = total_time
+        logger.debug(
+            f"Total forward pass time: {total_time/1e9:.6f} seconds"
+        )  # Convert ns to seconds
+
+        # Create a deep copy of forward info before any modifications
+        current_forward_info = copy.deepcopy(self.forward_info)
+
+        # Store the layer information in inference info
+        self.inference_info["layer_information"] = current_forward_info
+
+        # Log timing data for debugging
+        for layer_id, info in current_forward_info.items():
+            if info.get("inference_time") is not None:
+                logger.debug(
+                    f"Layer {layer_id} time: {info['inference_time']:.6f} seconds"
+                )
+                # Store timing data in layer_timing_data
+                if not hasattr(self, "layer_timing_data"):
+                    self.layer_timing_data = {}
+                if layer_id not in self.layer_timing_data:
+                    self.layer_timing_data[layer_id] = []
+                self.layer_timing_data[layer_id].append(info["inference_time"])
+            else:
+                logger.debug(f"No timing data for layer {layer_id}")
 
         if self.log and self.master_dict:
             base_id = self.inference_info["inference_id"].split(".", maxsplit=1)[0]
@@ -209,9 +256,10 @@ class WrappedModel(BaseModel, ModelInterface):
             if len(self.io_buffer) >= self.flush_buffer_size:
                 self.update_master_dict()
 
-        # Reset state
+        # Reset state for next run
         self.inference_info.clear()
         self.forward_info = copy.deepcopy(self.forward_info_empty)
+        self.layer_times.clear()  # Clear temporary timing storage
         self.banked_output = None
 
     def update_master_dict(self) -> None:
