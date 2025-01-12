@@ -209,6 +209,87 @@ class BaseExperiment(ExperimentInterface):
             f"{'='*50}\n"
         )
 
+    def _aggregate_split_energy_metrics(self, split_idx: int) -> Dict[str, float]:
+        """Aggregate energy metrics for a specific split point without modifying existing data.
+
+        Args:
+            split_idx: The split point index to aggregate metrics for
+
+        Returns:
+            Dictionary containing aggregated energy metrics for the split point
+        """
+        metrics = {
+            "processing_energy": 0.0,
+            "communication_energy": 0.0,
+            "power_reading": 0.0,
+            "gpu_utilization": 0.0,
+            "total_energy": 0.0,
+        }
+
+        # Get historical energy data
+        energy_data = getattr(self.model, "layer_energy_data", {})
+        if not energy_data:
+            return metrics
+
+        # Calculate metrics up to split point
+        valid_layers = [i for i in range(split_idx + 1)]
+        measurements = []
+
+        for layer_idx in valid_layers:
+            layer_energy = energy_data.get(layer_idx, [])
+            if layer_energy:
+                # Collect all valid measurements for this layer
+                layer_measurements = []
+                for measurement in layer_energy:
+                    if all(
+                        isinstance(measurement.get(k), (int, float))
+                        for k in metrics.keys()
+                    ):
+                        layer_measurements.append(measurement)
+                if layer_measurements:
+                    measurements.append(layer_measurements)
+
+        if not measurements:
+            return metrics
+
+        # Calculate averages across all valid measurements
+        for layer_measurements in measurements:
+            n_measurements = len(layer_measurements)
+            if n_measurements == 0:
+                continue
+
+            layer_avg = {
+                "processing_energy": sum(
+                    m["processing_energy"] for m in layer_measurements
+                )
+                / n_measurements,
+                "communication_energy": sum(
+                    m["communication_energy"] for m in layer_measurements
+                )
+                / n_measurements,
+                "power_reading": sum(m["power_reading"] for m in layer_measurements)
+                / n_measurements,
+                "gpu_utilization": sum(m["gpu_utilization"] for m in layer_measurements)
+                / n_measurements,
+            }
+
+            # Accumulate metrics
+            metrics["processing_energy"] += layer_avg["processing_energy"]
+            metrics["communication_energy"] += layer_avg["communication_energy"]
+            metrics["power_reading"] = max(
+                metrics["power_reading"], layer_avg["power_reading"]
+            )
+            metrics["gpu_utilization"] = max(
+                metrics["gpu_utilization"], layer_avg["gpu_utilization"]
+            )
+
+        # Calculate total energy
+        metrics["total_energy"] = (
+            metrics["processing_energy"] + metrics["communication_energy"]
+        )
+
+        return metrics
+
     def save_results(self, results: List[Tuple[int, float, float, float]]) -> None:
         """Save experiment results to Excel file."""
         # Create main performance DataFrame
@@ -227,83 +308,77 @@ class BaseExperiment(ExperimentInterface):
 
         # Create layer metrics DataFrame
         layer_metrics = []
+
+        # Get all available layer indices from energy data
+        energy_data = getattr(self.model, "layer_energy_data", {})
+        all_layer_indices = sorted(energy_data.keys())
+
         for split_idx, _, _, _ in results:
             logger.debug(f"Processing metrics for split layer {split_idx}")
 
-            # Get layer information and timing data from the model
-            layer_info = self.model.forward_info
-            timing_data = self.model.layer_timing_data
-            energy_data = getattr(self.model, "layer_energy_data", {})
-
-            for layer_idx, info in layer_info.items():
-                output_bytes = info.get("output_bytes")
+            # Process each layer's metrics
+            for layer_idx in all_layer_indices:
+                # Get layer info
+                layer_info = self.model.forward_info.get(layer_idx, {})
+                output_bytes = layer_info.get("output_bytes", 0)
 
                 # Calculate average timing if available
-                layer_times = timing_data.get(layer_idx, [])
-                avg_time = sum(layer_times) / len(layer_times) if layer_times else None
+                layer_times = self.model.layer_timing_data.get(layer_idx, [])
+                avg_time = sum(layer_times) / len(layer_times) if layer_times else 0.0
 
-                # Calculate average energy metrics if available
-                layer_energy = energy_data.get(layer_idx, [])
-                if layer_energy:
-                    try:
-                        avg_processing_energy = sum(
-                            float(e.get("processing_energy", 0.0)) for e in layer_energy
-                        ) / len(layer_energy)
-                        avg_communication_energy = sum(
-                            float(e.get("communication_energy", 0.0))
-                            for e in layer_energy
-                        ) / len(layer_energy)
-                        avg_power_reading = sum(
-                            float(e.get("power_reading", 0.0)) for e in layer_energy
-                        ) / len(layer_energy)
-                        avg_gpu_utilization = sum(
-                            float(e.get("gpu_utilization", 0.0)) for e in layer_energy
-                        ) / len(layer_energy)
-                        avg_total_energy = (
-                            avg_processing_energy + avg_communication_energy
-                        )
-                    except (TypeError, ValueError) as e:
-                        logger.error(
-                            f"Error calculating averages for layer {layer_idx}: {e}"
-                        )
-                        avg_processing_energy = 0.0
-                        avg_communication_energy = 0.0
-                        avg_power_reading = 0.0
-                        avg_gpu_utilization = 0.0
-                        avg_total_energy = 0.0
+                # Get layer-specific energy metrics for this split point
+                layer_energy_measurements = energy_data.get(layer_idx, [])
+
+                # Filter measurements strictly by split point
+                valid_measurements = [
+                    m
+                    for m in layer_energy_measurements
+                    if m.get("split_point") == split_idx
+                ]
+
+                # For layers after split point, use zero values
+                if layer_idx > split_idx:
+                    avg_processing_energy = 0.0
+                    avg_communication_energy = 0.0
+                    avg_power_reading = 0.0
+                    avg_gpu_utilization = 0.0
+                    total_energy = 0.0
+                elif valid_measurements:
+                    avg_processing_energy = sum(
+                        float(m.get("processing_energy", 0.0))
+                        for m in valid_measurements
+                    ) / len(valid_measurements)
+                    avg_communication_energy = sum(
+                        float(m.get("communication_energy", 0.0))
+                        for m in valid_measurements
+                    ) / len(valid_measurements)
+                    avg_power_reading = sum(
+                        float(m.get("power_reading", 0.0)) for m in valid_measurements
+                    ) / len(valid_measurements)
+                    avg_gpu_utilization = sum(
+                        float(m.get("gpu_utilization", 0.0)) for m in valid_measurements
+                    ) / len(valid_measurements)
+                    total_energy = avg_processing_energy + avg_communication_energy
                 else:
                     avg_processing_energy = 0.0
                     avg_communication_energy = 0.0
                     avg_power_reading = 0.0
                     avg_gpu_utilization = 0.0
-                    avg_total_energy = 0.0
-
-                logger.debug(
-                    f"Layer {layer_idx} - "
-                    f"Time: {avg_time if avg_time is not None else 'N/A'}, "
-                    f"Bytes: {output_bytes if output_bytes is not None else 'N/A'}, "
-                    f"Processing Energy: {avg_processing_energy:.6f}J, "
-                    f"Communication Energy: {avg_communication_energy:.6f}J, "
-                    f"Total Energy: {avg_total_energy:.6f}J"
-                )
+                    total_energy = 0.0
 
                 metrics_entry = {
                     "Split Layer": split_idx,
                     "Layer ID": layer_idx,
-                    "Layer Type": info.get("layer_type", "Unknown"),
-                    "Layer Latency (ms)": (
-                        float(avg_time) * 1e3 if avg_time is not None else 0.0
-                    ),
+                    "Layer Type": layer_info.get("layer_type", "Unknown"),
+                    "Layer Latency (ms)": float(avg_time) * 1e3,
                     "Output Size (MB)": (
-                        float(output_bytes) / (1024 * 1024)
-                        if output_bytes is not None
-                        else 0.0
+                        float(output_bytes) / (1024 * 1024) if output_bytes else 0.0
                     ),
-                    "Processing Energy (J)": float(avg_processing_energy),
-                    "Communication Energy (J)": float(avg_communication_energy),
-                    "Power Reading (W)": float(avg_power_reading),
-                    "GPU Utilization (%)": float(avg_gpu_utilization),
-                    "Total Energy (J)": float(avg_total_energy),
+                    "Processing Energy (J)": avg_processing_energy,
+                    "Communication Energy (J)": avg_communication_energy,
+                    "Power Reading (W)": avg_power_reading,
+                    "GPU Utilization (%)": avg_gpu_utilization,
+                    "Total Energy (J)": total_energy,
                 }
 
                 layer_metrics.append(metrics_entry)
