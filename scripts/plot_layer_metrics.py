@@ -122,24 +122,30 @@ def plot_layer_metrics_tab(
     max_latency = max(grouped["Layer Latency (ms)"])
     max_size = max(grouped["Output Size (MB)"])
 
-    # Left y-axis (Latency): increments of 10
-    max_latency_rounded = np.ceil(max_latency / 10) * 10
-    latency_ticks = np.arange(0, max_latency_rounded + 10, 10)
+    # Left y-axis (Latency): increments of 5
+    max_latency_rounded = np.ceil(max_latency / 5) * 5
+    latency_ticks = np.arange(0, max_latency_rounded + 5, 5)
     ax1.set_ylim(0, max_latency_rounded)
     ax1.set_yticks(latency_ticks)
+    ax1.set_yticklabels([f"{x:.0f}" for x in latency_ticks])  # Format without decimals
 
-    # Right y-axis (Output size): increments of 0.3
-    max_size_rounded = np.ceil(max_size / 0.3) * 0.3
-    size_ticks = np.arange(0, max_size_rounded + 0.3, 0.3)
+    # Right y-axis (Output size): increments of 0.5
+    max_size_rounded = np.ceil(max_size / 0.5) * 0.5
+    size_ticks = np.arange(0, max_size_rounded + 0.5, 0.5)
     ax2.set_ylim(0, max_size_rounded)
     ax2.set_yticks(size_ticks)
+    ax2.set_yticklabels([f"{x:.1f}" for x in size_ticks])  # Format to 1 decimal place
 
     # Set x-axis labels with reduced padding
     ax1.set_xticks(x)
     ax1.set_xticklabels(
-        grouped["Layer Type"], rotation=90, ha="center", va="top", fontsize=7
+        grouped["Layer Type"], 
+        rotation=45, 
+        ha="right",  # Right alignment works better for 45-degree rotation
+        va="top",
+        fontsize=7
     )
-    ax1.tick_params(axis="x", pad=2)  # Reduce padding between ticks and labels
+    ax1.tick_params(axis="x", pad=5)  # Slightly increase padding for angled labels
 
     # Add legend with adjusted position
     lines1, labels1 = ax1.get_legend_handles_labels()
@@ -187,7 +193,7 @@ def plot_overall_performance_tab(
     _set_plot_style()
 
     # Create figure with extra space at top for legend
-    fig, ax = plt.subplots(figsize=(8, 3))
+    fig, ax = plt.subplots(figsize=(8, 2.5))  # Reduced height for compactness
 
     # Colors matching the reference plot
     colors = [
@@ -226,12 +232,14 @@ def plot_overall_performance_tab(
     # Customize axes
     ax.set_ylabel("Latency (s)")
     ax.set_xticks(x)
-    ax.set_xticklabels(layer_names, rotation=90, ha="center", va="top", fontsize=7)
+    ax.set_xticklabels(layer_names, rotation=45, ha="right", va="top", fontsize=7)
+    ax.tick_params(axis="x", pad=5)
 
     # Set y-axis limits and ticks
-    y_max = 35
+    max_total = df["Total Processing Time"].max()
+    y_max = np.ceil(max_total / 50) * 50  # Round up to nearest 50
     ax.set_ylim(0, y_max)
-    major_ticks = np.arange(0, y_max + 5, 5)
+    major_ticks = np.arange(0, y_max + 50, 50)
     ax.set_yticks(major_ticks)
     ax.set_yticklabels([f"{x:.0f}" for x in major_ticks])
 
@@ -260,10 +268,11 @@ def plot_overall_performance_tab(
     best_latency = total_latencies[best_idx]
 
     # Calculate positions for annotation with consistent spacing
-    spacing = 1.5  # Consistent spacing between elements
-    text_height = best_latency + 8  # Text at top
-    star_height = text_height - spacing  # Star below text
-    arrow_end = best_latency  # Arrow end at bar top
+    spacing = 40  # Spacing between elements
+    text_height = best_latency + 120  # Text position
+    star_height = text_height - 30  # Star below text
+    arrow_start = star_height - 50  # Arrow starts well below star
+    arrow_end = best_latency + 5  # Arrow ends slightly above bar
 
     # Add "Best latency" text at top
     ax.text(best_idx, text_height, "Best latency", ha="center", va="bottom", fontsize=7)
@@ -280,20 +289,19 @@ def plot_overall_performance_tab(
         zorder=5,
     )
 
-    # Add simple vertical arrow pointing down to the bar
+    # Add arrow with longer tail and better visibility
     ax.annotate(
         "",
-        xy=(best_idx, arrow_end),  # arrow tip at bar top
-        xytext=(best_idx, star_height - spacing),  # arrow starts below star
+        xy=(best_idx, arrow_end),  # arrow tip at bar
+        xytext=(best_idx, star_height - 15),  # start arrow 15 units below star for a gap
         ha="center",
         va="bottom",
         arrowprops=dict(
-            arrowstyle="-|>",
+            arrowstyle="->",  # Simpler arrow style
             color="black",
-            linewidth=0.8,
-            mutation_scale=8,
-            shrinkA=0,
-            shrinkB=0,
+            linewidth=1.0,
+            shrinkA=0,  # Don't shrink from the start
+            shrinkB=0,  # Don't shrink from the end
         ),
     )
 
@@ -345,29 +353,24 @@ def plot_raw_power_metrics_tab(df: pd.DataFrame, output_path: str) -> None:
 
 
 def plot_energy_analysis_tab(
-    df: pd.DataFrame, layer_metrics_df: pd.DataFrame, output_path: str
+    layer_metrics_df: pd.DataFrame, energy_analysis_df: pd.DataFrame, output_path: str
 ) -> None:
     """Plot energy analysis metrics showing mobile processing and data communication energy."""
     # Set style
     _set_plot_style()
 
-    # Create figure with extra space at top for legend
-    fig, ax = plt.subplots(figsize=(8, 3))
+    # Create figure with extra space at top for legend but slightly more compact
+    fig, ax = plt.subplots(figsize=(8, 2.5))  # Reduced height from 3 to 2.5
     ax2 = ax.twinx()  # Create second y-axis for power metrics
 
-    # Get valid layer IDs from overall performance tab
-    valid_layer_ids = df[df["Layer Type"] != "Detect"]["Layer ID"].unique()
-
-    # Extract data for each split layer
-    split_layers = sorted(
-        df[df["Layer ID"].isin(valid_layer_ids)]["Split Layer"].unique()
-    )
+    # Extract data from energy analysis sheet
+    split_layers = sorted(energy_analysis_df["Split Layer"].unique())
     mobile_energy = []
     comm_energy = []
     power_readings = []
 
     for split in split_layers:
-        split_df = df[df["Split Layer"] == split]
+        split_df = layer_metrics_df[layer_metrics_df["Split Layer"] == split]
         # Sum processing energy up to split point
         mobile_energy.append(
             split_df[split_df["Layer ID"] <= split]["Processing Energy (J)"].sum()
@@ -376,10 +379,10 @@ def plot_energy_analysis_tab(
         comm_energy.append(
             split_df[split_df["Layer ID"] == split]["Communication Energy (J)"].iloc[0]
         )
-        # Get power reading at split point
+        # Get power reading directly from energy analysis sheet
         power_readings.append(
-            split_df[split_df["Layer ID"] == split]["Power Reading (W)"].iloc[0] * 1000
-        )  # Convert W to mW
+            energy_analysis_df[energy_analysis_df["Split Layer"] == split]["Power Reading (W)"].iloc[0] * 1000  # Convert W to mW
+        )
 
     # Colors matching the reference image
     color_comm = "#e67e22"  # Darker orange for data communication
@@ -440,18 +443,20 @@ def plot_energy_analysis_tab(
     ax.set_ylabel("Energy (J)")
     ax2.set_ylabel("Power (mW)", color=color_power)  # Match power line color
     ax.set_xticks(x)
-    ax.set_xticklabels(layer_names, rotation=90, ha="center", va="top", fontsize=7)
+    ax.set_xticklabels(layer_names, rotation=45, ha="right", va="top", fontsize=7)
+    ax.tick_params(axis="x", pad=5)
 
     # Calculate total energy and find the best index
     total_energy = [m + c for m, c in zip(mobile_energy, comm_energy)]
     best_idx = np.argmin(total_energy)
-    best_latency = total_energy[best_idx]
+    best_energy = total_energy[best_idx]
 
     # Calculate positions for annotation with consistent spacing
-    spacing = 0.05  # Consistent spacing between elements
-    text_height = best_latency + 0.2  # Text at top
-    star_height = text_height - spacing  # Star below text
-    arrow_end = best_latency  # Arrow end at bar top
+    spacing = 0.15  # Increased spacing between elements
+    text_height = best_energy + 0.45  # Text position
+    star_height = text_height - 0.15  # Star below text
+    arrow_start = star_height - 0.4  # Increased arrow tail length (was 0.2)
+    arrow_end = best_energy + 0.02  # Arrow ends slightly above bar
 
     # Add "Best energy" text at top
     ax.text(best_idx, text_height, "Best energy", ha="center", va="bottom", fontsize=7)
@@ -468,20 +473,19 @@ def plot_energy_analysis_tab(
         zorder=5,
     )
 
-    # Add simple vertical arrow pointing down to the bar
+    # Add arrow with longer tail and better visibility
     ax.annotate(
         "",
-        xy=(best_idx, arrow_end),  # arrow tip at bar top
-        xytext=(best_idx, star_height - spacing),  # arrow starts below star
+        xy=(best_idx, arrow_end),  # arrow tip at bar
+        xytext=(best_idx, star_height - 0.08),  # increased gap from star (was -0.05)
         ha="center",
         va="bottom",
         arrowprops=dict(
-            arrowstyle="-|>",
+            arrowstyle="->",  # Simpler arrow style
             color="black",
-            linewidth=0.8,
-            mutation_scale=8,
-            shrinkA=0,
-            shrinkB=0,
+            linewidth=1.0,
+            shrinkA=0,  # Don't shrink from the start
+            shrinkB=0,  # Don't shrink from the end
         ),
     )
 
@@ -496,7 +500,6 @@ def plot_energy_analysis_tab(
     ax2.tick_params(axis="y", colors=color_power)  # Match power line color
 
     # Add legend at the top of the plot
-    # Get handles and labels in the correct order
     handles = [bars1, bars2] + line_power
     labels = ["Data communication", "Mobile processing", "Power (mW)"]
 
@@ -512,22 +515,19 @@ def plot_energy_analysis_tab(
         fontsize=7,
     )
 
-    # Set y-axis limits and ticks for energy
+    # Set y-axis limits and ticks for energy with 0.3 increments
     ymax = max(total_energy)
-    # Round up to nearest 0.1
-    ymax_rounded = np.ceil(ymax * 10) / 10
-    ax.set_ylim(0, ymax_rounded)
-    # Set ticks at 0.1 intervals
-    yticks = np.arange(0, ymax_rounded + 0.1, 0.1)
-    ax.set_yticks(yticks)
-    # Format tick labels to 1 decimal place
-    ax.set_yticklabels([f"{x:.1f}" for x in yticks])
+    max_energy_rounded = np.ceil(ymax / 0.3) * 0.3
+    energy_ticks = np.arange(0, max_energy_rounded + 0.3, 0.3)
+    ax.set_ylim(0, max_energy_rounded)
+    ax.set_yticks(energy_ticks)
+    ax.set_yticklabels([f"{x:.1f}" for x in energy_ticks])
 
     # Set y-axis limits for power
     max_power = max(power_readings)
     power_limit = np.ceil(max_power / 100) * 100  # Round up to nearest 100
     ax2.set_ylim(0, power_limit)
-    ax2.yaxis.set_major_locator(plt.MultipleLocator(200))  # 100-unit increments
+    ax2.yaxis.set_major_locator(plt.MultipleLocator(300))  # 300-unit increments
 
     # Save plot
     plt.tight_layout()
@@ -612,7 +612,7 @@ def main():
             if data["layer_metrics"] is not None:
                 output_path = os.path.join(args.output_dir, "energy_analysis.png")
                 plot_energy_analysis_tab(
-                    data["layer_metrics"], data["layer_metrics"], output_path
+                    data["layer_metrics"], data["energy_analysis"], output_path
                 )
                 print(f"Energy analysis plot saved to: {output_path}")
             else:
