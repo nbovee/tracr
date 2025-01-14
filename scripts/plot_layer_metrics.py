@@ -139,11 +139,11 @@ def plot_layer_metrics_tab(
     # Set x-axis labels with reduced padding
     ax1.set_xticks(x)
     ax1.set_xticklabels(
-        grouped["Layer Type"], 
-        rotation=45, 
+        grouped["Layer Type"],
+        rotation=45,
         ha="right",  # Right alignment works better for 45-degree rotation
         va="top",
-        fontsize=7
+        fontsize=7,
     )
     ax1.tick_params(axis="x", pad=5)  # Slightly increase padding for angled labels
 
@@ -293,7 +293,10 @@ def plot_overall_performance_tab(
     ax.annotate(
         "",
         xy=(best_idx, arrow_end),  # arrow tip at bar
-        xytext=(best_idx, star_height - 15),  # start arrow 15 units below star for a gap
+        xytext=(
+            best_idx,
+            star_height - 15,
+        ),  # start arrow 15 units below star for a gap
         ha="center",
         va="bottom",
         arrowprops=dict(
@@ -381,7 +384,10 @@ def plot_energy_analysis_tab(
         )
         # Get power reading directly from energy analysis sheet
         power_readings.append(
-            energy_analysis_df[energy_analysis_df["Split Layer"] == split]["Power Reading (W)"].iloc[0] * 1000  # Convert W to mW
+            energy_analysis_df[energy_analysis_df["Split Layer"] == split][
+                "Power Reading (W)"
+            ].iloc[0]
+            * 1000  # Convert W to mW
         )
 
     # Colors matching the reference image
