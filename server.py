@@ -252,6 +252,7 @@ class Server:
                 )
                 conn.sendall(time_bytes)
                 # Send compressed result
+                # Minor update
                 conn.sendall(compressed_result)
 
         except Exception as e:
