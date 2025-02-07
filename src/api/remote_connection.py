@@ -1,8 +1,8 @@
 # src/api/remote_connection.py
 
 import logging
-import paramiko  # type: ignore
-import select
+import paramiko  # Provides SSH functionality.
+import select  # Used for monitoring I/O events on channels.
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -11,6 +11,7 @@ from functools import wraps
 
 logger = logging.getLogger("split_computing_logger")
 
+# Define constants for default SSH parameters and file transfer.
 DEFAULT_PORT: Final[int] = 22
 DEFAULT_TIMEOUT: Final[float] = 10.0
 CHUNK_SIZE: Final[int] = 1024
@@ -29,11 +30,11 @@ class SSHKeyType(Enum):
 class SSHConfig:
     """Configuration for SSH connections."""
 
-    host: str
-    user: str
-    private_key_path: Path
-    port: int = DEFAULT_PORT
-    timeout: float = DEFAULT_TIMEOUT
+    host: str  # The hostname or IP address of the remote host.
+    user: str  # Username for SSH authentication.
+    private_key_path: Path  # Path to the SSH private key file.
+    port: int = DEFAULT_PORT  # SSH port (default is 22).
+    timeout: float = DEFAULT_TIMEOUT  # Connection timeout in seconds.
 
 
 class SSHError(Exception):
@@ -55,7 +56,8 @@ class ConnectionError(SSHError):
 
 
 def ensure_connection(func):
-    """Decorator to ensure SSH connection is active before operation."""
+    """Decorator to ensure the SSH connection is active before performing any operation.
+    If the connection is not active, it will attempt to establish it."""
 
     @wraps(func)
     def wrapper(self, *args, **kwargs):
@@ -67,20 +69,22 @@ def ensure_connection(func):
 
 
 class SSHKeyHandler:
-    """Handles SSH key operations."""
+    """Handles SSH key operations such as detecting key type and loading keys."""
 
     @staticmethod
     def detect_key_type(key_path: Union[str, Path]) -> SSHKeyType:
-        """Detect the type of SSH key from file content."""
+        """Detect the type of SSH key based on the file extension or content.
+        Returns an SSHKeyType enum."""
         try:
-            # First check file extension
+            # Convert key_path to string if not already.
             key_path_str = str(key_path)
+            # First check the file extension.
             if key_path_str.endswith((".rsa", ".pem")):
                 return SSHKeyType.RSA
             elif key_path_str.endswith((".ed25519", ".key")):
                 return SSHKeyType.ED25519
 
-            # If no matching extension, check file content
+            # If no known extension, inspect the file's first line.
             with open(key_path, "r") as key_file:
                 first_line = key_file.readline()
                 if "RSA" in first_line:
@@ -89,11 +93,13 @@ class SSHKeyHandler:
                     return SSHKeyType.ED25519
                 return SSHKeyType.UNKNOWN
         except Exception as e:
+            # Wrap any file reading errors in an SSHError.
             raise SSHError(f"Failed to read key file: {e}")
 
     @staticmethod
     def load_key(key_path: Union[str, Path]) -> paramiko.PKey:
-        """Load an SSH key from file."""
+        """Load an SSH key from the given file path.
+        Tries to detect the key type and load it using paramiko."""
         try:
             key_type = SSHKeyHandler.detect_key_type(key_path)
 
@@ -102,7 +108,7 @@ class SSHKeyHandler:
             elif key_type == SSHKeyType.ED25519:
                 return paramiko.Ed25519Key.from_private_key_file(str(key_path))
             else:
-                # Try loading as RSA first, then ED25519 as fallback
+                # If key type is unknown, try both RSA and ED25519 as fallback.
                 try:
                     return paramiko.RSAKey.from_private_key_file(str(key_path))
                 except Exception:
@@ -112,22 +118,26 @@ class SSHKeyHandler:
                         raise SSHError(f"Unsupported key type for file: {key_path}")
 
         except paramiko.PasswordRequiredException:
+            # This exception is raised if the key is encrypted and requires a passphrase.
             raise AuthenticationError(f"Key file {key_path} requires passphrase")
         except Exception as e:
             raise SSHError(f"Failed to load key: {e}")
 
 
 class SSHClient:
-    """Manages SSH connections and operations."""
+    """Manages SSH connections and remote operations."""
 
     def __init__(self, config: SSHConfig):
-        """Initialize SSH client with configuration."""
+        """Initialize the SSH client with the given configuration."""
         self.config = config
+        # Will hold the paramiko SSHClient.
         self._client: Optional[paramiko.SSHClient] = None
+        # Will hold the SFTP client for file transfers.
         self._sftp: Optional[paramiko.SFTPClient] = None
 
     def is_connected(self) -> bool:
-        """Check if SSH connection is active."""
+        """Check if the SSH connection is active.
+        Returns True if the connection exists and is active."""
         return bool(
             self._client
             and self._client.get_transport()
@@ -135,11 +145,15 @@ class SSHClient:
         )
 
     def _establish_connection(self) -> None:
-        """Establish SSH connection using configuration."""
+        """Establish an SSH connection using the parameters in the configuration.
+        Loads the private key and creates a paramiko SSHClient connection."""
         try:
+            # Load the private key using our SSHKeyHandler.
             key = SSHKeyHandler.load_key(self.config.private_key_path)
             self._client = paramiko.SSHClient()
+            # Automatically add the host key if missing.
             self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            # Connect using the provided configuration.
             self._client.connect(
                 hostname=self.config.host,
                 port=self.config.port,
@@ -155,14 +169,19 @@ class SSHClient:
 
     @ensure_connection
     def execute_command(self, command: str) -> Dict[str, Any]:
-        """Execute command on remote host."""
+        """Execute a command on the remote host.
+        Returns a dictionary with keys: success, stdout, stderr, and exit_status."""
         result = {"success": False, "stdout": "", "stderr": "", "exit_status": -1}
 
         try:
+            # Execute the command using the underlying SSH client.
             stdin, stdout, stderr = self._client.exec_command(command)  # type: ignore
+            # Wait for the command to complete and get the exit status.
             result["exit_status"] = stdout.channel.recv_exit_status()
+            # Read and decode the command output.
             result["stdout"] = stdout.read().decode()
             result["stderr"] = stderr.read().decode()
+            # A success exit status is 0.
             result["success"] = result["exit_status"] == 0
 
             if result["success"]:
@@ -177,10 +196,12 @@ class SSHClient:
 
     @ensure_connection
     def transfer_file(self, source: Path, destination: Path) -> None:
-        """Transfer single file to remote host."""
+        """Transfer a single file to the remote host.
+        Opens an SFTP session if one isn't already open."""
         try:
             if not self._sftp:
                 self._sftp = self._client.open_sftp()  # type: ignore
+            # Use SFTP to put the file from local (source) to remote (destination).
             self._sftp.put(str(source), str(destination))
             logger.debug(f"Transferred {source} to {destination}")
         except Exception as e:
@@ -188,65 +209,67 @@ class SSHClient:
 
     @ensure_connection
     def transfer_directory(self, source: Path, destination: Path) -> None:
-        """Transfer directory recursively to remote host with file conflict handling."""
+        """Recursively transfer a directory to the remote host.
+        Handles creating remote directories and renaming files in case of conflicts."""
         try:
             if not self._sftp:
                 self._sftp = self._client.open_sftp()
 
-            # Ensure source path exists
+            # Ensure the source directory exists.
             if not source.exists():
                 raise SSHError(f"Source path does not exist: {source}")
 
-            # Handle WSL to Windows path conversion
+            # Determine if the destination is a WSL (Linux on Windows) path or a direct Windows path.
             dest_str = str(destination)
             is_wsl_windows = dest_str.startswith("/mnt/")
             is_direct_windows = dest_str.startswith(("C:", "D:", "E:"))
 
             if is_wsl_windows:
-                # Convert /mnt/c/... to C:/...
+                # Convert a WSL path (e.g., /mnt/c/...) to a Windows path (e.g., C:/...).
                 parts = dest_str.split("/")
-                if len(parts) > 3:  # /mnt/c/...
+                if len(parts) > 3:  # Expecting format: /mnt/c/...
                     drive_letter = parts[2].upper()
                     windows_path = f"{drive_letter}:/{'/'.join(parts[3:])}"
                     destination = Path(windows_path)
                     logger.debug(f"Converted WSL path to Windows path: {destination}")
             elif is_direct_windows:
-                # Ensure Windows path format
+                # Normalize Windows path format (replace backslashes with forward slashes).
                 destination = Path(str(destination).replace("\\", "/"))
 
-            # Create base directory structure first
+            # Create the base directory structure on the remote host.
             try:
                 current_path = Path()
                 for part in destination.parts:
-                    if part.endswith(":"):  # Skip drive letter for Windows
+                    if part.endswith(":"):  # Skip the drive letter on Windows.
                         current_path = Path(part + "/")
                         continue
                     current_path = current_path / part
                     try:
+                        # Check if the directory exists.
                         self._sftp.stat(str(current_path))
                     except FileNotFoundError:
                         try:
                             self._sftp.mkdir(str(current_path))
                             logger.debug(f"Created directory: {current_path}")
                         except IOError as e:
+                            # If the error isn't due to directory already existing, re-raise.
                             if "exists" not in str(e).lower():
                                 raise
-
             except Exception as e:
                 logger.warning(f"Error creating directory structure: {e}")
 
-            # Handle directory transfer
+            # Recursively traverse the source directory.
             for item in source.rglob("*"):
                 if item.is_file():
-                    # Calculate relative path from source to item
+                    # Determine the file's path relative to the source directory.
                     rel_path = item.relative_to(source)
                     if is_wsl_windows:
-                        # Ensure Windows path format
+                        # Normalize relative path for Windows.
                         rel_path = Path(str(rel_path).replace("\\", "/"))
                     remote_path = destination / rel_path
                     remote_parent = remote_path.parent
 
-                    # Create parent directories if they don't exist
+                    # Create parent directories on the remote host if they don't exist.
                     try:
                         self._sftp.stat(str(remote_parent))
                     except FileNotFoundError:
@@ -263,15 +286,15 @@ class SSHClient:
                                     if "exists" not in str(e).lower():
                                         raise
 
-                    # Check if file already exists on remote
+                    # If the file already exists remotely, generate a new name.
                     try:
                         self._sftp.stat(str(remote_path))
-                        # File exists, create a new name with '_host' suffix
+                        # File exists; modify the filename by appending '_host'.
                         name_parts = remote_path.stem.split("_")
                         if name_parts[-1] != "host":
                             new_name = f"{remote_path.stem}_host{remote_path.suffix}"
                         else:
-                            # If already has _host suffix, add number
+                            # If the name already ends with _host, add a number.
                             i = 1
                             while True:
                                 try:
@@ -282,14 +305,13 @@ class SSHClient:
                                     i += 1
                                 except FileNotFoundError:
                                     break
-
                         remote_path = remote_path.parent / new_name
                         logger.debug(f"File exists, renaming to {remote_path}")
                     except FileNotFoundError:
-                        # File doesn't exist, use original name
+                        # If the file does not exist remotely, keep the original name.
                         pass
 
-                    # Transfer the file
+                    # Transfer the file using SFTP.
                     self._sftp.put(str(item), str(remote_path))
                     logger.debug(f"Transferred {item} to {remote_path}")
 
@@ -297,7 +319,8 @@ class SSHClient:
             raise SSHError(f"Directory transfer failed: {e}")
 
     def _ensure_remote_directory(self, path: Path) -> None:
-        """Ensure remote directory exists, create if necessary."""
+        """Ensure a remote directory exists.
+        Creates the directory if it does not already exist."""
         if not self._sftp:
             return
 
@@ -305,10 +328,11 @@ class SSHClient:
             self._sftp.mkdir(str(path))
             logger.debug(f"Created remote directory: {path}")
         except IOError:
-            pass  # Directory already exists
+            pass  # Directory already exists; no action needed.
 
     def verify_transfer(self, remote_path: Path) -> bool:
-        """Verify successful file transfer."""
+        """Verify that a file transfer was successful by checking if the file exists remotely.
+        Executes a simple 'ls -la' command on the remote path."""
         try:
             result = self.execute_command(f"ls -la {remote_path}")
             return result["success"]
@@ -316,7 +340,8 @@ class SSHClient:
             return False
 
     def close(self) -> None:
-        """Close SSH connection and cleanup resources."""
+        """Close the SSH connection and any associated SFTP sessions.
+        Cleans up resources."""
         try:
             if self._sftp:
                 self._sftp.close()
@@ -328,24 +353,29 @@ class SSHClient:
 
 
 class SSHLogger:
-    """Handles SSH command output logging."""
+    """Handles logging of SSH command output.
+    Uses a provided logging function to output unique lines from the SSH channel."""
 
     def __init__(self, log_func: Callable[[str], None]):
-        """Initialize logger with logging function."""
+        """Initialize the SSHLogger with a custom logging function."""
         self.log_func = log_func
         self.unique_lines: set = set()
 
     def process_output(self, channel: paramiko.Channel) -> None:
-        """Process and log SSH channel output."""
+        """Process output from an SSH channel.
+        Reads available data from the channel and logs unique lines."""
         while not channel.closed:
+            # Use select to check if the channel has data to be read.
             readable, _, _ = select.select([channel], [], [], 0.1)
             if readable:
+                # Read a chunk of data from the channel.
                 output = channel.recv(CHUNK_SIZE).decode("utf-8", errors="replace")
                 if output:
                     self._log_unique_lines(output)
 
     def _log_unique_lines(self, output: str) -> None:
-        """Log unique lines from output."""
+        """Log only unique lines from the SSH output.
+        Prevents duplicate log entries."""
         for line in output.splitlines():
             stripped_line = line.strip()
             if stripped_line and stripped_line not in self.unique_lines:
@@ -360,7 +390,8 @@ def create_ssh_client(
     port: int = DEFAULT_PORT,
     timeout: float = DEFAULT_TIMEOUT,
 ) -> SSHClient:
-    """Create and configure SSH client instance."""
+    """Helper function to create and configure an SSHClient instance.
+    Builds an SSHConfig object and returns an SSHClient."""
     config = SSHConfig(
         host=host,
         user=user,

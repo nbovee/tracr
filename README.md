@@ -18,6 +18,7 @@ An experimental framework for distributed AI experiments, enabling split inferen
   - [Pre-configured Experiments](#2-pre-configured-experiments)
 - [Detailed Setup Guide](#detailed-setup-guide)
   - [Project Structure](#1-project-structure)
+  - [Split Point Data Flow](#split-point-data-flow)
   - [Device Configuration](#2-device-configuration)
   - [Windows WSL Setup](#windows-wsl-setup)
 - [Extending `tracr`](#extending-tracr)
@@ -163,6 +164,30 @@ tracr/
 ├── host.py                # Host device entry point
 └── server.py              # Server entry point
 ```
+
+### Split Point Data Flow
+
+#### Explanation of Tensor/Data Sharing at the Split Point
+
+##### On the Host Side (in NetworkedExperiment.process_single_image):
+
+**Tensor Sharing #1:**
+The input tensor is moved to the proper device (e.g. GPU) before inference.
+
+**Tensor Sharing #2:**
+After the model runs (up to the specified split layer), the resulting output tensor is generated. This tensor is then used to collect per-layer timing information.
+
+**Tensor Sharing #3:**
+The output tensor (generated at the split point) is passed to _prepare_data_for_transfer, where it is paired with the input size (obtained via the post-processor). This tuple, containing the tensor and the size, is then compressed.
+
+**Tensor Sharing #4:**
+The compressed bytes (representing the output tensor and size) are sent via the network client to the server.
+
+##### On the Server Side (in handle_connection of server.py):
+
+The server receives the compressed data, decompresses it to recover the tuple (output, original_size), and then passes it to the experiment's process_data method.
+
+This completes the round-trip data sharing at the split point between the host and the server.
 
 ### 2. Device Configuration
 

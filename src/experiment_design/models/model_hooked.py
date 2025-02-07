@@ -24,42 +24,50 @@ from src.api import MasterDict
 from src.interface import ModelInterface
 from .power_monitor import GPUEnergyMonitor
 
+# Ensure CUDA memory is freed at exit.
 atexit.register(torch.cuda.empty_cache)
 logger = logging.getLogger("split_computing_logger")
 
 
 class WrappedModel(BaseModel, ModelInterface):
-    """Model wrapper implementing hook-based functionality for edge computing experiments."""
+    """Model wrapper implementing hook-based functionality for edge computing experiments.
+
+    This wrapper registers hooks (both pre- and post-) on the model's layers.
+    The hooks capture intermediate outputs, timings, and energy metrics.
+
+    **Tensor/Data Sharing at the Split Point:**
+      - On the Edge device, the intermediate outputs are saved in the `banked_output` dictionary.
+      - When the designated split layer is reached, a HookExitException is raised carrying the
+        `banked_output`. This output is then wrapped by an EarlyOutput instance and serves as the
+        shared tensor that will be transmitted to the Cloud device.
+    """
 
     DEFAULT_DEPTH: ClassVar[int] = 2
     DEFAULT_BUFFER_SIZE: ClassVar[int] = 100
     DEFAULT_WARMUP_ITERS: ClassVar[int] = 2
 
     def __init__(
-        self,
-        config: Dict[str, Any],
-        master_dict: Optional[MasterDict] = None,
-        **kwargs,
+        self, config: Dict[str, Any], master_dict: Optional[MasterDict] = None, **kwargs
     ) -> None:
         """Initialize wrapped model with configuration and optional master dictionary."""
         BaseModel.__init__(self, config)
         ModelInterface.__init__(self, config)
         logger.debug(f"Initializing WrappedModel with config: {config}")
 
-        # Basic model attributes
+        # Basic model attributes and metrics storage.
         self.timer = time.perf_counter_ns
         self.master_dict = master_dict
         self.io_buffer = {}
-        self.inference_info = {}  # Stores per-inference metrics
-        self.forward_info = {}  # Stores per-layer metrics
+        self.inference_info = {}  # Stores per-inference metrics.
+        self.forward_info = {}  # Stores per-layer metrics.
         self.forward_hooks = []
         self.forward_post_hooks = []
         self.save_layers = getattr(self.model, "save", {})
-        self.layer_times = {}  # Temporary storage for layer timing
-        self.layer_timing_data = {}  # Historical timing data
-        self.layer_energy_data = {}  # Historical energy data
+        self.layer_times = {}  # Temporary storage for layer timing.
+        self.layer_timing_data = {}  # Historical timing data.
+        self.layer_energy_data = {}  # Historical energy data.
 
-        # Initialize energy monitoring
+        # Initialize energy monitoring if available.
         try:
             self.energy_monitor = GPUEnergyMonitor()
             logger.info("GPU energy monitoring initialized")
@@ -67,14 +75,15 @@ class WrappedModel(BaseModel, ModelInterface):
             logger.error(f"Failed to initialize GPU energy monitoring: {e}")
             self.energy_monitor = None
 
-        # Hook state tracking
-        self.start_i: Optional[int] = None  # First layer to process
-        self.stop_i: Optional[int] = None  # Last layer to process
-        self.banked_output: Optional[Any] = None  # Store intermediate outputs
-        self.log = False  # Enable/disable metric collection
-        self.current_energy_start = None  # Track energy measurement timing
+        # Hook state tracking variables.
+        self.start_i: Optional[int] = None  # First layer to process.
+        self.stop_i: Optional[int] = None  # Last layer to process.
+        # Store intermediate outputs for sharing.
+        self.banked_output: Optional[Any] = None
+        self.log = False  # Enable/disable metric collection.
+        self.current_energy_start = None  # Track energy measurement timing.
 
-        # Setup model layers and hooks
+        # Setup model layers and register hooks.
         self._setup_model()
         logger.info("WrappedModel initialization complete")
 
@@ -84,18 +93,18 @@ class WrappedModel(BaseModel, ModelInterface):
             self.energy_monitor.cleanup()
 
     def _setup_model(self) -> None:
-        """Set up model layers, hooks, and initialize state."""
+        """Set up model layers, register hooks, and initialize state."""
         self.torchinfo_summary = summary(
             self.model, (1, *self.input_size), device=self.device, verbose=0
         )
         self.layer_count = self._walk_modules(self.model.children(), depth=1, walk_i=0)
         del self.torchinfo_summary
 
-        # Store empty forward info for resets
+        # Store an empty copy of forward_info for resets.
         self.forward_info_empty = copy.deepcopy(self.forward_info)
         logger.debug(f"Model initialized with {self.layer_count} layers")
 
-        # Perform warmup iterations
+        # Perform warmup iterations.
         self.warmup(iterations=self.warmup_iterations)
 
     def _walk_modules(self, modules: Any, depth: int, walk_i: int) -> int:
@@ -115,7 +124,7 @@ class WrappedModel(BaseModel, ModelInterface):
     def _register_layer(
         self, layer: torch.nn.Module, layer_name: str, depth: int, walk_i: int
     ) -> int:
-        """Register hooks and info for a single layer."""
+        """Register hooks and initialize metrics for a single layer."""
         layer_info = next(
             (
                 info
@@ -126,18 +135,18 @@ class WrappedModel(BaseModel, ModelInterface):
         )
 
         if layer_info:
-            # Initialize metrics storage for layer
+            # Initialize metric storage for the layer using a template.
             self.forward_info[walk_i] = copy.deepcopy(LAYER_TEMPLATE)
             self.forward_info[walk_i].update(
                 {
                     "layer_id": walk_i,
                     "layer_type": layer_info.class_name,
-                    "output_bytes": layer_info.output_bytes,  # Initial output size estimate
-                    "inference_time": None,  # Placeholder for timing
+                    "output_bytes": layer_info.output_bytes,  # Initial output size estimate.
+                    "inference_time": None,  # Placeholder for timing.
                 }
             )
 
-            # Attach pre and post hooks for metric collection
+            # Attach pre- and post-hooks for metric collection.
             self.forward_hooks.append(
                 layer.register_forward_pre_hook(
                     create_forward_prehook(
@@ -172,20 +181,21 @@ class WrappedModel(BaseModel, ModelInterface):
             f"Starting forward pass: id={inference_id}, start={start}, end={end}, log={log}"
         )
 
-        # Configure forward pass
-        self.log = log  # Make sure logging is enabled
+        # Configure forward pass.
+        self.log = log  # Enable logging for metric collection.
         logger.debug(f"Logging is {'enabled' if self.log else 'disabled'}")
         self.start_i = start
         self.stop_i = end
         self._setup_inference_id(inference_id)
 
-        # Execute forward pass
+        # Execute forward pass.
         try:
             output = self._execute_forward(x)
         except HookExitException as e:
+            # When early exit occurs, the banked output is wrapped as EarlyOutput.
             output = self._handle_early_exit(e)
 
-        # Handle results
+        # Handle and log results.
         self._handle_results(start_time)
         return output
 
@@ -196,8 +206,7 @@ class WrappedModel(BaseModel, ModelInterface):
             suffix = int(suffix[0]) + 1 if suffix else 0
             self.inference_info["inference_id"] = f"{base_id}.{suffix}"
         else:
-            # During warmup or when no inference_id is provided, we still want to collect timing data
-            # but we don't need to store it in the master_dict
+            # Use a default inference ID during warmup or if none provided.
             self.inference_info["inference_id"] = "warmup"
 
     def _execute_forward(self, x: Union[torch.Tensor, Image.Image]) -> Any:
@@ -210,15 +219,13 @@ class WrappedModel(BaseModel, ModelInterface):
             return output
 
     def _handle_early_exit(self, exception: HookExitException) -> EarlyOutput:
-        """Handle early exit from forward pass."""
+        """Handle early exit from forward pass triggered by the hooks."""
         output = EarlyOutput(exception.result)
 
-        # Keep timing data for completed layers
+        # Preserve timing data for all completed layers.
         completed_layers = {
             k: v for k, v in self.forward_info.items() if k <= self.stop_i
         }
-
-        # Ensure timing data is preserved for completed layers
         for layer_idx in completed_layers:
             if layer_idx in self.layer_times:
                 end_time = time.perf_counter()
@@ -229,7 +236,6 @@ class WrappedModel(BaseModel, ModelInterface):
                     f"Preserved timing for layer {layer_idx}: {elapsed_time:.6f} seconds"
                 )
 
-        # Store the completed layers back
         self.forward_info = completed_layers
         logger.debug(
             f"Preserved timing data for {len(completed_layers)} layers during early exit"
@@ -238,22 +244,20 @@ class WrappedModel(BaseModel, ModelInterface):
 
     def _handle_results(self, start_time: int) -> None:
         """Handle forward pass results and logging."""
-        # Calculate total inference time
         total_time = self.timer() - start_time
         self.inference_info["total_time"] = total_time
         logger.debug(f"Total forward pass time: {total_time/1e9:.6f} seconds")
 
-        # Store layer metrics for current inference
+        # Store layer metrics for current inference.
         current_forward_info = copy.deepcopy(self.forward_info)
         self.inference_info["layer_information"] = current_forward_info
 
-        # Update historical timing data
+        # Update historical timing data.
         for layer_id, info in current_forward_info.items():
             if info.get("inference_time") is not None:
                 logger.debug(
                     f"Layer {layer_id} time: {info['inference_time']:.6f} seconds"
                 )
-                # Add to historical timing data
                 if not hasattr(self, "layer_timing_data"):
                     self.layer_timing_data = {}
                 if layer_id not in self.layer_timing_data:
@@ -262,16 +266,15 @@ class WrappedModel(BaseModel, ModelInterface):
             else:
                 logger.debug(f"No timing data for layer {layer_id}")
 
-        # Buffer results if logging enabled
+        # Buffer results if logging is enabled.
         if self.log and self.master_dict:
             base_id = self.inference_info["inference_id"].split(".", maxsplit=1)[0]
             self.io_buffer[base_id] = copy.deepcopy(self.inference_info)
 
-            # Flush buffer if full
             if len(self.io_buffer) >= self.flush_buffer_size:
                 self.update_master_dict()
 
-        # Reset state for next inference
+        # Reset state for the next inference.
         self.inference_info.clear()
         self.forward_info = copy.deepcopy(self.forward_info_empty)
         self.layer_times.clear()
@@ -295,7 +298,6 @@ class WrappedModel(BaseModel, ModelInterface):
         """Get collected metrics for all layers."""
         metrics = {}
         for layer_idx, info in self.forward_info.items():
-            # Combine all metrics per layer
             metrics[layer_idx] = {
                 "layer_id": info.get("layer_id"),
                 "layer_type": info.get("layer_type"),

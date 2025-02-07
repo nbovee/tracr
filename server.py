@@ -32,7 +32,7 @@ logging_server = start_logging_server(device=DeviceType.SERVER, config=default_c
 logger = logging.getLogger("split_computing_logger")
 
 HIGHEST_PROTOCOL = pickle.HIGHEST_PROTOCOL
-LENGTH_PREFIX_SIZE: Final[int] = 4
+LENGTH_PREFIX_SIZE: Final[int] = 4  # Number of bytes used to encode message lengths
 
 
 class Server:
@@ -59,9 +59,9 @@ class Server:
         """Initialize compression with minimal settings."""
         self.compress_data = DataCompression(
             {
-                "clevel": 1,  # Minimum compression level
-                "filter": "NOFILTER",  # No filtering
-                "codec": "BLOSCLZ",  # Fastest codec
+                "clevel": 1,  # Minimum compression level for speed
+                "filter": "NOFILTER",  # No filtering applied
+                "codec": "BLOSCLZ",  # Fast codec
             }
         )
         logger.debug("Initialized compression with minimal settings")
@@ -182,7 +182,10 @@ class Server:
         original_size: Tuple[int, int],
         split_layer_index: int,
     ) -> Tuple[Any, float]:
-        """Process received data through model and return results."""
+        """Process received data through model and return results along with processing time.
+
+        **Tensor/Data Sharing:** The received tensor (output) and the original size tuple,
+        originally sent by the host, are passed into experiment.process_data."""
         server_start_time = time.time()
         processed_result = experiment.process_data(
             {"input": (output, original_size), "split_layer": split_layer_index}
@@ -192,24 +195,24 @@ class Server:
     def handle_connection(self, conn: socket.socket) -> None:
         """Handle an individual client connection."""
         try:
-            # Receive and process configuration
+            # Receive configuration from the client.
             config = self._receive_config(conn)
             self._update_compression(config)
 
-            # Initialize experiment
+            # Initialize experiment based on received configuration.
             self.experiment_manager = ExperimentManager(config)
             experiment = self.experiment_manager.setup_experiment()
             experiment.model.eval()
 
-            # Cache torch.no_grad() context
+            # Cache torch.no_grad() context for inference.
             no_grad_context = torch.no_grad()
 
-            # Send acknowledgment
+            # Send acknowledgment to the client.
             conn.sendall(b"OK")
 
-            # Process incoming data
+            # Process incoming data in a loop.
             while True:
-                # Receive split layer index and data length in one recv
+                # Receive header consisting of split layer index and data length.
                 header = conn.recv(LENGTH_PREFIX_SIZE * 2)
                 if not header or len(header) != LENGTH_PREFIX_SIZE * 2:
                     break
@@ -217,18 +220,19 @@ class Server:
                 split_layer_index = int.from_bytes(header[:LENGTH_PREFIX_SIZE], "big")
                 expected_length = int.from_bytes(header[LENGTH_PREFIX_SIZE:], "big")
 
-                # Receive data
+                # **Tensor/Data Sharing (Host → Server):**
+                # The client sends compressed data (a tuple containing the model's output tensor and original size).
                 compressed_data = self.compress_data.receive_full_message(
                     conn=conn, expected_length=expected_length
                 )
 
-                # Process data with no_grad context
                 with no_grad_context:
+                    # Decompress received data back into (output, original_size)
                     output, original_size = self.compress_data.decompress_data(
                         compressed_data=compressed_data
                     )
 
-                    # Process data
+                    # Process data using the experiment's model and post-processor.
                     processed_result, processing_time = self._process_data(
                         experiment=experiment,
                         output=output,
@@ -236,23 +240,22 @@ class Server:
                         split_layer_index=split_layer_index,
                     )
 
-                # Send back results
-                # Compress the processed result
+                # **Tensor/Data Sharing (Server → Host):**
+                # Compress the processed result (e.g., predictions/detections) to send back to the client.
                 compressed_result, result_size = self.compress_data.compress_data(
                     processed_result
                 )
 
-                # Send result size
+                # Send result size as header.
                 conn.sendall(result_size.to_bytes(LENGTH_PREFIX_SIZE, "big"))
-                # Send processing time as fixed-length bytes
+                # Send processing time as fixed-length bytes.
                 time_bytes = (
                     str(processing_time)
                     .ljust(LENGTH_PREFIX_SIZE)
                     .encode()[:LENGTH_PREFIX_SIZE]
                 )
                 conn.sendall(time_bytes)
-                # Send compressed result
-                # Minor update
+                # Send compressed result data.
                 conn.sendall(compressed_result)
 
         except Exception as e:

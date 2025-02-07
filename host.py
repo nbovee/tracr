@@ -25,20 +25,21 @@ from src.utils import read_yaml_file  # noqa: E402
 from src.api.remote_connection import create_ssh_client
 
 DEFAULT_SOURCE_DIR: Final[str] = "results"
-
-# Destination directory on server to copy results over to from host when experiment is complete
+# Destination directory on server to copy results over from host when experiment is complete
 DEFAULT_DEST_DIR: Final[str] = "/mnt/c/Users/racr/Desktop/tracr/results"
 
 
 class ExperimentHost:
-    """Manages the experiment setup and execution."""
+    """Manages the experiment setup and execution on the host side."""
 
     def __init__(self, config_path: str) -> None:
         """Initialize with configuration and set up components."""
         self.config = self._load_config(config_path)
         self._setup_logger(config_path)
+        # Create the experiment manager and set up the experiment.
         self.experiment_manager = ExperimentManager(self.config)
         self.experiment = self.experiment_manager.setup_experiment()
+        # Establish a network connection to the server.
         self._setup_network_connection()
         self.setup_dataloader()
         self.experiment.data_loader = self.data_loader
@@ -108,6 +109,8 @@ class ExperimentHost:
     def run_experiment(self) -> None:
         """Execute the experiment."""
         logger.info("Starting experiment execution...")
+        # This call eventually triggers the networked experiment code, where
+        # tensors and data are sent to the server.
         self.experiment.run()
 
     def _copy_results_to_server(self) -> None:
@@ -120,7 +123,7 @@ class ExperimentHost:
                 logger.error("No server device found for copying results")
                 return
 
-            # Wait for network connection to close completely
+            # Ensure network client cleanup before file transfer.
             if hasattr(self.experiment, "network_client"):
                 self.experiment.network_client.cleanup()
                 time.sleep(2)
@@ -181,6 +184,7 @@ class ExperimentHost:
         try:
             if hasattr(self.experiment, "network_client"):
                 self.experiment.network_client.cleanup()
+            # Optionally copy results to server
             # self._copy_results_to_server()
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
@@ -207,6 +211,8 @@ class ExperimentHost:
 
             if hasattr(self.experiment, "network_client"):
                 logger.debug("Attempting to connect to server...")
+                # **Tensor/Data Sharing (Host → Server):**
+                # Here, the host's network client establishes a connection to the server.
                 self.experiment.network_client.connect()
                 logger.info(
                     f"Successfully connected to server at {server_device.get_host()}:{server_device.get_port()}"
