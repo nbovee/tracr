@@ -13,12 +13,16 @@ logger = logging.getLogger("split_computing_logger")
 
 @dataclass
 class EarlyOutput:
-    """Wrapper class to bypass Ultralytics or other class based forward pass handling."""
+    """Wrapper class to bypass Ultralytics or other class based forward pass handling.
+
+    When the forward pass is terminated early (via a HookExitException), the
+    collected intermediate outputs (stored in a dictionary or as a tensor) are wrapped
+    in this EarlyOutput instance. This output is then used as the final output of the model."""
 
     inner_dict: Union[Dict[str, Any], Tensor]
 
     def __call__(self, *args: Any, **kwargs: Any) -> Union[Dict[str, Any], Tensor]:
-        """Return inner dictionary when called."""
+        """Return inner dictionary (or tensor) when called."""
         return self.inner_dict
 
     @property
@@ -28,7 +32,12 @@ class EarlyOutput:
 
 
 class HookExitException(Exception):
-    """Exception for controlled early exit during hook execution."""
+    """Exception for controlled early exit during hook execution.
+
+    This exception is raised by a post-hook when the model has produced enough intermediate output
+    (i.e. at the designated split point) so that further forward computation is unnecessary.
+    The contained result (typically the dictionary of banked intermediate outputs) will then be used
+    downstream - for example, transmitted from an Edge device to a Cloud device."""
 
     def __init__(self, result: Any) -> None:
         """Initialize with result that triggered the exit."""
@@ -44,8 +53,17 @@ def create_forward_prehook(
     input_shape: Tuple[int, ...],
     device: torch.device,
 ) -> Callable:
-    """Create pre-hook for layer monitoring and input manipulation."""
+    """Create pre-hook for layer monitoring and input manipulation.
 
+    The pre-hook is invoked before the forward pass of a layer.
+    It performs operations such as:
+      - Resetting output buffers and timing data on the Edge device.
+      - Starting energy monitoring if available.
+      - On the Cloud device, replacing the actual input with a dummy tensor.
+
+    **Note on Sharing:**
+    For a split computing setting, on the Edge device the intermediate outputs will eventually be saved
+    (in wrapped_model.banked_output) and later transmitted over the network."""
     logger.debug(f"Creating forward pre-hook for layer {layer_index} - {layer_name}")
 
     def pre_hook(module: torch.nn.Module, layer_input: tuple) -> Any:
@@ -53,12 +71,12 @@ def create_forward_prehook(
         logger.debug(f"Start prehook {layer_index} - {layer_name}")
         hook_output = layer_input
 
-        # case if we are on the Edge Device
+        # On the Edge device (start_i == 0), initialize buffers and energy monitoring.
         if wrapped_model.start_i == 0:
             if layer_index == 0:
                 wrapped_model.banked_output = {}
                 wrapped_model.layer_times = {}  # Store start times for each layer
-                # Start energy monitoring for first layer
+                # Start energy monitoring for first layer if available.
                 if (
                     hasattr(wrapped_model, "energy_monitor")
                     and wrapped_model.energy_monitor
@@ -66,14 +84,15 @@ def create_forward_prehook(
                     wrapped_model.energy_monitor.start_measurement()
                     wrapped_model.current_energy_start = time.time()
                     logger.debug("Started energy monitoring for forward pass")
-
-        # case if we are on the Cloud Device
+        # On the Cloud device, override the input from the first layer.
         else:
             if layer_index == 0:
+                # Obtain the banked output from the Edge device via a callable.
                 wrapped_model.banked_output = layer_input[0]()
+                # Return a dummy tensor with the correct input size.
                 hook_output = torch.randn(1, *wrapped_model.input_size).to(device)
 
-        # Record layer start time for timing measurement
+        # Record layer start time for timing measurement.
         if wrapped_model.log:
             start_time = time.perf_counter()
             wrapped_model.layer_times[layer_index] = start_time
@@ -92,15 +111,26 @@ def create_forward_posthook(
     input_shape: Tuple[int, ...],
     device: torch.device,
 ) -> Callable:
-    """Create post-hook for layer monitoring and output processing."""
+    """Create post-hook for layer monitoring and output processing.
 
+    The post-hook is invoked after a layer's forward pass. It performs:
+      - Timing measurement for the layer.
+      - Updating the output size in bytes.
+      - Collecting energy metrics if available.
+      - Saving intermediate outputs in wrapped_model.banked_output.
+      - On the Edge device: raising a HookExitException if the designated split point is reached.
+      - On the Cloud device: replacing the output with a previously banked output if available.
+
+    **Note on Sharing:**
+    The outputs captured here (stored in wrapped_model.banked_output) constitute the intermediate
+    tensors that will be sent from the Edge device to the Cloud device in a split computing scenario."""
     logger.debug(f"Creating forward post-hook for layer {layer_index} - {layer_name}")
 
     def post_hook(module: torch.nn.Module, layer_input: tuple, output: Any) -> Any:
         """Execute post-nn.Module hook operations."""
         logger.debug(f"Start posthook {layer_index} - {layer_name}")
 
-        # Calculate layer execution time
+        # Calculate layer execution time.
         if wrapped_model.log:
             if layer_index in wrapped_model.layer_times:
                 end_time = time.perf_counter()
@@ -111,39 +141,36 @@ def create_forward_posthook(
                     f"Layer {layer_index} elapsed time: {elapsed_time:.6f} seconds"
                 )
 
-                # Calculate output tensor size in bytes
+                # Calculate output tensor size in bytes if applicable.
                 if isinstance(output, torch.Tensor):
                     output_bytes = output.element_size() * output.nelement()
                     wrapped_model.forward_info[layer_index][
                         "output_bytes"
                     ] = output_bytes
 
-                # Collect energy metrics at final layer
+                # If at the final layer (or designated split point), collect energy metrics.
                 if (
                     layer_index == wrapped_model.stop_i
                     and hasattr(wrapped_model, "energy_monitor")
                     and wrapped_model.energy_monitor
                 ):
                     try:
-                        # Get final energy measurements
+                        # Get final energy measurements.
                         energy_result = wrapped_model.energy_monitor.end_measurement()
-                        if (
-                            not isinstance(energy_result, tuple)
-                            or len(energy_result) != 2
+                        if not (
+                            isinstance(energy_result, tuple) and len(energy_result) == 2
                         ):
                             raise ValueError("Invalid energy measurement result")
                         energy, elapsed_time = energy_result
 
-                        # Get GPU metrics (utilization, power)
+                        # Retrieve GPU system metrics.
                         metrics = wrapped_model.energy_monitor.get_system_metrics()
                         if not isinstance(metrics, dict):
                             metrics = {}
 
-                        # Calculate per-layer energy based on execution time proportion
+                        # Sum inference times for all layers.
                         total_inference_time = 0.0
                         layer_times = {}
-
-                        # Collect valid timing data
                         for idx in wrapped_model.forward_info:
                             time_value = wrapped_model.forward_info[idx].get(
                                 "inference_time"
@@ -152,10 +179,9 @@ def create_forward_posthook(
                                 layer_times[idx] = float(time_value)
                                 total_inference_time += float(time_value)
 
-                        # Calculate energy metrics per layer
+                        # Compute energy metrics per layer.
                         for idx in wrapped_model.forward_info:
                             try:
-                                # Processing energy = total_energy * (layer_time/total_time)
                                 layer_time = layer_times.get(idx, 0.0)
                                 if (
                                     total_inference_time > 0
@@ -167,7 +193,7 @@ def create_forward_posthook(
                                 else:
                                     layer_energy = 0.0
 
-                                # Communication energy based on data transfer size
+                                # Compute communication energy from output size.
                                 output_bytes = wrapped_model.forward_info[idx].get(
                                     "output_bytes"
                                 )
@@ -184,7 +210,7 @@ def create_forward_posthook(
                                 else:
                                     comm_energy = 0.0
 
-                                # Get GPU metrics with validation
+                                # Retrieve GPU metrics.
                                 try:
                                     power_reading = float(
                                         metrics.get("power_reading", 0.0)
@@ -196,31 +222,25 @@ def create_forward_posthook(
                                     power_reading = 0.0
                                     gpu_utilization = 0.0
 
-                                # Total energy = processing + communication
                                 total_energy = layer_energy + comm_energy
 
-                                # Store all energy metrics
                                 energy_metrics = {
                                     "processing_energy": layer_energy,
                                     "communication_energy": comm_energy,
                                     "power_reading": power_reading,
                                     "gpu_utilization": gpu_utilization,
                                     "total_energy": total_energy,
-                                    "split_point": wrapped_model.stop_i,  # Add split point context
+                                    "split_point": wrapped_model.stop_i,
                                 }
 
-                                # Initialize historical data storage
                                 if not hasattr(wrapped_model, "layer_energy_data"):
                                     wrapped_model.layer_energy_data = {}
                                 if idx not in wrapped_model.layer_energy_data:
                                     wrapped_model.layer_energy_data[idx] = []
 
-                                # Store metrics in history and current forward pass
                                 wrapped_model.layer_energy_data[idx].append(
                                     energy_metrics
                                 )
-
-                                # Store only the energy values in forward_info
                                 energy_values = {
                                     k: v
                                     for k, v in energy_metrics.items()
@@ -239,7 +259,6 @@ def create_forward_posthook(
                                 logger.error(
                                     f"Error processing energy metrics for layer {idx}: {layer_error}"
                                 )
-                                # Set safe defaults for failed metrics
                                 safe_metrics = {
                                     "processing_energy": 0.0,
                                     "communication_energy": 0.0,
@@ -262,7 +281,6 @@ def create_forward_posthook(
 
                     except Exception as e:
                         logger.error(f"Error collecting energy metrics: {e}")
-                        # Initialize all layers with safe defaults on error
                         safe_metrics = {
                             "processing_energy": 0.0,
                             "communication_energy": 0.0,
@@ -273,14 +291,14 @@ def create_forward_posthook(
                         for idx in wrapped_model.forward_info:
                             wrapped_model.forward_info[idx].update(safe_metrics)
 
-        # case if we are on the Edge Device
+        # On the Edge device, bank outputs for sharing.
         if wrapped_model.start_i == 0:
             prepare_exit = wrapped_model.stop_i <= layer_index
             if layer_index in wrapped_model.save_layers or prepare_exit:
                 wrapped_model.banked_output[layer_index] = output
             if prepare_exit:
                 logger.info(f"Exit signal: during posthook {layer_index}")
-                # Save timing data for all completed layers before exit
+                # Save timing data for completed layers.
                 for idx in range(layer_index + 1):
                     if idx in wrapped_model.layer_times:
                         end_time = time.perf_counter()
@@ -290,9 +308,9 @@ def create_forward_posthook(
                         logger.debug(
                             f"Saved final timing for layer {idx}: {elapsed_time:.6f} seconds"
                         )
+                # Raise an exception to trigger early exit.
                 raise HookExitException(wrapped_model.banked_output)
-
-        # case if we are on the Cloud Device
+        # On the Cloud device, replace output with the banked output if available.
         else:
             if layer_index in wrapped_model.banked_output:
                 output = wrapped_model.banked_output[layer_index]
