@@ -102,7 +102,8 @@ class ModelRegistry:
     ) -> nn.Module:
         """Create a YOLO model instance with the specified configuration.
         Uses the ultralytics YOLO package to load a model. If a weight path is provided
-        in the config, it uses that; otherwise, it selects a default weight based on the dataset."""
+        in the config, it uses that; otherwise, it selects a default weight based on the dataset.
+        """
         from ultralytics import YOLO  # type: ignore
 
         # Determine weight path either from config or via the default mapping.
@@ -177,7 +178,8 @@ class ModelRegistry:
         cls, model_name: str, dataset_name: str, pretrained: bool
     ) -> Optional[str]:
         """Determine the appropriate pretrained weights for the model given the dataset.
-        It first checks MODEL_WEIGHTS_MAP, then DATASET_WEIGHTS_MAP, and finally defaults to "IMAGENET1K_V1"."""
+        It first checks MODEL_WEIGHTS_MAP, then DATASET_WEIGHTS_MAP, and finally defaults to "IMAGENET1K_V1".
+        """
         if not pretrained:
             return None
 
@@ -197,7 +199,8 @@ class ModelRegistry:
         cls, model: nn.Module, model_name: str, num_classes: int
     ) -> None:
         """Adjust the model's final classification layer (head) to output the desired number of classes.
-        The function determines the head type based on the model name and then calls _modify_head."""
+        The function determines the head type based on the model name and then calls _modify_head.
+        """
         head_type = cls._get_head_type(model_name)
         if not head_type:
             logger.warning(f"Could not adjust head for model: {model_name}")
@@ -208,7 +211,8 @@ class ModelRegistry:
     @staticmethod
     def _get_head_type(model_name: str) -> Optional[str]:
         """Determine the head type for the given model architecture.
-        Iterates over the MODEL_HEAD_TYPES mapping and returns the head type if a match is found."""
+        Iterates over the MODEL_HEAD_TYPES mapping and returns the head type if a match is found.
+        """
         return next(
             (
                 head

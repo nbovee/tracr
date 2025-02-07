@@ -64,7 +64,8 @@ class LoggingContext:
 
 class ColorByDeviceFormatter(logging.Formatter):
     """Custom formatter that adds device-specific color coding to log messages.
-    Device types are mapped to specific colors, and key alert keywords are highlighted."""
+    Device types are mapped to specific colors, and key alert keywords are highlighted.
+    """
 
     COLORS = {DeviceType.SERVER.name: "cyan", DeviceType.PARTICIPANT.name: "green"}
     ALERT_KEYWORDS = ["timed out", "error", "failed", "exception", "warning"]
@@ -193,7 +194,8 @@ class LogRecordStreamHandler(socketserver.StreamRequestHandler):
 
 class DaemonThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     """A threaded TCP server for centralized log handling.
-    This server uses daemon threads to handle multiple log record streams concurrently."""
+    This server uses daemon threads to handle multiple log record streams concurrently.
+    """
 
     allow_reuse_address = True
     daemon_threads = True

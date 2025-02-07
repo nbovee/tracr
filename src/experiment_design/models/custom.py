@@ -96,9 +96,9 @@ class CustomModel(nn.Module):
     @staticmethod
     def _create_conv_block(in_channels: int, out_channels: int) -> List[nn.Module]:
         """Create a convolutional block consisting of:
-          - A Conv2d layer with kernel_size=3 and padding=1.
-          - A ReLU activation (in-place).
-          - A MaxPool2d layer with kernel_size=2 and stride=2 (which halves the spatial dimensions).
+        - A Conv2d layer with kernel_size=3 and padding=1.
+        - A ReLU activation (in-place).
+        - A MaxPool2d layer with kernel_size=2 and stride=2 (which halves the spatial dimensions).
         """
         return [
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
@@ -129,5 +129,6 @@ class CustomModel(nn.Module):
         **Note on Tensor Sharing:**
         Although this file does not directly implement tensor sharing between host and server,
         the output produced here is later used in the split computing framework where it may
-        serve as the shared tensor (for example, being split at a designated layer and transmitted)."""
+        serve as the shared tensor (for example, being split at a designated layer and transmitted).
+        """
         return self.model(x)

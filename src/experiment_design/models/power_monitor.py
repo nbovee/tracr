@@ -93,7 +93,8 @@ class GPUEnergyMonitor:
 
     def start_measurement(self) -> float:
         """Start energy measurement and return the start timestamp.
-        This function stores the current power and system metrics, then records the start time."""
+        This function stores the current power and system metrics, then records the start time.
+        """
         if not hasattr(self, "_start_power"):
             self._start_power = self.get_current_power()
             self._start_metrics = self.get_system_metrics()
@@ -102,7 +103,8 @@ class GPUEnergyMonitor:
 
     def end_measurement(self) -> Tuple[float, float]:
         """End measurement and return a tuple (energy consumed in joules, elapsed time).
-        Uses a trapezoidal approximation to calculate energy consumption over the measurement interval."""
+        Uses a trapezoidal approximation to calculate energy consumption over the measurement interval.
+        """
         end_time = time.time()
         end_power = self.get_current_power()
 
@@ -155,7 +157,8 @@ class GPUEnergyMonitor:
 
     def _get_jetson_power(self) -> float:
         """Retrieve Jetson GPU power consumption in watts.
-        This function extracts the "Power VDD_CPU_GPU_CV" value from jtop stats and converts it from mW to W."""
+        This function extracts the "Power VDD_CPU_GPU_CV" value from jtop stats and converts it from mW to W.
+        """
         if not self._jtop or not self._jtop.is_alive():
             raise RuntimeError("Jetson monitoring not initialized")
 

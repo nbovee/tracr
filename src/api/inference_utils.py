@@ -456,7 +456,8 @@ class DetectionVisualizer:
         self, image: Image.Image, detections: List[Dict[str, Any]]
     ) -> Image.Image:
         """Draw detection boxes and labels on the image.
-        For each detection, draws a rectangle and adds a label with the class name and confidence."""
+        For each detection, draws a rectangle and adds a label with the class name and confidence.
+        """
         draw = ImageDraw.Draw(image)
 
         for detection in detections:

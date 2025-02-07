@@ -186,10 +186,10 @@ class MasterDict:
 
     def calculate_supermetrics(self, inference_id: str) -> InferenceMetrics:
         """Calculate comprehensive metrics for an inference, including:
-          - The split layer,
-          - Transmission latency,
-          - Total inference times for client and edge,
-          - Total energy consumption (watts used).
+        - The split layer,
+        - Transmission latency,
+        - Total inference times for client and edge,
+        - Total energy consumption (watts used).
         """
         split_layer = self.get_split_layer(inference_id)
         transmission_latency = self.get_transmission_latency(inference_id, split_layer)

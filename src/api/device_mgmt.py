@@ -202,7 +202,8 @@ class Device:
 
     def __init__(self, device_record: dict) -> None:
         """Initialize the Device using its configuration record.
-        This includes sorting multiple connection parameters so that the default/reachable one is used."""
+        This includes sorting multiple connection parameters so that the default/reachable one is used.
+        """
         self.device_type = device_record["device_type"]
         # Create a list of SSHConnectionParams objects from the configuration.
         # The connections are sorted so that the default connection (if available) is prioritized.
@@ -283,7 +284,8 @@ class Device:
 
     def transfer_files(self, source: Path, destination: Path) -> None:
         """Transfer files to the remote device.
-        If the source is a directory, transfer the entire directory; otherwise, transfer a single file."""
+        If the source is a directory, transfer the entire directory; otherwise, transfer a single file.
+        """
         if not self.is_reachable():
             raise SSHError("Device is not reachable")
 
@@ -393,7 +395,8 @@ class DeviceManager:
         self, command: str, device_type: str = None
     ) -> dict[str, dict]:
         """Execute a command on all matching devices (filterable by device type).
-        Returns a dictionary mapping each device's host to the command's output or error."""
+        Returns a dictionary mapping each device's host to the command's output or error.
+        """
         results = {}
         # Get only the devices that are available (reachable) and match the device type (if provided).
         devices = self.get_devices(available_only=True, device_type=device_type)
@@ -412,7 +415,8 @@ class DeviceManager:
         self, source: Path, destination: Path, device_type: str = None
     ) -> dict[str, bool]:
         """Transfer files (or directories) from a source to a destination on all matching devices.
-        Returns a dictionary mapping each device's host to a boolean indicating success."""
+        Returns a dictionary mapping each device's host to a boolean indicating success.
+        """
         results = {}
         # Get only the available devices that match the given type.
         devices = self.get_devices(available_only=True, device_type=device_type)

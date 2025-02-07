@@ -17,7 +17,8 @@ class EarlyOutput:
 
     When the forward pass is terminated early (via a HookExitException), the
     collected intermediate outputs (stored in a dictionary or as a tensor) are wrapped
-    in this EarlyOutput instance. This output is then used as the final output of the model."""
+    in this EarlyOutput instance. This output is then used as the final output of the model.
+    """
 
     inner_dict: Union[Dict[str, Any], Tensor]
 
@@ -123,7 +124,8 @@ def create_forward_posthook(
 
     **Note on Sharing:**
     The outputs captured here (stored in wrapped_model.banked_output) constitute the intermediate
-    tensors that will be sent from the Edge device to the Cloud device in a split computing scenario."""
+    tensors that will be sent from the Edge device to the Cloud device in a split computing scenario.
+    """
     logger.debug(f"Creating forward post-hook for layer {layer_index} - {layer_name}")
 
     def post_hook(module: torch.nn.Module, layer_input: tuple, output: Any) -> Any:

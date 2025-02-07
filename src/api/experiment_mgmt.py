@@ -173,7 +173,8 @@ class BaseExperiment(ExperimentInterface):
 
     def _get_original_image(self, inputs: torch.Tensor, image_file: str) -> Image.Image:
         """Retrieve the original image for visualization.
-        If the dataset returns no original image, reconstruct it from the input tensor."""
+        If the dataset returns no original image, reconstruct it from the input tensor.
+        """
         original_image = self.data_loader.dataset.get_original_image(image_file)
         if original_image is None:
             # Reconstruct image from tensor (assuming normalization between 0 and 1).

@@ -143,7 +143,8 @@ class DataCompression:
 
     def receive_data(self, conn: socket.socket) -> Optional[Dict[str, Any]]:
         """Receive and decompress length-prefixed data from a socket.
-        First, the length is read (using a fixed-size prefix), then the complete compressed message."""
+        First, the length is read (using a fixed-size prefix), then the complete compressed message.
+        """
         try:
             # Receive the length prefix to know how many bytes to expect.
             length_data = self._receive_chunk(conn, LENGTH_PREFIX_SIZE)
