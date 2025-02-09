@@ -308,5 +308,7 @@ class WrappedModel(BaseModel, ModelInterface):
                 "power_reading": info.get("power_reading", 0.0),
                 "gpu_utilization": info.get("gpu_utilization", 0.0),
                 "total_energy": info.get("total_energy", 0.0),
+                "battery_percent": info.get("battery_percent", 0.0),
+                "battery_draw": info.get("battery_draw", 0.0),
             }
         return metrics

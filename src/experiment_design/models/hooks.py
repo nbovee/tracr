@@ -220,9 +220,18 @@ def create_forward_posthook(
                                     gpu_utilization = float(
                                         metrics.get("gpu_utilization", 0.0)
                                     )
+                                    # Add battery metrics
+                                    battery_percent = float(
+                                        metrics.get("battery_percent", 0.0)
+                                    )
+                                    battery_draw = float(
+                                        metrics.get("battery_draw", 0.0)
+                                    )
                                 except (TypeError, ValueError):
                                     power_reading = 0.0
                                     gpu_utilization = 0.0
+                                    battery_percent = 0.0
+                                    battery_draw = 0.0
 
                                 total_energy = layer_energy + comm_energy
 
@@ -233,6 +242,9 @@ def create_forward_posthook(
                                     "gpu_utilization": gpu_utilization,
                                     "total_energy": total_energy,
                                     "split_point": wrapped_model.stop_i,
+                                    # Add battery metrics to the energy metrics
+                                    "battery_percent": battery_percent,
+                                    "battery_draw": battery_draw,
                                 }
 
                                 if not hasattr(wrapped_model, "layer_energy_data"):
@@ -254,7 +266,9 @@ def create_forward_posthook(
                                     f"Layer {idx} - Processing Energy: {layer_energy:.6f}J, "
                                     f"Communication Energy: {comm_energy:.6f}J, "
                                     f"Power: {power_reading:.3f}W, "
-                                    f"GPU Util: {gpu_utilization:.1f}%"
+                                    f"GPU Util: {gpu_utilization:.1f}%, "
+                                    f"Battery Draw: {battery_draw:.3f}W, "
+                                    f"Battery Level: {battery_percent:.1f}%"
                                 )
 
                             except Exception as layer_error:

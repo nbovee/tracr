@@ -25,6 +25,15 @@ except ImportError:
     JTOP_AVAILABLE = False
     logger.debug("Jetson monitoring not available")
 
+# Try to import psutil for battery monitoring on Windows.
+try:
+    import psutil
+
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    logger.debug("psutil monitoring not available")
+
 
 class GPUEnergyMonitor:
     """Monitor GPU energy consumption for both desktop NVIDIA and Jetson devices."""
@@ -42,6 +51,11 @@ class GPUEnergyMonitor:
         self._nvml_initialized = False  # Flag to track NVML initialization.
         self._jtop = None  # jtop instance for Jetson monitoring.
         self._nvml_handle = None  # NVML handle for NVIDIA GPU.
+        self._battery_initialized = PSUTIL_AVAILABLE and self._has_battery()
+        if self._battery_initialized:
+            logger.info("Battery monitoring initialized")
+        else:
+            logger.debug("Battery monitoring not available")
         self._setup_monitoring()  # Setup monitoring based on detected device type.
         logger.info(f"Initialized GPU monitoring for {self.device_type}")
 
@@ -131,29 +145,92 @@ class GPUEnergyMonitor:
             return 0.0
 
     def get_system_metrics(self) -> dict:
-        """Retrieve essential system metrics (e.g., power reading and GPU utilization) for energy analysis.
-        Returns an empty dictionary if jtop is not initialized or not alive."""
-        if not self._jtop or not self._jtop.is_alive():
-            return {}
+        """Retrieve essential system metrics including battery information."""
+        metrics = {}
 
+        # Get existing metrics based on device type
+        if self.device_type == "jetson":
+            if not self._jtop or not self._jtop.is_alive():
+                return metrics
+            try:
+                stats = self._jtop.stats
+                if isinstance(stats, dict):
+                    metrics.update(
+                        {
+                            "power_reading": float(stats.get("Power VDD_CPU_GPU_CV", 0))
+                            / 1000.0,
+                            "gpu_utilization": float(stats.get("GPU", 0)),
+                        }
+                    )
+            except Exception as e:
+                logger.error(f"Error collecting Jetson metrics: {e}")
+
+        # Add battery metrics if available
+        if self._battery_initialized:
+            try:
+                battery = psutil.sensors_battery()
+                if battery:
+                    metrics.update(
+                        {
+                            "battery_percent": battery.percent,
+                            "battery_power": battery.power_plugged,
+                            "battery_time_left": (
+                                battery.secsleft if battery.secsleft != -1 else None
+                            ),
+                            # Calculate power draw (in watts) if on battery
+                            "battery_draw": (
+                                self._calculate_battery_draw(battery)
+                                if not battery.power_plugged
+                                else 0.0
+                            ),
+                        }
+                    )
+            except Exception as e:
+                logger.error(f"Error collecting battery metrics: {e}")
+
+        logger.debug(f"Collected system metrics: {metrics}")
+        return metrics
+
+    def _calculate_battery_draw(self, battery) -> float:
+        """Calculate approximate power draw from battery in watts.
+
+        This is an estimation based on battery capacity change over time.
+        """
         try:
-            stats = self._jtop.stats
-            if not isinstance(stats, dict):
-                return {}
+            if not hasattr(self, "_last_battery_reading"):
+                self._last_battery_reading = (battery.percent, time.time())
+                return 0.0
 
-            metrics = {
-                # Extract and convert power reading from mW to W.
-                "power_reading": float(stats.get("Power VDD_CPU_GPU_CV", 0)) / 1000.0,
-                # GPU utilization percentage.
-                "gpu_utilization": float(stats.get("GPU", 0)),
-            }
+            last_percent, last_time = self._last_battery_reading
+            current_time = time.time()
+            time_diff = current_time - last_time
 
-            logger.debug(f"Collected power metrics: {metrics}")
-            return metrics
+            if time_diff < 1:  # Avoid too frequent calculations
+                return 0.0
+
+            percent_diff = last_percent - battery.percent
+
+            # Update last reading
+            self._last_battery_reading = (battery.percent, current_time)
+
+            # Rough estimation: assume typical laptop battery capacity of 50Wh
+            # This could be made more accurate by getting actual battery capacity
+            TYPICAL_BATTERY_CAPACITY = 50.0  # Wh
+
+            if percent_diff > 0 and time_diff > 0:
+                # Convert percent/second to watts
+                watts = (
+                    (percent_diff / 100.0)
+                    * TYPICAL_BATTERY_CAPACITY
+                    * (3600 / time_diff)
+                )
+                return round(watts, 2)
+
+            return 0.0
 
         except Exception as e:
-            logger.error(f"Error collecting power metrics: {e}")
-            return {}
+            logger.error(f"Error calculating battery draw: {e}")
+            return 0.0
 
     def _get_jetson_power(self) -> float:
         """Retrieve Jetson GPU power consumption in watts.
@@ -197,6 +274,15 @@ class GPUEnergyMonitor:
         except Exception as e:
             logger.error(f"Error reading NVIDIA power: {e}")
             return 0.0
+
+    def _has_battery(self) -> bool:
+        """Check if the system has a battery."""
+        try:
+            battery = psutil.sensors_battery()
+            return battery is not None
+        except Exception as e:
+            logger.debug(f"Error checking battery: {e}")
+            return False
 
     def cleanup(self) -> None:
         """Clean up and release monitoring resources."""

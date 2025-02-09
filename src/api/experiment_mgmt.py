@@ -147,7 +147,7 @@ class BaseExperiment(ExperimentInterface):
             if isinstance(result, tuple):
                 result, _ = result
 
-            # Move the result tensor back to CPU if it isn’t already.
+            # Move the result tensor back to CPU if it isn't already.
             if isinstance(result, torch.Tensor) and result.device != torch.device(
                 "cpu"
             ):
@@ -369,6 +369,18 @@ class BaseExperiment(ExperimentInterface):
                     avg_gpu_utilization = 0.0
                     total_energy = 0.0
 
+                # Calculate average battery metrics from valid measurements
+                if valid_measurements:
+                    avg_battery_percent = sum(
+                        float(m.get("battery_percent", 0.0)) for m in valid_measurements
+                    ) / len(valid_measurements)
+                    avg_battery_draw = sum(
+                        float(m.get("battery_draw", 0.0)) for m in valid_measurements
+                    ) / len(valid_measurements)
+                else:
+                    avg_battery_percent = 0.0
+                    avg_battery_draw = 0.0
+
                 metrics_entry = {
                     "Split Layer": split_idx,
                     "Layer ID": layer_idx,
@@ -382,6 +394,8 @@ class BaseExperiment(ExperimentInterface):
                     "Power Reading (W)": avg_power_reading,
                     "GPU Utilization (%)": avg_gpu_utilization,
                     "Total Energy (J)": total_energy,
+                    "Battery Level (%)": avg_battery_percent,
+                    "Battery Draw (W)": avg_battery_draw,
                 }
                 layer_metrics.append(metrics_entry)
 
@@ -414,6 +428,8 @@ class BaseExperiment(ExperimentInterface):
                             "Total Energy (J)": "sum",
                             "Power Reading (W)": "mean",
                             "GPU Utilization (%)": "mean",
+                            "Battery Level (%)": "mean",
+                            "Battery Draw (W)": "mean",
                         }
                     )
                     .reset_index()
@@ -483,7 +499,7 @@ class NetworkedExperiment(BaseExperiment):
             compressed_output, _ = self.compress_data.compress_data(data=data_to_send)
             host_time = time.time() - host_start
 
-            # Network operations: send compressed data and receive the server’s processing result.
+            # Network operations: send compressed data and receive the server's processing result.
             travel_start = time.time()
             server_response = self.network_client.process_split_computation(
                 split_layer, compressed_output
