@@ -170,6 +170,17 @@ def create_forward_posthook(
                         if not isinstance(metrics, dict):
                             metrics = {}
 
+                        # Get battery metrics - only if not plugged in
+                        battery_draw = float(metrics.get("battery_draw", 0.0))
+                        battery_percent = float(metrics.get("battery_percent", 0.0))
+
+                        # Only count battery energy if actually drawing from battery
+                        if battery_draw > 0:
+                            # Convert battery draw (watts) to energy (joules) for the layer duration
+                            battery_energy = battery_draw * elapsed_time
+                        else:
+                            battery_energy = 0.0
+
                         # Sum inference times for all layers.
                         total_inference_time = 0.0
                         layer_times = {}
@@ -220,18 +231,9 @@ def create_forward_posthook(
                                     gpu_utilization = float(
                                         metrics.get("gpu_utilization", 0.0)
                                     )
-                                    # Add battery metrics
-                                    battery_percent = float(
-                                        metrics.get("battery_percent", 0.0)
-                                    )
-                                    battery_draw = float(
-                                        metrics.get("battery_draw", 0.0)
-                                    )
                                 except (TypeError, ValueError):
                                     power_reading = 0.0
                                     gpu_utilization = 0.0
-                                    battery_percent = 0.0
-                                    battery_draw = 0.0
 
                                 total_energy = layer_energy + comm_energy
 
@@ -242,9 +244,9 @@ def create_forward_posthook(
                                     "gpu_utilization": gpu_utilization,
                                     "total_energy": total_energy,
                                     "split_point": wrapped_model.stop_i,
-                                    # Add battery metrics to the energy metrics
                                     "battery_percent": battery_percent,
                                     "battery_draw": battery_draw,
+                                    "battery_energy": battery_energy,  # Add battery energy consumption
                                 }
 
                                 if not hasattr(wrapped_model, "layer_energy_data"):

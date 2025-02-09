@@ -192,10 +192,7 @@ class GPUEnergyMonitor:
         return metrics
 
     def _calculate_battery_draw(self, battery) -> float:
-        """Calculate approximate power draw from battery in watts.
-
-        This is an estimation based on battery capacity change over time.
-        """
+        """Calculate approximate power draw from battery in watts."""
         try:
             if not hasattr(self, "_last_battery_reading"):
                 self._last_battery_reading = (battery.percent, time.time())
@@ -213,18 +210,17 @@ class GPUEnergyMonitor:
             # Update last reading
             self._last_battery_reading = (battery.percent, current_time)
 
-            # Rough estimation: assume typical laptop battery capacity of 50Wh
-            # This could be made more accurate by getting actual battery capacity
-            TYPICAL_BATTERY_CAPACITY = 50.0  # Wh
-
             if percent_diff > 0 and time_diff > 0:
-                # Convert percent/second to watts
+                # Most laptops have 40-60Wh batteries, using 50Wh as typical
+                TYPICAL_BATTERY_CAPACITY = 50.0  # Wh
+
+                # Convert percent/hour to watts
                 watts = (
                     (percent_diff / 100.0)
                     * TYPICAL_BATTERY_CAPACITY
                     * (3600 / time_diff)
                 )
-                return round(watts, 2)
+                return round(max(0.0, watts), 2)  # Ensure non-negative value
 
             return 0.0
 
