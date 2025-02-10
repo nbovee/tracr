@@ -497,6 +497,25 @@ def plot_comparative_energy(
     ax3.set_ylim(0, battery_limit)
     ax3.yaxis.set_major_locator(plt.MultipleLocator(200))  # Tick every 200 mWh
 
+    # Add x-axis labels using layer names (same as comparative_latency)
+    ax.set_xticks(x)
+    
+    # Get layer names from first model (assuming same layers)
+    layer_names = []
+    df = model_data[models[0]]["layer_metrics"]
+    for idx in model_data[models[0]]["energy_analysis"]["Split Layer"]:
+        layer_name = df[df["Layer ID"] == idx]["Layer Type"].iloc[0]
+        layer_names.append(layer_name)
+
+    ax.set_xticklabels(
+        layer_names, 
+        rotation=ROTATION, 
+        ha="right", 
+        va="top", 
+        fontsize=7
+    )
+    ax.tick_params(axis="x", pad=TICK_PADDING)
+
     plt.savefig(
         output_path,
         dpi=300,
