@@ -67,12 +67,16 @@ class WrappedModel(BaseModel, ModelInterface):
         self.layer_timing_data = {}  # Historical timing data.
         self.layer_energy_data = {}  # Historical energy data.
 
-        # Initialize energy monitoring if available.
+        # Initialize energy monitoring with better error handling and CPU fallback
         try:
             self.energy_monitor = GPUEnergyMonitor()
-            logger.info("GPU energy monitoring initialized")
+            device_type = getattr(self.energy_monitor, "device_type", "unknown")
+            if device_type == "cpu":
+                logger.info("Running in CPU-only mode with battery monitoring")
+            else:
+                logger.info(f"GPU energy monitoring initialized for {device_type}")
         except Exception as e:
-            logger.error(f"Failed to initialize GPU energy monitoring: {e}")
+            logger.warning(f"Energy monitoring initialization warning: {e}")
             self.energy_monitor = None
 
         # Hook state tracking variables.
@@ -135,18 +139,31 @@ class WrappedModel(BaseModel, ModelInterface):
         )
 
         if layer_info:
-            # Initialize metric storage for the layer using a template.
+            # Initialize metric storage for the layer using a template
             self.forward_info[walk_i] = copy.deepcopy(LAYER_TEMPLATE)
+            # Always include basic metrics
             self.forward_info[walk_i].update(
                 {
                     "layer_id": walk_i,
                     "layer_type": layer_info.class_name,
-                    "output_bytes": layer_info.output_bytes,  # Initial output size estimate.
-                    "inference_time": None,  # Placeholder for timing.
+                    "output_bytes": layer_info.output_bytes,
+                    "inference_time": None,
                 }
             )
 
-            # Attach pre- and post-hooks for metric collection.
+            # Initialize energy metrics with defaults
+            self.forward_info[walk_i].update(
+                {
+                    "processing_energy": 0.0,
+                    "communication_energy": 0.0,
+                    "power_reading": 0.0,
+                    "gpu_utilization": 0.0,
+                    "total_energy": 0.0,
+                    "host_battery_energy_mwh": 0.0,
+                }
+            )
+
+            # Attach hooks
             self.forward_hooks.append(
                 layer.register_forward_pre_hook(
                     create_forward_prehook(
@@ -298,17 +315,23 @@ class WrappedModel(BaseModel, ModelInterface):
         """Get collected metrics for all layers."""
         metrics = {}
         for layer_idx, info in self.forward_info.items():
+            # Always include timing and size metrics
             metrics[layer_idx] = {
                 "layer_id": info.get("layer_id"),
                 "layer_type": info.get("layer_type"),
                 "inference_time": info.get("inference_time"),
                 "output_bytes": info.get("output_bytes"),
-                "processing_energy": info.get("processing_energy", 0.0),
-                "communication_energy": info.get("communication_energy", 0.0),
-                "power_reading": info.get("power_reading", 0.0),
-                "gpu_utilization": info.get("gpu_utilization", 0.0),
-                "total_energy": info.get("total_energy", 0.0),
-                "battery_percent": info.get("battery_percent", 0.0),
-                "battery_draw": info.get("battery_draw", 0.0),
             }
+
+            # Add energy metrics if available, otherwise use defaults
+            metrics[layer_idx].update(
+                {
+                    "processing_energy": info.get("processing_energy", 0.0),
+                    "communication_energy": info.get("communication_energy", 0.0),
+                    "power_reading": info.get("power_reading", 0.0),
+                    "gpu_utilization": info.get("gpu_utilization", 0.0),
+                    "total_energy": info.get("total_energy", 0.0),
+                    "host_battery_energy_mwh": info.get("host_battery_energy_mwh", 0.0),
+                }
+            )
         return metrics

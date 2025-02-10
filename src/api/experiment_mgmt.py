@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional, Union
 import functools
+import psutil
 
 import pandas as pd
 import torch
@@ -224,18 +225,21 @@ class BaseExperiment(ExperimentInterface):
         host_time: float,
         travel_time: float,
         server_time: float,
+        battery_energy: float = 0.0,
     ) -> None:
-        """Log a detailed performance summary."""
+        """Log a summary of processing performance metrics."""
         logger.info(
-            f"\n{'='*50}\n"
-            f"Performance Summary\n"
-            f"{'='*50}\n"
+            "\n"
+            "==================================================\n"
+            "Performance Summary\n"
+            "==================================================\n"
             f"Host Processing Time:   {host_time:.2f}s\n"
             f"Network Transfer Time:  {travel_time:.2f}s\n"
             f"Server Processing Time: {server_time:.2f}s\n"
-            f"{'='*30}\n"
+            f"Host Battery Energy:    {battery_energy:.2f}mWh\n"
+            "==============================\n"
             f"Total Time:            {host_time + travel_time + server_time:.2f}s\n"
-            f"{'='*50}\n"
+            "=================================================="
         )
 
     def _aggregate_split_energy_metrics(self, split_idx: int) -> Dict[str, float]:
@@ -309,6 +313,7 @@ class BaseExperiment(ExperimentInterface):
 
     def save_results(self, results: List[Tuple[int, float, float, float]]) -> None:
         """Save experiment results (overall performance and per-layer metrics) to an Excel file."""
+        # Create Overall Performance sheet
         df = pd.DataFrame(
             results,
             columns=[
@@ -322,90 +327,117 @@ class BaseExperiment(ExperimentInterface):
             df["Host Time"] + df["Travel Time"] + df["Server Time"]
         )
 
+        # Process layer metrics even if some metrics are missing/zero
         layer_metrics = []
         energy_data = getattr(self.model, "layer_energy_data", {})
-        all_layer_indices = sorted(energy_data.keys())
+        all_layer_indices = sorted(self.model.forward_info.keys())
 
         for split_idx, _, _, _ in results:
             logger.debug(f"Processing metrics for split layer {split_idx}")
             for layer_idx in all_layer_indices:
                 layer_info = self.model.forward_info.get(layer_idx, {})
-                output_bytes = layer_info.get("output_bytes", 0)
-                layer_times = self.model.layer_timing_data.get(layer_idx, [])
-                avg_time = sum(layer_times) / len(layer_times) if layer_times else 0.0
-                layer_energy_measurements = energy_data.get(layer_idx, [])
-                valid_measurements = [
-                    m
-                    for m in layer_energy_measurements
-                    if m.get("split_point") == split_idx
-                ]
 
-                if layer_idx > split_idx:
-                    avg_processing_energy = 0.0
-                    avg_communication_energy = 0.0
-                    avg_power_reading = 0.0
-                    avg_gpu_utilization = 0.0
-                    total_energy = 0.0
-                elif valid_measurements:
-                    avg_processing_energy = sum(
-                        float(m.get("processing_energy", 0.0))
-                        for m in valid_measurements
-                    ) / len(valid_measurements)
-                    avg_communication_energy = sum(
-                        float(m.get("communication_energy", 0.0))
-                        for m in valid_measurements
-                    ) / len(valid_measurements)
-                    avg_power_reading = sum(
-                        float(m.get("power_reading", 0.0)) for m in valid_measurements
-                    ) / len(valid_measurements)
-                    avg_gpu_utilization = sum(
-                        float(m.get("gpu_utilization", 0.0)) for m in valid_measurements
-                    ) / len(valid_measurements)
-                    total_energy = avg_processing_energy + avg_communication_energy
-                else:
-                    avg_processing_energy = 0.0
-                    avg_communication_energy = 0.0
-                    avg_power_reading = 0.0
-                    avg_gpu_utilization = 0.0
-                    total_energy = 0.0
+                # Safely convert values with defaults for None
+                inference_time = layer_info.get("inference_time")
+                latency_ms = (
+                    float(inference_time) * 1e3 if inference_time is not None else 0.0
+                )
 
-                # Calculate average battery metrics from valid measurements
-                if valid_measurements:
-                    avg_battery_percent = sum(
-                        float(m.get("battery_percent", 0.0)) for m in valid_measurements
-                    ) / len(valid_measurements)
-                    avg_battery_draw = sum(
-                        float(m.get("battery_draw", 0.0)) for m in valid_measurements
-                    ) / len(valid_measurements)
-                else:
-                    avg_battery_percent = 0.0
-                    avg_battery_draw = 0.0
+                output_bytes = layer_info.get("output_bytes")
+                output_mb = (
+                    float(output_bytes) / (1024 * 1024)
+                    if output_bytes is not None
+                    else 0.0
+                )
 
+                # Always include basic metrics with safe conversions
                 metrics_entry = {
                     "Split Layer": split_idx,
                     "Layer ID": layer_idx,
                     "Layer Type": layer_info.get("layer_type", "Unknown"),
-                    "Layer Latency (ms)": float(avg_time) * 1e3,
-                    "Output Size (MB)": (
-                        float(output_bytes) / (1024 * 1024) if output_bytes else 0.0
-                    ),
-                    "Processing Energy (J)": avg_processing_energy,
-                    "Communication Energy (J)": avg_communication_energy,
-                    "Power Reading (W)": avg_power_reading,
-                    "GPU Utilization (%)": avg_gpu_utilization,
-                    "Total Energy (J)": total_energy,
-                    "Battery Level (%)": avg_battery_percent,
-                    "Battery Draw (W)": avg_battery_draw,
+                    "Layer Latency (ms)": latency_ms,
+                    "Output Size (MB)": output_mb,
                 }
+
+                # Add energy metrics (use 0.0 as default for missing values)
+                energy_measurements = energy_data.get(layer_idx, [])
+                valid_measurements = [
+                    m for m in energy_measurements if m.get("split_point") == split_idx
+                ]
+
+                if valid_measurements:
+                    # Safely calculate averages with error handling
+                    try:
+                        avg_metrics = {
+                            "Processing Energy (J)": sum(
+                                float(m.get("processing_energy", 0.0))
+                                for m in valid_measurements
+                            )
+                            / len(valid_measurements),
+                            "Communication Energy (J)": sum(
+                                float(m.get("communication_energy", 0.0))
+                                for m in valid_measurements
+                            )
+                            / len(valid_measurements),
+                            "Power Reading (W)": sum(
+                                float(m.get("power_reading", 0.0))
+                                for m in valid_measurements
+                            )
+                            / len(valid_measurements),
+                            "GPU Utilization (%)": sum(
+                                float(m.get("gpu_utilization", 0.0))
+                                for m in valid_measurements
+                            )
+                            / len(valid_measurements),
+                            "Total Energy (J)": sum(
+                                float(m.get("total_energy", 0.0))
+                                for m in valid_measurements
+                            )
+                            / len(valid_measurements),
+                        }
+                    except (TypeError, ValueError) as e:
+                        logger.warning(
+                            f"Error calculating energy metrics for layer {layer_idx}: {e}"
+                        )
+                        avg_metrics = {
+                            "Processing Energy (J)": 0.0,
+                            "Communication Energy (J)": 0.0,
+                            "Power Reading (W)": 0.0,
+                            "GPU Utilization (%)": 0.0,
+                            "Total Energy (J)": 0.0,
+                        }
+                else:
+                    avg_metrics = {
+                        "Processing Energy (J)": 0.0,
+                        "Communication Energy (J)": 0.0,
+                        "Power Reading (W)": 0.0,
+                        "GPU Utilization (%)": 0.0,
+                        "Total Energy (J)": 0.0,
+                    }
+
+                metrics_entry.update(avg_metrics)
+
+                # Add battery metrics if available (with safe conversion)
+                try:
+                    battery_energy = self.model.forward_info[layer_idx].get(
+                        "host_battery_energy_mwh", 0.0
+                    )
+                    metrics_entry["Host Battery Energy (mWh)"] = (
+                        float(battery_energy) if battery_energy is not None else 0.0
+                    )
+                except (TypeError, ValueError):
+                    metrics_entry["Host Battery Energy (mWh)"] = 0.0
+
                 layer_metrics.append(metrics_entry)
 
+        # Create DataFrames and save to Excel
         layer_metrics_df = (
             pd.DataFrame(layer_metrics) if layer_metrics else pd.DataFrame()
         )
 
         if layer_metrics_df.empty:
-            logger.error(
-                "No layer metrics were collected! Check if hooks are running and logging is enabled."
+            logger.warning(
+                "No layer metrics collected - saving overall performance only"
             )
         else:
             logger.info(f"Collected metrics for {len(layer_metrics_df)} layer entries")
@@ -415,10 +447,13 @@ class BaseExperiment(ExperimentInterface):
 
         with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
             df.to_excel(writer, sheet_name="Overall Performance", index=False)
+
             if not layer_metrics_df.empty:
                 layer_metrics_df.to_excel(
                     writer, sheet_name="Layer Metrics", index=False
                 )
+
+                # Create Energy Analysis sheet even with zero values
                 energy_summary = (
                     layer_metrics_df.groupby("Split Layer")
                     .agg(
@@ -428,8 +463,7 @@ class BaseExperiment(ExperimentInterface):
                             "Total Energy (J)": "sum",
                             "Power Reading (W)": "mean",
                             "GPU Utilization (%)": "mean",
-                            "Battery Level (%)": "mean",
-                            "Battery Draw (W)": "mean",
+                            "Host Battery Energy (mWh)": "first",
                         }
                     )
                     .reset_index()
@@ -437,13 +471,8 @@ class BaseExperiment(ExperimentInterface):
                 energy_summary.to_excel(
                     writer, sheet_name="Energy Analysis", index=False
                 )
-            else:
-                logger.warning("No layer metrics were collected during the experiment")
+
         logger.info(f"Results saved to {output_file}")
-        if not layer_metrics:
-            logger.error(
-                "No layer-specific metrics were collected. Check if hooks are properly recording data."
-            )
 
 
 class NetworkedExperiment(BaseExperiment):
@@ -458,6 +487,17 @@ class NetworkedExperiment(BaseExperiment):
         self.compress_data = DataCompression(config.get("compression"))
         # Dictionary to store timing data per layer per split.
         self.layer_timing_data = {}
+        self.initial_battery = None
+        if (
+            hasattr(self.model, "energy_monitor")
+            and self.model.energy_monitor._battery_initialized
+        ):
+            battery = psutil.sensors_battery()
+            if battery and not battery.power_plugged:
+                self.initial_battery = battery.percent
+                logger.info(
+                    f"Starting experiment with battery at {self.initial_battery}%"
+                )
 
     def process_single_image(
         self,
@@ -469,37 +509,20 @@ class NetworkedExperiment(BaseExperiment):
     ) -> Optional[ProcessingTimes]:
         """Process a single image and return timing information."""
         try:
+            # Host-side processing
             host_start = time.time()
-            # **Tensor Sharing #1:** Move the input tensor to the proper device.
             inputs = inputs.to(self.device, non_blocking=True)
-            # Get the model's output for the given split layer.
             output = self._get_model_output(inputs, split_layer)
-
-            # **Tensor Sharing #2:** Collect per-layer timing data from the model.
-            if hasattr(self.model, "forward_info"):
-                for layer_idx, info in self.model.forward_info.items():
-                    if info.get("inference_time") is not None:
-                        if split_layer not in self.layer_timing_data:
-                            self.layer_timing_data[split_layer] = {}
-                        if layer_idx not in self.layer_timing_data[split_layer]:
-                            self.layer_timing_data[split_layer][layer_idx] = []
-                        self.layer_timing_data[split_layer][layer_idx].append(
-                            info["inference_time"]
-                        )
-                        logger.debug(
-                            f"Collected timing for layer {layer_idx}: {info['inference_time']:.6f} seconds"
-                        )
 
             # Move inputs back to CPU for image reconstruction.
             original_image = self._get_original_image(inputs.cpu(), image_file)
             # Prepare data for network transfer.
             data_to_send = self._prepare_data_for_transfer(output, original_image)
-            # **Tensor Sharing #3:** The model's output tensor (from the split point) is paired
-            # with the input size and then passed into the compressor.
+            # Compress data for network transfer
             compressed_output, _ = self.compress_data.compress_data(data=data_to_send)
             host_time = time.time() - host_start
 
-            # Network operations: send compressed data and receive the server's processing result.
+            # Network operations
             travel_start = time.time()
             server_response = self.network_client.process_split_computation(
                 split_layer, compressed_output
@@ -511,10 +534,9 @@ class NetworkedExperiment(BaseExperiment):
                 return None
 
             processed_result, server_time = server_response
-            # Calculate network travel time by subtracting server processing time.
             travel_time = (travel_end - travel_start) - server_time
 
-            # Optional visualization: save images with overlaid predictions/detections.
+            # Optional visualization
             if self.config["default"].get("save_layer_images"):
                 self._save_intermediate_results(
                     processed_result,
@@ -556,9 +578,14 @@ class NetworkedExperiment(BaseExperiment):
         split_dir = self.paths.images_dir / f"split_{split_layer}"
         split_dir.mkdir(exist_ok=True)
 
+        # Start battery measurement for this split layer using PowerMonitor
+        if hasattr(self.model, "energy_monitor"):
+            self.model.energy_monitor.start_split_measurement(split_layer)
+
         if split_layer not in self.layer_timing_data:
             self.layer_timing_data[split_layer] = {}
 
+        # Process all images using layers 0 to split_layer on host
         with torch.no_grad():
             for batch in tqdm(
                 self.data_loader, desc=f"Processing at split {split_layer}"
@@ -570,14 +597,25 @@ class NetworkedExperiment(BaseExperiment):
             total_travel = sum(t.travel_time for t in times)
             total_server = sum(t.server_time for t in times)
 
-            # Log average timing per layer.
-            for layer_idx, timings in self.layer_timing_data[split_layer].items():
-                avg_time = sum(timings) / len(timings) if timings else 0
-                logger.debug(
-                    f"Layer {layer_idx} average time: {avg_time:.6f} seconds over {len(timings)} samples"
-                )
+            # Get total battery energy used for this split layer from PowerMonitor
+            total_battery_energy = 0.0
+            if hasattr(self.model, "energy_monitor"):
+                total_battery_energy = self.model.energy_monitor.get_battery_energy()
+                if total_battery_energy > 0:
+                    logger.info(
+                        f"Split layer {split_layer} used {total_battery_energy:.2f}mWh"
+                    )
 
-            self._log_performance_summary(total_host, total_travel, total_server)
+                # Store the battery energy in forward_info for this split layer
+                if hasattr(self.model, "forward_info"):
+                    if split_layer in self.model.forward_info:
+                        self.model.forward_info[split_layer][
+                            "host_battery_energy_mwh"
+                        ] = total_battery_energy
+
+            self._log_performance_summary(
+                total_host, total_travel, total_server, total_battery_energy
+            )
             return split_layer, total_host, total_travel, total_server
 
         return split_layer, 0.0, 0.0, 0.0
@@ -606,6 +644,33 @@ class NetworkedExperiment(BaseExperiment):
             )
             if result is not None
         ]
+
+    def run_experiment(self) -> None:
+        try:
+            # Existing experiment code...
+
+            # After all images are processed, calculate total battery energy used
+            if self.initial_battery is not None:
+                battery = psutil.sensors_battery()
+                if battery and not battery.power_plugged:
+                    percent_diff = self.initial_battery - battery.percent
+                    if percent_diff > 0:
+                        TYPICAL_BATTERY_CAPACITY = 50000  # 50Wh = 50000mWh
+                        host_battery_energy = (
+                            percent_diff / 100.0
+                        ) * TYPICAL_BATTERY_CAPACITY
+                        logger.info(
+                            f"Total experiment used {percent_diff:.2f}% battery ({host_battery_energy:.2f}mWh)"
+                        )
+
+                        # Store the total battery energy with the split layer
+                        if hasattr(self.model, "forward_info"):
+                            self.model.forward_info[self.current_split][
+                                "host_battery_energy_mwh"
+                            ] = host_battery_energy
+
+        except Exception as e:
+            logger.error(f"Error running experiment: {e}")
 
 
 class LocalExperiment(BaseExperiment):

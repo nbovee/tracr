@@ -77,7 +77,7 @@ def create_forward_prehook(
             if layer_index == 0:
                 wrapped_model.banked_output = {}
                 wrapped_model.layer_times = {}  # Store start times for each layer
-                # Start energy monitoring for first layer if available.
+                # Start energy monitoring for first layer
                 if (
                     hasattr(wrapped_model, "energy_monitor")
                     and wrapped_model.energy_monitor
@@ -132,7 +132,7 @@ def create_forward_posthook(
         """Execute post-nn.Module hook operations."""
         logger.debug(f"Start posthook {layer_index} - {layer_name}")
 
-        # Calculate layer execution time.
+        # Always collect timing metrics
         if wrapped_model.log:
             if layer_index in wrapped_model.layer_times:
                 end_time = time.perf_counter()
@@ -143,45 +143,33 @@ def create_forward_posthook(
                     f"Layer {layer_index} elapsed time: {elapsed_time:.6f} seconds"
                 )
 
-                # Calculate output tensor size in bytes if applicable.
+                # Calculate output tensor size
                 if isinstance(output, torch.Tensor):
                     output_bytes = output.element_size() * output.nelement()
                     wrapped_model.forward_info[layer_index][
                         "output_bytes"
                     ] = output_bytes
 
-                # If at the final layer (or designated split point), collect energy metrics.
+                # Collect energy metrics at final layer or split point
                 if (
                     layer_index == wrapped_model.stop_i
                     and hasattr(wrapped_model, "energy_monitor")
                     and wrapped_model.energy_monitor
                 ):
                     try:
-                        # Get final energy measurements.
+                        # Get energy measurements
                         energy_result = wrapped_model.energy_monitor.end_measurement()
-                        if not (
-                            isinstance(energy_result, tuple) and len(energy_result) == 2
-                        ):
-                            raise ValueError("Invalid energy measurement result")
-                        energy, elapsed_time = energy_result
+                        if isinstance(energy_result, tuple) and len(energy_result) == 2:
+                            energy, elapsed_time = energy_result
+                        else:
+                            energy, elapsed_time = 0.0, 0.0
 
-                        # Retrieve GPU system metrics.
+                        # Get system metrics (works for both GPU and CPU)
                         metrics = wrapped_model.energy_monitor.get_system_metrics()
                         if not isinstance(metrics, dict):
                             metrics = {}
 
-                        # Get battery metrics - only if not plugged in
-                        battery_draw = float(metrics.get("battery_draw", 0.0))
-                        battery_percent = float(metrics.get("battery_percent", 0.0))
-
-                        # Only count battery energy if actually drawing from battery
-                        if battery_draw > 0:
-                            # Convert battery draw (watts) to energy (joules) for the layer duration
-                            battery_energy = battery_draw * elapsed_time
-                        else:
-                            battery_energy = 0.0
-
-                        # Sum inference times for all layers.
+                        # Calculate total inference time
                         total_inference_time = 0.0
                         layer_times = {}
                         for idx in wrapped_model.forward_info:
@@ -192,9 +180,10 @@ def create_forward_posthook(
                                 layer_times[idx] = float(time_value)
                                 total_inference_time += float(time_value)
 
-                        # Compute energy metrics per layer.
+                        # Process metrics for each layer
                         for idx in wrapped_model.forward_info:
                             try:
+                                # Calculate layer energy proportion
                                 layer_time = layer_times.get(idx, 0.0)
                                 if (
                                     total_inference_time > 0
@@ -206,37 +195,29 @@ def create_forward_posthook(
                                 else:
                                     layer_energy = 0.0
 
-                                # Compute communication energy from output size.
+                                # Calculate communication energy
                                 output_bytes = wrapped_model.forward_info[idx].get(
-                                    "output_bytes"
+                                    "output_bytes", 0
                                 )
                                 if (
                                     isinstance(output_bytes, (int, float))
                                     and output_bytes > 0
                                 ):
-                                    NETWORK_ENERGY_PER_BYTE = (
-                                        0.00000035  # Energy cost per byte for WiFi
-                                    )
+                                    NETWORK_ENERGY_PER_BYTE = 0.00000035
                                     comm_energy = float(
                                         output_bytes * NETWORK_ENERGY_PER_BYTE
                                     )
                                 else:
                                     comm_energy = 0.0
 
-                                # Retrieve GPU metrics.
-                                try:
-                                    power_reading = float(
-                                        metrics.get("power_reading", 0.0)
-                                    )
-                                    gpu_utilization = float(
-                                        metrics.get("gpu_utilization", 0.0)
-                                    )
-                                except (TypeError, ValueError):
-                                    power_reading = 0.0
-                                    gpu_utilization = 0.0
-
+                                # Get power and GPU metrics (0 for CPU)
+                                power_reading = float(metrics.get("power_reading", 0.0))
+                                gpu_utilization = float(
+                                    metrics.get("gpu_utilization", 0.0)
+                                )
                                 total_energy = layer_energy + comm_energy
 
+                                # Create metrics dictionary
                                 energy_metrics = {
                                     "processing_energy": layer_energy,
                                     "communication_energy": comm_energy,
@@ -244,11 +225,9 @@ def create_forward_posthook(
                                     "gpu_utilization": gpu_utilization,
                                     "total_energy": total_energy,
                                     "split_point": wrapped_model.stop_i,
-                                    "battery_percent": battery_percent,
-                                    "battery_draw": battery_draw,
-                                    "battery_energy": battery_energy,  # Add battery energy consumption
                                 }
 
+                                # Store metrics
                                 if not hasattr(wrapped_model, "layer_energy_data"):
                                     wrapped_model.layer_energy_data = {}
                                 if idx not in wrapped_model.layer_energy_data:
@@ -257,6 +236,8 @@ def create_forward_posthook(
                                 wrapped_model.layer_energy_data[idx].append(
                                     energy_metrics
                                 )
+
+                                # Update forward_info with energy values
                                 energy_values = {
                                     k: v
                                     for k, v in energy_metrics.items()
@@ -268,15 +249,14 @@ def create_forward_posthook(
                                     f"Layer {idx} - Processing Energy: {layer_energy:.6f}J, "
                                     f"Communication Energy: {comm_energy:.6f}J, "
                                     f"Power: {power_reading:.3f}W, "
-                                    f"GPU Util: {gpu_utilization:.1f}%, "
-                                    f"Battery Draw: {battery_draw:.3f}W, "
-                                    f"Battery Level: {battery_percent:.1f}%"
+                                    f"GPU Util: {gpu_utilization:.1f}%"
                                 )
 
                             except Exception as layer_error:
                                 logger.error(
                                     f"Error processing energy metrics for layer {idx}: {layer_error}"
                                 )
+                                # Use safe defaults but don't lose existing metrics
                                 safe_metrics = {
                                     "processing_energy": 0.0,
                                     "communication_energy": 0.0,
@@ -284,21 +264,15 @@ def create_forward_posthook(
                                     "gpu_utilization": 0.0,
                                     "total_energy": 0.0,
                                 }
-                                wrapped_model.forward_info[idx].update(safe_metrics)
-                                if (
-                                    hasattr(wrapped_model, "layer_energy_data")
-                                    and idx in wrapped_model.layer_energy_data
-                                ):
-                                    wrapped_model.layer_energy_data[idx].append(
-                                        safe_metrics
-                                    )
-
-                        logger.debug(
-                            "Successfully stored energy metrics for all layers"
-                        )
+                                # Only update missing metrics
+                                current_metrics = wrapped_model.forward_info[idx]
+                                for k, v in safe_metrics.items():
+                                    if k not in current_metrics:
+                                        current_metrics[k] = v
 
                     except Exception as e:
                         logger.error(f"Error collecting energy metrics: {e}")
+                        # Keep existing metrics, just add missing ones with safe defaults
                         safe_metrics = {
                             "processing_energy": 0.0,
                             "communication_energy": 0.0,
@@ -307,28 +281,19 @@ def create_forward_posthook(
                             "total_energy": 0.0,
                         }
                         for idx in wrapped_model.forward_info:
-                            wrapped_model.forward_info[idx].update(safe_metrics)
+                            current_metrics = wrapped_model.forward_info[idx]
+                            for k, v in safe_metrics.items():
+                                if k not in current_metrics:
+                                    current_metrics[k] = v
 
-        # On the Edge device, bank outputs for sharing.
+        # Handle output banking and early exit
         if wrapped_model.start_i == 0:
             prepare_exit = wrapped_model.stop_i <= layer_index
             if layer_index in wrapped_model.save_layers or prepare_exit:
                 wrapped_model.banked_output[layer_index] = output
             if prepare_exit:
                 logger.info(f"Exit signal: during posthook {layer_index}")
-                # Save timing data for completed layers.
-                for idx in range(layer_index + 1):
-                    if idx in wrapped_model.layer_times:
-                        end_time = time.perf_counter()
-                        start_time = wrapped_model.layer_times[idx]
-                        elapsed_time = end_time - start_time
-                        wrapped_model.forward_info[idx]["inference_time"] = elapsed_time
-                        logger.debug(
-                            f"Saved final timing for layer {idx}: {elapsed_time:.6f} seconds"
-                        )
-                # Raise an exception to trigger early exit.
                 raise HookExitException(wrapped_model.banked_output)
-        # On the Cloud device, replace output with the banked output if available.
         else:
             if layer_index in wrapped_model.banked_output:
                 output = wrapped_model.banked_output[layer_index]

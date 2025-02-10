@@ -25,7 +25,7 @@ except ImportError:
     JTOP_AVAILABLE = False
     logger.debug("Jetson monitoring not available")
 
-# Try to import psutil for battery monitoring on Windows.
+# Keep the psutil import for battery check only
 try:
     import psutil
 
@@ -39,42 +39,40 @@ class GPUEnergyMonitor:
     """Monitor GPU energy consumption for both desktop NVIDIA and Jetson devices."""
 
     def __init__(self, device_type: str = "auto"):
-        """Initialize GPU energy monitoring.
+        """Initialize GPU/CPU energy monitoring.
 
         Args:
-            device_type: One of ["auto", "nvidia", "jetson"]. If "auto", will attempt to detect the correct device type.
+            device_type: One of ["auto", "nvidia", "jetson", "cpu"]. If "auto", will attempt to detect the correct device type.
         """
-        # Auto-detect device type if set to "auto"; otherwise, use the provided type.
-        self.device_type = (
-            self._detect_device_type() if device_type == "auto" else device_type
-        )
-        self._nvml_initialized = False  # Flag to track NVML initialization.
-        self._jtop = None  # jtop instance for Jetson monitoring.
-        self._nvml_handle = None  # NVML handle for NVIDIA GPU.
+        try:
+            self.device_type = (
+                self._detect_device_type() if device_type == "auto" else device_type
+            )
+        except RuntimeError:
+            logger.info("No GPU detected, falling back to CPU monitoring")
+            self.device_type = "cpu"
+
+        self._nvml_initialized = False
+        self._jtop = None
+        self._nvml_handle = None
         self._battery_initialized = PSUTIL_AVAILABLE and self._has_battery()
-        if self._battery_initialized:
-            logger.info("Battery monitoring initialized")
-        else:
-            logger.debug("Battery monitoring not available")
-        self._setup_monitoring()  # Setup monitoring based on detected device type.
-        logger.info(f"Initialized GPU monitoring for {self.device_type}")
+        self._initial_battery = None
+        self._current_split = None
+        self._measurements = {}
+
+        self.initialize_battery_monitoring()
+        if self.device_type != "cpu":
+            self._setup_monitoring()
+        logger.info(f"Initialized monitoring for {self.device_type}")
 
     def _detect_device_type(self) -> str:
-        """Detect whether running on a Jetson or a desktop NVIDIA device.
-
-        Returns:
-            "jetson" if Jetson-specific monitoring is available and detected,
-            "nvidia" if NVIDIA monitoring is available.
-
-        Raises:
-            RuntimeError if no supported GPU monitoring is available.
-        """
+        """Detect whether running on a Jetson, desktop NVIDIA, or CPU device."""
         if JTOP_AVAILABLE and self._is_jetson():
             return "jetson"
         elif NVIDIA_AVAILABLE:
             return "nvidia"
         else:
-            raise RuntimeError("No supported GPU monitoring available")
+            return "cpu"
 
     def _is_jetson(self) -> bool:
         """Check if running on a Jetson platform by verifying the existence of typical Jetson file paths."""
@@ -106,9 +104,7 @@ class GPUEnergyMonitor:
                 raise
 
     def start_measurement(self) -> float:
-        """Start energy measurement and return the start timestamp.
-        This function stores the current power and system metrics, then records the start time.
-        """
+        """Start energy measurement and return the start timestamp."""
         if not hasattr(self, "_start_power"):
             self._start_power = self.get_current_power()
             self._start_metrics = self.get_system_metrics()
@@ -116,9 +112,7 @@ class GPUEnergyMonitor:
         return self._start_time
 
     def end_measurement(self) -> Tuple[float, float]:
-        """End measurement and return a tuple (energy consumed in joules, elapsed time).
-        Uses a trapezoidal approximation to calculate energy consumption over the measurement interval.
-        """
+        """End measurement and return a tuple (energy consumed in joules, elapsed time)."""
         end_time = time.time()
         end_power = self.get_current_power()
 
@@ -133,112 +127,105 @@ class GPUEnergyMonitor:
         return energy_joules, elapsed_time
 
     def get_current_power(self) -> float:
-        """Return the current power consumption in watts.
-        Chooses the appropriate method based on the device type."""
+        """Return the current power consumption in watts."""
         try:
             if self.device_type == "jetson":
                 return self._get_jetson_power()
-            else:
+            elif self.device_type == "nvidia":
                 return self._get_nvidia_power()
+            else:  # CPU mode
+                if self._battery_initialized:
+                    battery = psutil.sensors_battery()
+                    if battery and not battery.power_plugged:
+                        # Estimate power from battery percentage change
+                        return self._estimate_cpu_power()
+                return 0.0
         except Exception as e:
             logger.error(f"Error getting power consumption: {e}")
             return 0.0
 
+    def _estimate_cpu_power(self) -> float:
+        """Estimate CPU power consumption from battery changes."""
+        try:
+            if not hasattr(self, "_last_power_reading"):
+                self._last_power_reading = (
+                    time.time(),
+                    psutil.sensors_battery().percent,
+                )
+                return 0.0
+
+            current_time = time.time()
+            current_battery = psutil.sensors_battery()
+
+            if current_battery and not current_battery.power_plugged:
+                last_time, last_percent = self._last_power_reading
+                time_diff = current_time - last_time
+                percent_diff = last_percent - current_battery.percent
+
+                if time_diff > 0 and percent_diff > 0:
+                    # Typical laptop battery capacity (50Wh = 50000mWh)
+                    BATTERY_CAPACITY_WH = 50.0
+                    # Convert percent/hour to watts
+                    power = (
+                        (percent_diff / 100.0)
+                        * BATTERY_CAPACITY_WH
+                        * (3600 / time_diff)
+                    )
+
+                    # Update last reading
+                    self._last_power_reading = (current_time, current_battery.percent)
+                    return power
+
+            return 0.0
+        except Exception as e:
+            logger.error(f"Error estimating CPU power: {e}")
+            return 0.0
+
     def get_system_metrics(self) -> dict:
-        """Retrieve essential system metrics including battery information."""
+        """Get current system metrics."""
         metrics = {}
 
-        # Get existing metrics based on device type
-        if self.device_type == "jetson":
-            if not self._jtop or not self._jtop.is_alive():
-                return metrics
+        if self.device_type in ["nvidia", "jetson"]:
+            # Existing GPU metrics collection
+            if self.device_type == "jetson":
+                if not self._jtop or not self._jtop.is_alive():
+                    return metrics
+                try:
+                    stats = self._jtop.stats
+                    if isinstance(stats, dict):
+                        metrics.update(
+                            {
+                                "power_reading": float(
+                                    stats.get("Power VDD_CPU_GPU_CV", 0)
+                                )
+                                / 1000.0,
+                                "gpu_utilization": float(stats.get("GPU", 0)),
+                            }
+                        )
+                except Exception as e:
+                    logger.error(f"Error collecting Jetson metrics: {e}")
+        else:  # CPU mode
             try:
-                stats = self._jtop.stats
-                if isinstance(stats, dict):
-                    metrics.update(
-                        {
-                            "power_reading": float(stats.get("Power VDD_CPU_GPU_CV", 0))
-                            / 1000.0,
-                            "gpu_utilization": float(stats.get("GPU", 0)),
-                        }
-                    )
+                power = self._estimate_cpu_power()
+                metrics.update(
+                    {
+                        "power_reading": power,
+                        "gpu_utilization": 0.0,  # No GPU utilization in CPU mode
+                    }
+                )
             except Exception as e:
-                logger.error(f"Error collecting Jetson metrics: {e}")
-
-        # Add battery metrics if available
-        if self._battery_initialized:
-            try:
-                battery = psutil.sensors_battery()
-                if battery:
-                    metrics.update(
-                        {
-                            "battery_percent": battery.percent,
-                            "battery_power": battery.power_plugged,
-                            "battery_time_left": (
-                                battery.secsleft if battery.secsleft != -1 else None
-                            ),
-                            # Calculate power draw (in watts) if on battery
-                            "battery_draw": (
-                                self._calculate_battery_draw(battery)
-                                if not battery.power_plugged
-                                else 0.0
-                            ),
-                        }
-                    )
-            except Exception as e:
-                logger.error(f"Error collecting battery metrics: {e}")
+                logger.error(f"Error collecting CPU metrics: {e}")
 
         logger.debug(f"Collected system metrics: {metrics}")
         return metrics
 
-    def _calculate_battery_draw(self, battery) -> float:
-        """Calculate approximate power draw from battery in watts."""
-        try:
-            if not hasattr(self, "_last_battery_reading"):
-                self._last_battery_reading = (battery.percent, time.time())
-                return 0.0
-
-            last_percent, last_time = self._last_battery_reading
-            current_time = time.time()
-            time_diff = current_time - last_time
-
-            if time_diff < 1:  # Avoid too frequent calculations
-                return 0.0
-
-            percent_diff = last_percent - battery.percent
-
-            # Update last reading
-            self._last_battery_reading = (battery.percent, current_time)
-
-            if percent_diff > 0 and time_diff > 0:
-                # Most laptops have 40-60Wh batteries, using 50Wh as typical
-                TYPICAL_BATTERY_CAPACITY = 50.0  # Wh
-
-                # Convert percent/hour to watts
-                watts = (
-                    (percent_diff / 100.0)
-                    * TYPICAL_BATTERY_CAPACITY
-                    * (3600 / time_diff)
-                )
-                return round(max(0.0, watts), 2)  # Ensure non-negative value
-
-            return 0.0
-
-        except Exception as e:
-            logger.error(f"Error calculating battery draw: {e}")
-            return 0.0
-
     def _get_jetson_power(self) -> float:
-        """Retrieve Jetson GPU power consumption in watts.
-        This function extracts the "Power VDD_CPU_GPU_CV" value from jtop stats and converts it from mW to W.
-        """
+        """Retrieve Jetson GPU power consumption in watts."""
         if not self._jtop or not self._jtop.is_alive():
             raise RuntimeError("Jetson monitoring not initialized")
 
         try:
             stats = self._jtop.stats
-
-            # Use the specific key "Power VDD_CPU_GPU_CV" to retrieve GPU power.
             power_key = "Power VDD_CPU_GPU_CV"
             if power_key in stats:
                 try:
@@ -265,20 +252,10 @@ class GPUEnergyMonitor:
             raise RuntimeError("NVIDIA monitoring not initialized")
 
         try:
-            # NVML returns power in mW; convert to watts.
             return pynvml.nvmlDeviceGetPowerUsage(self._nvml_handle) / 1000.0
         except Exception as e:
             logger.error(f"Error reading NVIDIA power: {e}")
             return 0.0
-
-    def _has_battery(self) -> bool:
-        """Check if the system has a battery."""
-        try:
-            battery = psutil.sensors_battery()
-            return battery is not None
-        except Exception as e:
-            logger.debug(f"Error checking battery: {e}")
-            return False
 
     def cleanup(self) -> None:
         """Clean up and release monitoring resources."""
@@ -307,3 +284,129 @@ class GPUEnergyMonitor:
     def __del__(self):
         """Ensure cleanup on deletion."""
         self.cleanup()
+
+    def _calculate_battery_draw(self, battery) -> float:
+        """Calculate battery energy consumption in mWh."""
+        try:
+            if not hasattr(self, "_last_battery_reading"):
+                self._last_battery_reading = (
+                    battery.percent,
+                    time.time(),
+                    battery.power_plugged,
+                )
+                logger.debug(
+                    f"Initial battery state: {battery.percent}%, plugged={battery.power_plugged}"
+                )
+                return 0.0
+
+            last_percent, last_time, was_plugged = self._last_battery_reading
+            current_time = time.time()
+
+            # Update reading for next time
+            self._last_battery_reading = (
+                battery.percent,
+                current_time,
+                battery.power_plugged,
+            )
+
+            # Only measure when on battery power
+            if battery.power_plugged or was_plugged:
+                logger.debug("Battery is/was plugged in, skipping measurement")
+                return 0.0
+
+            # Calculate energy used
+            percent_diff = last_percent - battery.percent
+            if percent_diff > 0:
+                # Typical laptop battery capacity in mWh
+                TYPICAL_BATTERY_CAPACITY = 50000  # 50Wh = 50000mWh
+                energy_used = (percent_diff / 100.0) * TYPICAL_BATTERY_CAPACITY
+                logger.debug(
+                    f"Battery dropped {percent_diff}%, estimated {energy_used:.2f}mWh used"
+                )
+                return energy_used
+
+            return 0.0
+
+        except Exception as e:
+            logger.error(f"Error calculating battery energy: {e}")
+            return 0.0
+
+    def _has_battery(self) -> bool:
+        """Check if the system has a battery."""
+        try:
+            battery = psutil.sensors_battery()
+            return battery is not None
+        except Exception as e:
+            logger.debug(f"Error checking battery: {e}")
+            return False
+
+    def initialize_battery_monitoring(self):
+        battery = psutil.sensors_battery()
+        if battery:
+            self._battery_initialized = True
+            logger.info(
+                f"Initial battery state: plugged={battery.power_plugged}, percent={battery.percent}%"
+            )
+
+    def start_split_measurement(self, split_layer: int):
+        """Start a fresh battery measurement for a new split layer"""
+        if self._battery_initialized:
+            battery = psutil.sensors_battery()
+            if battery and not battery.power_plugged:
+                # Get fresh battery reading for this split layer
+                current_percent = battery.percent
+
+                # Start fresh measurement state for this split
+                self._current_split = split_layer
+                self._measurements[split_layer] = {
+                    "start_percent": current_percent,
+                    "start_time": time.time(),
+                }
+                logger.info(
+                    f"Starting split layer {split_layer} with battery at {current_percent:.3f}%"
+                )
+
+    def get_battery_energy(self) -> float:
+        """Calculate battery energy used for the current split"""
+        if not self._battery_initialized or self._current_split is None:
+            return 0.0
+
+        battery = psutil.sensors_battery()
+        if battery and not battery.power_plugged:
+            current_percent = battery.percent
+            split_data = self._measurements.get(self._current_split)
+
+            if split_data:
+                start_percent = split_data["start_percent"]
+                total_percent_diff = start_percent - current_percent
+
+                if total_percent_diff > 0:
+                    # HP Laptop battery with Full Charge Capacity of 57,356 mWh
+                    BATTERY_CAPACITY = 57356  # mWh
+                    total_energy_used = (total_percent_diff / 100.0) * BATTERY_CAPACITY
+
+                    # Log the final measurement for this split
+                    elapsed_time = time.time() - split_data["start_time"]
+                    logger.info(
+                        f"Split {self._current_split} completed: "
+                        f"Battery dropped {total_percent_diff:.3f}% "
+                        f"({start_percent:.3f}% -> {current_percent:.3f}%), "
+                        f"used {total_energy_used:.2f}mWh in {elapsed_time:.1f}s"
+                    )
+
+                    # Store final results
+                    split_data.update(
+                        {
+                            "end_percent": current_percent,
+                            "energy_used": total_energy_used,
+                            "elapsed_time": elapsed_time,
+                        }
+                    )
+
+                    return total_energy_used
+
+        return 0.0
+
+    def get_split_measurements(self):
+        """Return all split measurements for logging to Excel"""
+        return self._measurements
