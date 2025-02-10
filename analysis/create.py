@@ -16,7 +16,6 @@ from constants import REQUIRED_COLUMNS
 from plots.comparative import (
     plot_comparative_latency,
     plot_comparative_energy,
-    plot_comparative_layer_metrics,
 )
 
 logger = logging.getLogger(__name__)
@@ -131,10 +130,6 @@ def create_comparative_plots(
         if plot_type in ["energy_analysis", "all"]:
             output_path = os.path.join(output_dir, "comparative_energy.png")
             plot_comparative_energy(model_data, output_path)
-
-        if plot_type in ["layer_metrics", "all"]:
-            output_path = os.path.join(output_dir, "comparative_layer_metrics.png")
-            plot_comparative_layer_metrics(model_data, output_path)
 
         return 0
 

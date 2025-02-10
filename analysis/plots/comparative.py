@@ -215,11 +215,21 @@ def plot_comparative_energy(
     model_data: Dict[str, Dict[str, pd.DataFrame]], output_path: str
 ) -> None:
     """Create comparative visualization of energy consumption for different models."""
-    fig, ax = plt.subplots(figsize=DIMENSIONS["energy_analysis"])
+    # Increase both width and height
+    dimensions = list(DIMENSIONS["energy_analysis"])
+    dimensions[0] += 2  # Add 2 inches to width
+    dimensions[1] += 1  # Add 1 inch to height
+    fig, ax = plt.subplots(figsize=tuple(dimensions))
+
     ax2 = ax.twinx()  # For power readings
 
+    # Create third y-axis for battery energy with more spacing
+    ax3 = ax.twinx()
+    # Offset the third axis closer to the power axis
+    ax3.spines["right"].set_position(("axes", 1.15))  # Changed from 1.25 to 1.15
+
     # Plot bars for each model side by side
-    models = list(model_data.keys())  # Define models first
+    models = list(model_data.keys())
     x = np.arange(len(model_data[models[0]]["energy_analysis"]))
 
     # Define professional color schemes for each model - Energy-themed colors
@@ -240,6 +250,7 @@ def plot_comparative_energy(
     best_points = {}
     max_energy = 0
     max_power = 0
+    max_battery = 0
 
     for i, model in enumerate(models):
         layer_metrics_df = model_data[model]["layer_metrics"]
@@ -271,7 +282,7 @@ def plot_comparative_energy(
         # Offset bars for each model
         offset = (i - 0.5) * BAR_WIDTH
 
-        # Plot stacked bars with new colors
+        # Plot stacked bars with adjusted alpha
         bars1 = ax.bar(
             x + offset,
             comm_energy,
@@ -280,7 +291,7 @@ def plot_comparative_energy(
             edgecolor="black",
             linewidth=0.5,
             label=f"{model} Communication",
-            alpha=1.0,
+            alpha=0.8,  # Slightly reduced alpha for better visibility
         )
 
         bars2 = ax.bar(
@@ -292,23 +303,23 @@ def plot_comparative_energy(
             edgecolor="black",
             linewidth=0.5,
             label=f"{model} Processing",
-            alpha=1.0,
+            alpha=0.8,  # Slightly reduced alpha
         )
 
-        # Plot power line with new style
+        # Plot power line with adjusted style
         line = ax2.plot(
             x + offset,
             power_readings,
             color=model_colors[model]["power"],
-            linestyle="-" if i == 0 else "--",
-            linewidth=1.5,
+            linestyle="-" if i == 0 else "--",  # Solid vs dashed for distinction
+            linewidth=1.2,  # Slightly thinner for clarity
             label=f"{model} Power",
-            marker="o",
-            markersize=4,
+            marker="D",  # Diamond marker (more professional than circle)
+            markersize=4,  # Slightly larger marker
             markerfacecolor="white",
             markeredgecolor=model_colors[model]["power"],
-            markeredgewidth=1.5,
-            alpha=1.0,
+            markeredgewidth=1.0,
+            alpha=0.9,
         )
 
         # Track best points and maximum values
@@ -319,20 +330,42 @@ def plot_comparative_energy(
         best_energy = total_energy[best_idx]
         best_points[model] = (best_idx + offset, best_energy)
 
+        # Add battery energy line
+        battery_energy = energy_df["Host Battery Energy (mWh)"].values
+        max_battery = max(max_battery, max(battery_energy))
+
+        # Plot battery energy line
+        line_battery = ax3.plot(
+            x + offset,
+            battery_energy,
+            color=model_colors[model]["power"],
+            linestyle=(
+                "-." if i == 0 else ":"
+            ),  # Dash-dot vs dotted (standard in publications)
+            linewidth=1.2,
+            label=f"{model} Battery",
+            marker="^",  # Triangle marker (distinct and professional)
+            markersize=5,  # Slightly larger marker
+            markerfacecolor="white",
+            markeredgecolor=model_colors[model]["power"],
+            markeredgewidth=1.0,
+            alpha=0.8,
+        )
+
     # Add best point annotations with improved positioning
     for i, (model, (x_pos, y_pos)) in enumerate(best_points.items()):
         # YOLOv8s (i=1) vertical, YOLOv5s (i=0) curved right
         if i == 0:  # YOLOv5s
-            text_x = x_pos + 1.0  # Move text right
-            text_y = y_pos + 0.15  # Lower text position
-            curve_amount = 0.15  # More curve
+            text_x = x_pos + 2.0  # Move text further right (was 1.0)
+            text_y = y_pos + 0.25  # Higher text position (was 0.15)
+            curve_amount = 0.3  # More curve (was 0.15)
         else:  # YOLOv8s
             text_x = x_pos  # Keep text directly above
             text_y = y_pos + 0.3  # Higher text position
             curve_amount = 0.0  # Perfectly vertical
 
         # Add star closer to bar
-        star_y = y_pos + 0.03  # Reduced gap between bar and star
+        star_y = y_pos + 0.03  # Keep same gap between bar and star
         ax.plot(
             x_pos,
             star_y,
@@ -350,7 +383,7 @@ def plot_comparative_energy(
         # Add annotation with arrow
         ax.annotate(
             f"Best {model}",
-            xy=(x_pos, star_y + 0.02),  # Reduced gap between arrow and star
+            xy=(x_pos, star_y + 0.02),  # Keep same gap between arrow and star
             xytext=(text_x, text_y),  # Different positions for each model
             color=text_color,
             fontsize=ANNOTATION["text_size"],
@@ -368,33 +401,30 @@ def plot_comparative_energy(
             zorder=6,
         )
 
-    # Customize axes
-    ax.set_ylabel("Energy (J)")
-    ax2.set_ylabel("Power (mW)", color=COLORS["power_line"])
-    ax.set_xticks(x)
+    # Customize axes with better spacing
+    ax.set_ylabel("Energy (J)", labelpad=15)
+    ax2.set_ylabel("Power (mW)", color=COLORS["power_line"], labelpad=15)
+    ax3.set_ylabel("Battery Energy (mWh)", color=COLORS["power_line"], labelpad=20)
 
-    # Get layer names from first model
-    layer_names = []
-    df = model_data[models[0]]["layer_metrics"]
-    for split in model_data[models[0]]["energy_analysis"]["Split Layer"]:
-        layer_name = df[df["Layer ID"] == split]["Layer Type"].iloc[0]
-        layer_names.append(layer_name)
+    # Adjust tick parameters for better readability
+    ax.tick_params(axis="both", labelsize=8, pad=5)
+    ax2.tick_params(axis="y", colors=COLORS["power_line"], labelsize=8, pad=5)
+    ax3.tick_params(axis="y", colors=COLORS["power_line"], labelsize=8, pad=5)
 
-    ax.set_xticklabels(layer_names, rotation=ROTATION, ha="right", va="top", fontsize=7)
+    # Add grid with light alpha
+    ax.grid(True, axis="y", alpha=0.1, linestyle="-")
 
-    # Clean up plot
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax2.spines["top"].set_visible(False)
-    add_grid(ax)
-    ax2.tick_params(axis="y", colors=COLORS["power_line"])
+    # Adjust legend
+    legend_params = LEGEND_SPACING.copy()
+    legend_params["columnspacing"] = 2.0  # Increased spacing between columns
+    legend_params["handletextpad"] = 0.7  # More space between handle and text
 
-    # Reorganize legend items to group by component type
-    handles, labels = [], []
-    handles.extend(ax.get_legend_handles_labels()[0])
-    labels.extend(ax.get_legend_handles_labels()[1])
-    handles.extend(ax2.get_legend_handles_labels()[0])
-    labels.extend(ax2.get_legend_handles_labels()[1])
+    handles1, labels1 = ax.get_legend_handles_labels()  # Energy bars
+    handles2, labels2 = ax2.get_legend_handles_labels()  # Power lines
+    handles3, labels3 = ax3.get_legend_handles_labels()  # Battery lines
+
+    handles = handles1 + handles2 + handles3
+    labels = labels1 + labels2 + labels3
 
     # Reorder handles and labels to group by metric type
     ordered_labels = []
@@ -402,183 +432,71 @@ def plot_comparative_energy(
 
     # Group by metric type with models distinguished by color
     # Mobile Processing
-    ordered_labels.extend(
-        ["Mobile Processing:", "YOLOv5s", "YOLOv8s"]  # Category label
-    )
+    ordered_labels.extend(["Mobile Processing:", "YOLOv5s", "YOLOv8s"])
     ordered_handles.extend(
         [
-            plt.Rectangle(
-                (0, 0), 0, 0, fill=False, edgecolor="none"
-            ),  # Empty handle for category
+            plt.Rectangle((0, 0), 0, 0, fill=False, edgecolor="none"),
             handles[labels.index(f"{models[0]} Processing")],
             handles[labels.index(f"{models[1]} Processing")],
         ]
     )
 
     # Data Communication
-    ordered_labels.extend(
-        ["Data Communication:", "YOLOv5s", "YOLOv8s"]  # Category label
-    )
+    ordered_labels.extend(["Data Communication:", "YOLOv5s", "YOLOv8s"])
     ordered_handles.extend(
         [
-            plt.Rectangle(
-                (0, 0), 0, 0, fill=False, edgecolor="none"
-            ),  # Empty handle for category
+            plt.Rectangle((0, 0), 0, 0, fill=False, edgecolor="none"),
             handles[labels.index(f"{models[0]} Communication")],
             handles[labels.index(f"{models[1]} Communication")],
         ]
     )
 
     # Power
-    ordered_labels.extend(["Power (mW):", "YOLOv5s", "YOLOv8s"])  # Category label
+    ordered_labels.extend(["Power (mW):", "YOLOv5s", "YOLOv8s"])
     ordered_handles.extend(
         [
-            plt.Rectangle(
-                (0, 0), 0, 0, fill=False, edgecolor="none"
-            ),  # Empty handle for category
+            plt.Rectangle((0, 0), 0, 0, fill=False, edgecolor="none"),
             handles[labels.index(f"{models[0]} Power")],
             handles[labels.index(f"{models[1]} Power")],
         ]
     )
 
-    # Add legend with reordered items
-    legend_params = LEGEND_SPACING.copy()  # Create a copy of the spacing parameters
-    legend_params["columnspacing"] = 1.0  # Override columnspacing
-    legend_params["handletextpad"] = 0.5  # Add handletextpad
+    # Battery
+    ordered_labels.extend(["Battery (mWh):", "YOLOv5s", "YOLOv8s"])
+    ordered_handles.extend(
+        [
+            plt.Rectangle((0, 0), 0, 0, fill=False, edgecolor="none"),
+            handles[labels.index(f"{models[0]} Battery")],
+            handles[labels.index(f"{models[1]} Battery")],
+        ]
+    )
 
+    # Add legend with reordered items
     ax.legend(
         ordered_handles,
         ordered_labels,
         loc="upper center",
-        bbox_to_anchor=(0.5, 1.15),
-        ncol=3,  # Three columns for three metric types
+        bbox_to_anchor=(0.5, 1.30),  # Move legend even higher
+        ncol=4,
         frameon=False,
-        fontsize=7,
+        fontsize=8,  # Slightly larger font
         **legend_params,
     )
 
+    # Adjust layout with more space
     plt.tight_layout(pad=PLOT_PADDING["tight_layout"])
-    plt.savefig(
-        output_path,
-        dpi=300,
-        bbox_inches=PLOT_PADDING["bbox_inches"],
-        pad_inches=PLOT_PADDING["pad_inches"],
-    )
-    plt.close()
-
-
-def plot_comparative_layer_metrics(
-    model_data: Dict[str, Dict[str, pd.DataFrame]], output_path: str
-) -> None:
-    """Create comparative visualization of layer metrics for different models."""
-    fig, ax1 = plt.subplots(figsize=DIMENSIONS["layer_metrics"])
-    ax2 = ax1.twinx()
-
-    models = list(model_data.keys())
-    max_latency = 0
-    max_size = 0
-
-    # First, get common layer types across all models
-    common_layer_types = set()
-    for model in models:
-        df = model_data[model]["layer_metrics"]
-        split_df = model_data[model]["overall_performance"]
-        valid_layer_ids = split_df["Split Layer Index"].unique()
-        layer_types = df[df["Layer ID"].isin(valid_layer_ids)]["Layer Type"].unique()
-        common_layer_types.update(layer_types)
-
-    common_layer_types = sorted(list(common_layer_types))
-    x = np.arange(len(common_layer_types))
-
-    for i, model in enumerate(models):
-        df = model_data[model]["layer_metrics"]
-        split_df = model_data[model]["overall_performance"]
-
-        # Get valid layer IDs
-        valid_layer_ids = split_df["Split Layer Index"].unique()
-
-        # Process layer metrics
-        grouped = (
-            df[df["Layer ID"].isin(valid_layer_ids)]
-            .groupby("Layer Type")  # Group by Layer Type instead of Layer ID
-            .agg(
-                {
-                    "Layer Latency (ms)": "mean",
-                    "Output Size (MB)": "mean",
-                }
-            )
-            .reindex(
-                common_layer_types, fill_value=0
-            )  # Ensure all layer types are included
-            .reset_index()
-        )
-
-        # Set positions
-        offset = (i - 0.5) * BAR_WIDTH
-
-        # Plot metrics
-        ax1.bar(
-            x + offset,
-            grouped["Layer Latency (ms)"],
-            BAR_WIDTH,
-            label=f"{model} Latency",
-            color=COLORS["gpu_energy"],
-            edgecolor="black",
-            linewidth=0.5,
-            alpha=0.8 if i == 0 else 0.6,
-        )
-
-        ax2.bar(
-            x + offset,
-            grouped["Output Size (MB)"],
-            BAR_WIDTH,
-            label=f"{model} Size",
-            color=COLORS["battery"],
-            edgecolor="black",
-            linewidth=0.5,
-            alpha=0.8 if i == 0 else 0.6,
-        )
-
-        max_latency = max(max_latency, grouped["Layer Latency (ms)"].max())
-        max_size = max(max_size, grouped["Output Size (MB)"].max())
-
-    # Customize axes
-    ax1.set_ylabel("Latency (ms)")
-    ax2.set_ylabel("Data size (MB)")
-    ax1.set_xticks(x)
-    ax1.set_xticklabels(
-        common_layer_types, rotation=ROTATION, ha="right", va="top", fontsize=7
+    plt.subplots_adjust(
+        right=0.82,  # Changed from 0.85 to 0.82 to reduce right margin
+        top=0.80,  # More space for legend
+        bottom=0.15,  # Keep space for x-axis labels
+        left=0.10,  # Add some space on the left
     )
 
-    # Format ticks
-    latency_max = np.ceil(max_latency / 5) * 5
-    size_max = np.ceil(max_size / 0.5) * 0.5
+    # Set battery energy axis limits with nice round numbers
+    battery_limit = np.ceil(max_battery / 100) * 100
+    ax3.set_ylim(0, battery_limit)
+    ax3.yaxis.set_major_locator(plt.MultipleLocator(200))  # Tick every 200 mWh
 
-    ax1.set_ylim(0, latency_max)
-    ax2.set_ylim(0, size_max)
-
-    # Add grid
-    add_grid(ax1)
-
-    # Add legend
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(
-        lines1 + lines2,
-        labels1 + labels2,
-        loc="upper right",
-        frameon=True,
-        framealpha=0.9,
-        edgecolor="none",
-        ncol=2,
-        **LEGEND_SPACING,
-    )
-
-    # Clean up spines
-    ax1.spines["top"].set_visible(False)
-    ax2.spines["top"].set_visible(False)
-
-    plt.tight_layout(pad=PLOT_PADDING["tight_layout"])
     plt.savefig(
         output_path,
         dpi=300,
