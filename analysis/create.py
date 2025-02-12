@@ -143,16 +143,37 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate visualizations from Excel metrics"
     )
+    
+    # Individual model arguments
+    parser.add_argument(
+        "--yolov5-cpu",
+        help="Path to Excel file containing YOLOv5 CPU metrics",
+    )
+    parser.add_argument(
+        "--yolov5-gpu",
+        help="Path to Excel file containing YOLOv5 GPU metrics",
+    )
+    parser.add_argument(
+        "--yolov8-cpu",
+        help="Path to Excel file containing YOLOv8 CPU metrics",
+    )
+    parser.add_argument(
+        "--yolov8-gpu",
+        help="Path to Excel file containing YOLOv8 GPU metrics",
+    )
+    
+    # For backwards compatibility and individual plots
     parser.add_argument(
         "excel_paths",
-        nargs="+",
-        help="Path(s) to Excel file(s) containing metrics. One file for individual plots, multiple files for comparison.",
+        nargs="*",
+        help="Path(s) to Excel file(s) containing metrics (for individual plots)",
     )
     parser.add_argument(
         "--model-names",
-        nargs="+",
-        help="Names of models when comparing multiple models (required for multiple files)",
+        nargs="*",
+        help="Names of models when comparing multiple models",
     )
+    
     parser.add_argument(
         "--output-dir",
         "-o",
@@ -166,27 +187,57 @@ def main():
         default="all",
         help="Type of plot to generate (default: all)",
     )
+    parser.add_argument(
+        "--comparative",
+        action="store_true",
+        help="Generate comparative plots for multiple models",
+    )
 
     args = parser.parse_args()
 
-    # Determine if we're doing individual or comparative plots
-    if len(args.excel_paths) == 1:
-        # Single model case - create individual plots
-        return create_plots(args.excel_paths[0], args.output_dir, args.plot_type)
-    else:
-        # Multiple model case - create comparative plots
-        if not args.model_names or len(args.model_names) != len(args.excel_paths):
-            logger.error(
-                "Must provide model names (--model-names) matching number of Excel files for comparison"
-            )
+    # Handle comparative plotting with specific model arguments
+    if args.comparative:
+        model_paths = {
+            "YOLOv5s CPU": args.yolov5_cpu,
+            "YOLOv5s GPU": args.yolov5_gpu,
+            "YOLOv8s CPU": args.yolov8_cpu,
+            "YOLOv8s GPU": args.yolov8_gpu,
+        }
+        
+        # Filter out None values
+        model_paths = {k: v for k, v in model_paths.items() if v is not None}
+        
+        if len(model_paths) < 2:
+            logger.error("At least two model paths must be provided for comparative plots")
             return 1
 
         # Load data for all models
         model_data = {}
-        for path, name in zip(args.excel_paths, args.model_names):
+        for name, path in model_paths.items():
             model_data[name] = read_excel_data(path)
 
         return create_comparative_plots(model_data, args.output_dir, args.plot_type)
+    
+    # Handle individual plotting (original functionality)
+    elif len(args.excel_paths) > 0:
+        if len(args.excel_paths) == 1:
+            return create_plots(args.excel_paths[0], args.output_dir, args.plot_type)
+        else:
+            if not args.model_names or len(args.model_names) != len(args.excel_paths):
+                logger.error(
+                    "Must provide model names (--model-names) matching number of Excel files for comparison"
+                )
+                return 1
+
+            # Load data for all models
+            model_data = {}
+            for path, name in zip(args.excel_paths, args.model_names):
+                model_data[name] = read_excel_data(path)
+
+            return create_comparative_plots(model_data, args.output_dir, args.plot_type)
+    else:
+        logger.error("No input files provided")
+        return 1
 
 
 if __name__ == "__main__":

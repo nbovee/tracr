@@ -33,18 +33,32 @@ def plot_comparative_latency(
     # Plot bars for each model side by side
     models = list(model_data.keys())
     x = np.arange(len(model_data[models[0]]["overall_performance"]))
+    
+    # Add spacing between groups by stretching x-axis
+    group_spacing = 1.0  # Increased from 0.5 to 1.0 for more separation between groups
+    x = x * (1 + group_spacing)  # Stretch x positions to add gaps between groups
 
-    # Define professional color schemes for each model
+    # Define professional color schemes for each model with CPU/GPU grouping
     model_colors = {
-        models[0]: {  # First model (YOLOv5s)
-            "server": "#1f77b4",  # Strong blue
-            "communication": "#7393b3",  # Steel blue
-            "mobile": "#bdd7e7",  # Light blue
+        "YOLOv5s CPU": {  # CPU Group - Blues
+            "server": "#1f77b4",    # Strong blue
+            "communication": "#6baed6",  # Medium blue
+            "mobile": "#bdd7e7",    # Light blue
         },
-        models[1]: {  # Second model (YOLOv8s)
-            "server": "#2ca02c",  # Strong green
-            "communication": "#69b3a2",  # Sage green
-            "mobile": "#b5e5bf",  # Light green
+        "YOLOv8s CPU": {  # CPU Group - Blue-purples
+            "server": "#4a4090",    # Strong blue-purple
+            "communication": "#807dba",  # Medium blue-purple
+            "mobile": "#bcbddc",    # Light blue-purple
+        },
+        "YOLOv5s GPU": {  # GPU Group - Oranges
+            "server": "#d95f02",    # Strong orange
+            "communication": "#fc8d62",  # Medium orange
+            "mobile": "#fdd0a2",    # Light orange
+        },
+        "YOLOv8s GPU": {  # GPU Group - Red-oranges
+            "server": "#e6550d",    # Strong red-orange
+            "communication": "#fdae6b",  # Medium red-orange
+            "mobile": "#fee6ce",    # Light red-orange
         },
     }
 
@@ -58,13 +72,13 @@ def plot_comparative_latency(
             model_colors[model]["mobile"],
         ]
 
-        # Offset bars for each model
-        offset = (i - 0.5) * BAR_WIDTH
+        # Keep bars in group close together but add spacing between groups
+        offset = (i - 1.5) * BAR_WIDTH
         bottom = np.zeros(len(df))
 
         for metric, color, label in zip(metrics, colors, labels):
             ax.bar(
-                x + offset,
+                x + offset,  # x is now stretched to create group spacing
                 df[metric],
                 BAR_WIDTH,
                 bottom=bottom,
@@ -72,72 +86,76 @@ def plot_comparative_latency(
                 edgecolor="black",
                 linewidth=0.5,
                 label=label,
-                alpha=1.0,  # Full opacity for professional look
+                alpha=1.0,
             )
             bottom += df[metric]
 
-        # Track best point and maximum total
+        # Update best point tracking with new x positions
         total_latencies = df["Total Processing Time"]
         max_total = max(max_total, total_latencies.max())
         best_idx = total_latencies.idxmin()
         best_latency = total_latencies[best_idx]
-        best_points[model] = (best_idx + offset, best_latency)
+        best_points[model] = (x[best_idx] + offset, best_latency)
 
     # Add best point annotations with improved positioning
     for i, (model, (x_pos, y_pos)) in enumerate(best_points.items()):
-        # Determine curve direction based on which model's best point is leftmost
-        leftmost_x = min(p[0] for p in best_points.values())
-        curve_direction = (
-            -1 if x_pos == leftmost_x else 1
-        )  # Left curve for leftmost point
+        # Customize text position and arrow length for each model to prevent overlap
+        if model == "YOLOv8s CPU":  # Changed order - YOLOv8 on left
+            text_x = x_pos - 1.0  # Move left
+            text_y = y_pos + 6.0  # Keep CPU annotations lower
+            curve_direction = -1
+        elif model == "YOLOv8s GPU":  # YOLOv8 GPU also on left
+            text_x = x_pos - 0.8  # Move slightly left
+            text_y = y_pos + 12.0  # Move GPU annotation much higher
+            curve_direction = -1
+        elif model == "YOLOv5s CPU":  # YOLOv5 on right
+            text_x = x_pos + 0.8  # Move slightly right
+            text_y = y_pos + 7.0  # Keep CPU annotations lower
+            curve_direction = 1
+        else:  # YOLOv5s GPU - on right
+            text_x = x_pos + 1.0  # Move right
+            text_y = y_pos + 13.0  # Move GPU annotation highest
+            curve_direction = 1
 
-        # Calculate positions with more space above bars
-        text_x = x_pos + (
-            0.8 * curve_direction
-        )  # Reduced horizontal offset for more vertical arrows
-        text_y = y_pos + 8.0  # Higher vertical position for more vertical appearance
-
-        # Add star with more space above bar
-        star_y = y_pos + 2.0  # Increased vertical spacing from bar
+        # Add star with matching color as the arrow
+        star_y = y_pos + 2.0
         ax.plot(
             x_pos,
             star_y,
             marker="*",
             markersize=ANNOTATION["star_size"],
-            color=ANNOTATION["star_color"],
+            color=model_colors[model]["server"],
             markeredgecolor="black",
             markeredgewidth=0.5,
             zorder=5,
         )
 
-        # Add text with matching color from model's scheme
+        # Add text with matching color
         text_color = model_colors[model]["server"]
 
         # Add annotation with arrow
         ax.annotate(
             f"Best {model}",
-            xy=(x_pos, star_y + 0.8),  # Increased gap between arrow and star
-            xytext=(text_x, text_y),  # Text position
+            xy=(x_pos, star_y + 0.8),
+            xytext=(text_x, text_y),
             color=text_color,
             fontsize=ANNOTATION["text_size"],
-            ha=(
-                "right" if curve_direction < 0 else "left"
-            ),  # Align text based on curve direction
+            ha="right" if curve_direction < 0 else "left",
             va="bottom",
             arrowprops=dict(
                 arrowstyle="->",
-                connectionstyle=f"arc3,rad={0.05 * curve_direction}",  # Much reduced curve for near-vertical path
+                connectionstyle=f"arc3,rad={0.05 * curve_direction}",
                 color=text_color,
                 linewidth=1.0,
                 shrinkA=0,
-                shrinkB=2,  # Add small gap at arrow end
+                shrinkB=2,
             ),
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.8, pad=0.2),
             zorder=6,
         )
 
     # Customize axes
-    ax.set_ylabel("Latency (s)")
+    ax.set_ylabel("Time (s)")
     ax.set_xticks(x)
 
     # Get layer names from first model (assuming same layers)
@@ -163,42 +181,115 @@ def plot_comparative_latency(
     ax.grid(False)
     add_grid(ax)
 
-    # Reorganize legend items to group by component type
+    # Reorganize legend items to group by CPU/GPU and components
     handles, labels = ax.get_legend_handles_labels()
-
-    # Reorder handles and labels to group by component
     ordered_labels = []
     ordered_handles = []
 
-    # Add Server components
-    for model in models:
-        ordered_labels.append(f"{model} Server")
-        ordered_handles.append(handles[labels.index(f"{model} Server")])
+    # Add CPU components
+    ordered_labels.extend(["CPU Server", "CPU Communication", "CPU Host"])
+    ordered_handles.extend([
+        handles[labels.index("YOLOv5s CPU Server")],  # Use YOLOv5s CPU as representative
+        handles[labels.index("YOLOv5s CPU Travel")],
+        handles[labels.index("YOLOv5s CPU Host")],
+    ])
 
-    # Add Travel/Communication components
-    for model in models:
-        ordered_labels.append(f"{model} Travel")
-        ordered_handles.append(handles[labels.index(f"{model} Travel")])
-
-    # Add Host/Mobile components
-    for model in models:
-        ordered_labels.append(f"{model} Host")
-        ordered_handles.append(handles[labels.index(f"{model} Host")])
+    # Add GPU components
+    ordered_labels.extend(["GPU Server", "GPU Communication", "GPU Host"])
+    ordered_handles.extend([
+        handles[labels.index("YOLOv5s GPU Server")],  # Use YOLOv5s GPU as representative
+        handles[labels.index("YOLOv5s GPU Travel")],
+        handles[labels.index("YOLOv5s GPU Host")],
+    ])
 
     # Add legend with reordered items
-    legend_params = LEGEND_SPACING.copy()  # Create a copy of the spacing parameters
-    legend_params["columnspacing"] = 1.0  # Override columnspacing
-    legend_params["handletextpad"] = 0.5  # Add handletextpad
+    legend_params = LEGEND_SPACING.copy()
+    legend_params["columnspacing"] = 1.0
+    legend_params["handletextpad"] = 0.5
 
     ax.legend(
         ordered_handles,
         ordered_labels,
         loc="upper center",
         bbox_to_anchor=(0.5, 1.15),
-        ncol=3,  # Three columns for three metric types
+        ncol=3,  # Changed to 3 columns for better layout
         frameon=False,
-        fontsize=7,
+        fontsize=8,  # Slightly larger font for better readability
         **legend_params,
+    )
+
+    # Add dotted bounding boxes around the last layer (Detect) to group YOLOv5 and YOLOv8
+    last_x = x[-1]  # X position of the last layer (Detect)
+    
+    # YOLOv5 box (around the two rightmost bars in group)
+    v5_left = last_x + 0.5 * BAR_WIDTH  # Start after YOLOv8 bars
+    v5_right = last_x + 2.5 * BAR_WIDTH
+    v5_bottom = 0
+    v5_height = max_total  # Use full height
+    v5_rect = plt.Rectangle(
+        (v5_left, v5_bottom),
+        v5_right - v5_left,
+        v5_height,
+        fill=False,
+        linestyle=':', 
+        edgecolor=model_colors["YOLOv5s CPU"]["server"],  # Use YOLOv5 blue color
+        linewidth=1,
+        zorder=1
+    )
+    ax.add_patch(v5_rect)
+    
+    # YOLOv8 box (around the two leftmost bars in group)
+    v8_left = last_x - 2.5 * BAR_WIDTH  # Start before first bar
+    v8_right = last_x - 0.5 * BAR_WIDTH
+    v8_rect = plt.Rectangle(
+        (v8_left, v5_bottom),
+        v8_right - v8_left,
+        v5_height,
+        fill=False,
+        linestyle=':', 
+        edgecolor=model_colors["YOLOv8s CPU"]["server"],  # Use YOLOv8 purple color
+        linewidth=1,
+        zorder=1
+    )
+    ax.add_patch(v8_rect)
+
+    # Add small labels above the boxes with more spacing
+    # YOLOv8 text - moved further left
+    ax.text(
+        (v8_left + v8_right) / 2 - BAR_WIDTH,  # Move left by one bar width
+        v5_height * 1.05,
+        'v8',
+        ha='center',
+        va='bottom',
+        fontsize=8,  # Slightly larger for bold text
+        color=model_colors["YOLOv8s CPU"]["server"],
+        bbox=dict(facecolor='white', edgecolor='none', pad=2),
+        weight='bold'  # Make text bold
+    )
+    
+    # Add "v" text in center
+    ax.text(
+        last_x,  # Center at the x position of the last layer
+        v5_height * 1.05,
+        'v',
+        ha='center',
+        va='bottom',
+        fontsize=7,
+        color='black',
+        bbox=dict(facecolor='white', edgecolor='none', pad=2)
+    )
+    
+    # YOLOv5 text - moved further right
+    ax.text(
+        (v5_left + v5_right) / 2 + BAR_WIDTH,  # Move right by one bar width
+        v5_height * 1.05,
+        'v5',
+        ha='center',
+        va='bottom',
+        fontsize=8,  # Slightly larger for bold text
+        color=model_colors["YOLOv5s CPU"]["server"],
+        bbox=dict(facecolor='white', edgecolor='none', pad=2),
+        weight='bold'  # Make text bold
     )
 
     plt.tight_layout(pad=PLOT_PADDING["tight_layout"])
@@ -234,15 +325,25 @@ def plot_comparative_energy(
 
     # Define professional color schemes for each model - Energy-themed colors
     model_colors = {
-        models[0]: {  # First model (YOLOv5s)
+        "YOLOv5s CPU": {  # CPU Group - Blues
             "processing": "#e63946",  # Deep red/coral
             "communication": "#f4a261",  # Light orange
             "power": "#9d0208",  # Dark red for power line
         },
-        models[1]: {  # Second model (YOLOv8s)
+        "YOLOv8s CPU": {  # CPU Group - Blue-purples
             "processing": "#fb8b24",  # Bright orange
             "communication": "#ffd6a5",  # Light peach
             "power": "#bb3e03",  # Dark orange for power line
+        },
+        "YOLOv5s GPU": {  # GPU Group - Oranges
+            "processing": "#ff7f0e",  # Strong orange
+            "communication": "#ffa852",  # Medium orange
+            "power": "#ffd0a8",  # Light orange
+        },
+        "YOLOv8s GPU": {  # GPU Group - Red-oranges
+            "processing": "#9467bd",  # Strong purple
+            "communication": "#b39bc8",  # Medium purple
+            "power": "#d1c9e6",  # Light purple
         },
     }
 
@@ -354,48 +455,56 @@ def plot_comparative_energy(
 
     # Add best point annotations with improved positioning
     for i, (model, (x_pos, y_pos)) in enumerate(best_points.items()):
-        # YOLOv8s (i=1) vertical, YOLOv5s (i=0) curved right
-        if i == 0:  # YOLOv5s
-            text_x = x_pos + 2.0  # Move text further right (was 1.0)
-            text_y = y_pos + 0.25  # Higher text position (was 0.15)
-            curve_amount = 0.3  # More curve (was 0.15)
-        else:  # YOLOv8s
-            text_x = x_pos  # Keep text directly above
-            text_y = y_pos + 0.3  # Higher text position
-            curve_amount = 0.0  # Perfectly vertical
+        # Customize text position and arrow length for each model to prevent overlap
+        if model == "YOLOv8s CPU":  # Changed order - YOLOv8 on left
+            text_x = x_pos - 1.0  # Move left
+            text_y = y_pos + 6.0  # Keep CPU annotations lower
+            curve_direction = -1
+        elif model == "YOLOv8s GPU":  # YOLOv8 GPU also on left
+            text_x = x_pos - 0.8  # Move slightly left
+            text_y = y_pos + 12.0  # Move GPU annotation much higher
+            curve_direction = -1
+        elif model == "YOLOv5s CPU":  # YOLOv5 on right
+            text_x = x_pos + 0.8  # Move slightly right
+            text_y = y_pos + 7.0  # Keep CPU annotations lower
+            curve_direction = 1
+        else:  # YOLOv5s GPU - on right
+            text_x = x_pos + 1.0  # Move right
+            text_y = y_pos + 13.0  # Move GPU annotation highest
+            curve_direction = 1
 
-        # Add star closer to bar
-        star_y = y_pos + 0.03  # Keep same gap between bar and star
+        # Add star with matching color as the arrow
+        star_y = y_pos + 2.0
         ax.plot(
             x_pos,
             star_y,
             marker="*",
             markersize=ANNOTATION["star_size"],
-            color=ANNOTATION["star_color"],
+            color=model_colors[model]["server"],
             markeredgecolor="black",
             markeredgewidth=0.5,
             zorder=5,
         )
 
         # Add text with matching color
-        text_color = model_colors[model]["processing"]
+        text_color = model_colors[model]["server"]
 
         # Add annotation with arrow
         ax.annotate(
             f"Best {model}",
-            xy=(x_pos, star_y + 0.02),  # Keep same gap between arrow and star
-            xytext=(text_x, text_y),  # Different positions for each model
+            xy=(x_pos, star_y + 0.8),
+            xytext=(text_x, text_y),
             color=text_color,
             fontsize=ANNOTATION["text_size"],
-            ha="left" if i == 0 else "center",  # Center align YOLOv8s text
+            ha="right" if curve_direction < 0 else "left",
             va="bottom",
             arrowprops=dict(
                 arrowstyle="->",
-                connectionstyle=f"arc3,rad={curve_amount}",
+                connectionstyle=f"arc3,rad={0.05 * curve_direction}",
                 color=text_color,
                 linewidth=1.0,
                 shrinkA=0,
-                shrinkB=1,
+                shrinkB=2,
             ),
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.8, pad=0.2),
             zorder=6,
@@ -432,7 +541,7 @@ def plot_comparative_energy(
 
     # Group by metric type with models distinguished by color
     # Mobile Processing
-    ordered_labels.extend(["Mobile Processing:", "YOLOv5s", "YOLOv8s"])
+    ordered_labels.extend(["Mobile Processing:", "YOLOv5s CPU", "YOLOv8s CPU"])
     ordered_handles.extend(
         [
             plt.Rectangle((0, 0), 0, 0, fill=False, edgecolor="none"),
@@ -442,7 +551,7 @@ def plot_comparative_energy(
     )
 
     # Data Communication
-    ordered_labels.extend(["Data Communication:", "YOLOv5s", "YOLOv8s"])
+    ordered_labels.extend(["Data Communication:", "YOLOv5s CPU", "YOLOv8s CPU"])
     ordered_handles.extend(
         [
             plt.Rectangle((0, 0), 0, 0, fill=False, edgecolor="none"),
@@ -452,7 +561,7 @@ def plot_comparative_energy(
     )
 
     # Power
-    ordered_labels.extend(["Power (mW):", "YOLOv5s", "YOLOv8s"])
+    ordered_labels.extend(["Power (mW):", "YOLOv5s CPU", "YOLOv8s CPU"])
     ordered_handles.extend(
         [
             plt.Rectangle((0, 0), 0, 0, fill=False, edgecolor="none"),
@@ -462,7 +571,7 @@ def plot_comparative_energy(
     )
 
     # Battery
-    ordered_labels.extend(["Battery (mWh):", "YOLOv5s", "YOLOv8s"])
+    ordered_labels.extend(["Battery (mWh):", "YOLOv5s CPU", "YOLOv8s CPU"])
     ordered_handles.extend(
         [
             plt.Rectangle((0, 0), 0, 0, fill=False, edgecolor="none"),
@@ -499,7 +608,7 @@ def plot_comparative_energy(
 
     # Add x-axis labels using layer names (same as comparative_latency)
     ax.set_xticks(x)
-    
+
     # Get layer names from first model (assuming same layers)
     layer_names = []
     df = model_data[models[0]]["layer_metrics"]
@@ -507,13 +616,7 @@ def plot_comparative_energy(
         layer_name = df[df["Layer ID"] == idx]["Layer Type"].iloc[0]
         layer_names.append(layer_name)
 
-    ax.set_xticklabels(
-        layer_names, 
-        rotation=ROTATION, 
-        ha="right", 
-        va="top", 
-        fontsize=7
-    )
+    ax.set_xticklabels(layer_names, rotation=ROTATION, ha="right", va="top", fontsize=7)
     ax.tick_params(axis="x", pad=TICK_PADDING)
 
     plt.savefig(
