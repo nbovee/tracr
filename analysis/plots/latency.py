@@ -5,9 +5,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from typing import List
 
-from .base import create_figure, add_grid, add_best_point_annotation
+from .base import add_best_point_annotation
 from constants import (
     COLORS,
     BAR_WIDTH,

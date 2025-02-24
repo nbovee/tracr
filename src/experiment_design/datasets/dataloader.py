@@ -96,8 +96,21 @@ class DataLoaderFactory:
         logger.debug(f"Creating DataLoader with config: {config}")
         try:
             collate_fn = config.pop("collate_fn", None)
+
+            # Get device from config
+            device = config.get("default", {}).get("device", "cpu")
+
+            # Set pin_memory=True if using CUDA
+            if device == "cuda":
+                config["pin_memory"] = True
+                config["pin_memory_device"] = device  # for newer PyTorch versions
+                logger.debug("Enabled pin_memory for CUDA device")
+
             dataloader = DataLoader(dataset, collate_fn=collate_fn, **config)
-            logger.info(f"Successfully created DataLoader with {len(dataset)} samples")
+
+            logger.info(
+                f"Successfully created DataLoader with {len(dataset)} samples for device: {device}"
+            )
             return dataloader
         except Exception as e:
             logger.exception(f"Failed to create DataLoader: {e}")

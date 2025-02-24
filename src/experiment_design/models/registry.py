@@ -143,9 +143,13 @@ class ModelRegistry:
         # Initialize the model with the determined weights.
         model = cls._initialize_model(model_fn, weights)
 
-        # If a weight file is specified in config, load it.
+        # If a weight file is specified in config, load it
         if config.get("weight_path"):
-            model.load_state_dict(torch.load(config["weight_path"]))
+            # Use map_location to ensure weights are loaded to the correct device
+            device = config.get("default", {}).get("device", "cpu")
+            model.load_state_dict(
+                torch.load(config["weight_path"], map_location=device)
+            )
 
         # Adjust the final layer (head) for the number of classes.
         if num_classes:

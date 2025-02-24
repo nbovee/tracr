@@ -6,7 +6,7 @@ import select  # Used for monitoring I/O events on channels.
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union, Final
+from typing import Any, Callable, Dict, Optional, Union, Final
 from functools import wraps
 
 logger = logging.getLogger("split_computing_logger")

@@ -5,9 +5,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Tuple
+from typing import Dict
 
-from .base import add_grid, add_best_point_annotation
+from .base import add_grid
 from constants import (
     COLORS,
     DIMENSIONS,
@@ -33,7 +33,7 @@ def plot_comparative_latency(
     # Plot bars for each model side by side
     models = list(model_data.keys())
     x = np.arange(len(model_data[models[0]]["overall_performance"]))
-    
+
     # Add spacing between groups by stretching x-axis
     group_spacing = 1.0  # Increased from 0.5 to 1.0 for more separation between groups
     x = x * (1 + group_spacing)  # Stretch x positions to add gaps between groups
@@ -41,24 +41,24 @@ def plot_comparative_latency(
     # Define professional color schemes for each model with CPU/GPU grouping
     model_colors = {
         "YOLOv5s CPU": {  # CPU Group - Blues
-            "server": "#1f77b4",    # Strong blue
+            "server": "#1f77b4",  # Strong blue
             "communication": "#6baed6",  # Medium blue
-            "mobile": "#bdd7e7",    # Light blue
+            "mobile": "#bdd7e7",  # Light blue
         },
         "YOLOv8s CPU": {  # CPU Group - Blue-purples
-            "server": "#4a4090",    # Strong blue-purple
+            "server": "#4a4090",  # Strong blue-purple
             "communication": "#807dba",  # Medium blue-purple
-            "mobile": "#bcbddc",    # Light blue-purple
+            "mobile": "#bcbddc",  # Light blue-purple
         },
         "YOLOv5s GPU": {  # GPU Group - Oranges
-            "server": "#d95f02",    # Strong orange
+            "server": "#d95f02",  # Strong orange
             "communication": "#fc8d62",  # Medium orange
-            "mobile": "#fdd0a2",    # Light orange
+            "mobile": "#fdd0a2",  # Light orange
         },
         "YOLOv8s GPU": {  # GPU Group - Red-oranges
-            "server": "#e6550d",    # Strong red-orange
+            "server": "#e6550d",  # Strong red-orange
             "communication": "#fdae6b",  # Medium red-orange
-            "mobile": "#fee6ce",    # Light red-orange
+            "mobile": "#fee6ce",  # Light red-orange
         },
     }
 
@@ -188,19 +188,27 @@ def plot_comparative_latency(
 
     # Add CPU components
     ordered_labels.extend(["CPU Server", "CPU Communication", "CPU Host"])
-    ordered_handles.extend([
-        handles[labels.index("YOLOv5s CPU Server")],  # Use YOLOv5s CPU as representative
-        handles[labels.index("YOLOv5s CPU Travel")],
-        handles[labels.index("YOLOv5s CPU Host")],
-    ])
+    ordered_handles.extend(
+        [
+            handles[
+                labels.index("YOLOv5s CPU Server")
+            ],  # Use YOLOv5s CPU as representative
+            handles[labels.index("YOLOv5s CPU Travel")],
+            handles[labels.index("YOLOv5s CPU Host")],
+        ]
+    )
 
     # Add GPU components
     ordered_labels.extend(["GPU Server", "GPU Communication", "GPU Host"])
-    ordered_handles.extend([
-        handles[labels.index("YOLOv5s GPU Server")],  # Use YOLOv5s GPU as representative
-        handles[labels.index("YOLOv5s GPU Travel")],
-        handles[labels.index("YOLOv5s GPU Host")],
-    ])
+    ordered_handles.extend(
+        [
+            handles[
+                labels.index("YOLOv5s GPU Server")
+            ],  # Use YOLOv5s GPU as representative
+            handles[labels.index("YOLOv5s GPU Travel")],
+            handles[labels.index("YOLOv5s GPU Host")],
+        ]
+    )
 
     # Add legend with reordered items
     legend_params = LEGEND_SPACING.copy()
@@ -220,7 +228,7 @@ def plot_comparative_latency(
 
     # Add dotted bounding boxes around the last layer (Detect) to group YOLOv5 and YOLOv8
     last_x = x[-1]  # X position of the last layer (Detect)
-    
+
     # YOLOv5 box (around the two rightmost bars in group)
     v5_left = last_x + 0.5 * BAR_WIDTH  # Start after YOLOv8 bars
     v5_right = last_x + 2.5 * BAR_WIDTH
@@ -231,13 +239,13 @@ def plot_comparative_latency(
         v5_right - v5_left,
         v5_height,
         fill=False,
-        linestyle=':', 
+        linestyle=":",
         edgecolor=model_colors["YOLOv5s CPU"]["server"],  # Use YOLOv5 blue color
         linewidth=1,
-        zorder=1
+        zorder=1,
     )
     ax.add_patch(v5_rect)
-    
+
     # YOLOv8 box (around the two leftmost bars in group)
     v8_left = last_x - 2.5 * BAR_WIDTH  # Start before first bar
     v8_right = last_x - 0.5 * BAR_WIDTH
@@ -246,10 +254,10 @@ def plot_comparative_latency(
         v8_right - v8_left,
         v5_height,
         fill=False,
-        linestyle=':', 
+        linestyle=":",
         edgecolor=model_colors["YOLOv8s CPU"]["server"],  # Use YOLOv8 purple color
         linewidth=1,
-        zorder=1
+        zorder=1,
     )
     ax.add_patch(v8_rect)
 
@@ -258,38 +266,38 @@ def plot_comparative_latency(
     ax.text(
         (v8_left + v8_right) / 2 - BAR_WIDTH,  # Move left by one bar width
         v5_height * 1.05,
-        'v8',
-        ha='center',
-        va='bottom',
+        "v8",
+        ha="center",
+        va="bottom",
         fontsize=8,  # Slightly larger for bold text
         color=model_colors["YOLOv8s CPU"]["server"],
-        bbox=dict(facecolor='white', edgecolor='none', pad=2),
-        weight='bold'  # Make text bold
+        bbox=dict(facecolor="white", edgecolor="none", pad=2),
+        weight="bold",  # Make text bold
     )
-    
+
     # Add "v" text in center
     ax.text(
         last_x,  # Center at the x position of the last layer
         v5_height * 1.05,
-        'v',
-        ha='center',
-        va='bottom',
+        "v",
+        ha="center",
+        va="bottom",
         fontsize=7,
-        color='black',
-        bbox=dict(facecolor='white', edgecolor='none', pad=2)
+        color="black",
+        bbox=dict(facecolor="white", edgecolor="none", pad=2),
     )
-    
+
     # YOLOv5 text - moved further right
     ax.text(
         (v5_left + v5_right) / 2 + BAR_WIDTH,  # Move right by one bar width
         v5_height * 1.05,
-        'v5',
-        ha='center',
-        va='bottom',
+        "v5",
+        ha="center",
+        va="bottom",
         fontsize=8,  # Slightly larger for bold text
         color=model_colors["YOLOv5s CPU"]["server"],
-        bbox=dict(facecolor='white', edgecolor='none', pad=2),
-        weight='bold'  # Make text bold
+        bbox=dict(facecolor="white", edgecolor="none", pad=2),
+        weight="bold",  # Make text bold
     )
 
     plt.tight_layout(pad=PLOT_PADDING["tight_layout"])

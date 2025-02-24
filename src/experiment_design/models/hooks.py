@@ -52,7 +52,7 @@ def create_forward_prehook(
     layer_index: int,
     layer_name: str,
     input_shape: Tuple[int, ...],
-    device: torch.device,
+    device: str,
 ) -> Callable:
     """Create pre-hook for layer monitoring and input manipulation.
 
@@ -110,7 +110,7 @@ def create_forward_posthook(
     layer_index: int,
     layer_name: str,
     input_shape: Tuple[int, ...],
-    device: torch.device,
+    device: str,
 ) -> Callable:
     """Create post-hook for layer monitoring and output processing.
 

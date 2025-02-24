@@ -5,9 +5,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from typing import List, Tuple
 
-from .base import create_figure, add_grid, add_best_point_annotation, format_axis_ticks
+from .base import add_best_point_annotation
 from constants import (
     COLORS,
     ENERGY_INCREMENT,

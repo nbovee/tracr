@@ -5,7 +5,6 @@
 import argparse
 import logging
 import os
-from pathlib import Path
 from typing import Dict
 import pandas as pd
 
@@ -143,7 +142,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate visualizations from Excel metrics"
     )
-    
+
     # Individual model arguments
     parser.add_argument(
         "--yolov5-cpu",
@@ -161,7 +160,7 @@ def main():
         "--yolov8-gpu",
         help="Path to Excel file containing YOLOv8 GPU metrics",
     )
-    
+
     # For backwards compatibility and individual plots
     parser.add_argument(
         "excel_paths",
@@ -173,7 +172,7 @@ def main():
         nargs="*",
         help="Names of models when comparing multiple models",
     )
-    
+
     parser.add_argument(
         "--output-dir",
         "-o",
@@ -203,12 +202,14 @@ def main():
             "YOLOv8s CPU": args.yolov8_cpu,
             "YOLOv8s GPU": args.yolov8_gpu,
         }
-        
+
         # Filter out None values
         model_paths = {k: v for k, v in model_paths.items() if v is not None}
-        
+
         if len(model_paths) < 2:
-            logger.error("At least two model paths must be provided for comparative plots")
+            logger.error(
+                "At least two model paths must be provided for comparative plots"
+            )
             return 1
 
         # Load data for all models
@@ -217,7 +218,7 @@ def main():
             model_data[name] = read_excel_data(path)
 
         return create_comparative_plots(model_data, args.output_dir, args.plot_type)
-    
+
     # Handle individual plotting (original functionality)
     elif len(args.excel_paths) > 0:
         if len(args.excel_paths) == 1:

@@ -51,10 +51,8 @@ class BaseModel(nn.Module):
     def _setup_default_configs(self) -> None:
         """Set up default configuration parameters."""
         self.default_configs = self.config.get("default", {})
+        # Use the device that was validated upstream in server.py/host.py
         self.device = self.default_configs.get("device", "cpu")
-        if self.device == "cuda" and not torch.cuda.is_available():
-            logger.warning("CUDA is not available, falling back to CPU")
-            self.device = "cpu"
 
     def _setup_model_configs(self) -> None:
         """Set up model-specific configuration parameters."""

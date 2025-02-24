@@ -25,8 +25,23 @@ from src.utils import read_yaml_file  # noqa: E402
 from src.api.remote_connection import create_ssh_client
 
 DEFAULT_SOURCE_DIR: Final[str] = "results"
+# TODO: Make this configurable.
 # Destination directory on server to copy results over from host when experiment is complete
-DEFAULT_DEST_DIR: Final[str] = "/mnt/c/Users/racr/Desktop/tracr/results"
+# DEFAULT_DEST_DIR: Final[str] = "/mnt/c/Users/racr/Desktop/tracr/results"
+
+
+def get_device(requested_device: str = "cuda") -> str:
+    """Determine the appropriate device based on availability and request."""
+    if requested_device.lower() == "cpu":
+        logger.info("CPU device explicitly requested")
+        return "cpu"
+
+    if torch.cuda.is_available():
+        logger.info("CUDA is available and will be used")
+        return "cuda"
+
+    logger.warning("CUDA requested but not available, falling back to CPU")
+    return "cpu"
 
 
 class ExperimentHost:
@@ -34,7 +49,11 @@ class ExperimentHost:
 
     def __init__(self, config_path: str) -> None:
         """Initialize with configuration and set up components."""
+        # Load config and validate device
         self.config = self._load_config(config_path)
+        requested_device = self.config.get("default", {}).get("device", "cuda")
+        self.config["default"]["device"] = get_device(requested_device)
+
         self._setup_logger(config_path)
         # Create the experiment manager and set up the experiment.
         self.experiment_manager = ExperimentManager(self.config)

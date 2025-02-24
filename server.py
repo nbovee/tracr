@@ -35,6 +35,20 @@ HIGHEST_PROTOCOL = pickle.HIGHEST_PROTOCOL
 LENGTH_PREFIX_SIZE: Final[int] = 4  # Number of bytes used to encode message lengths
 
 
+def get_device(requested_device: str = "cuda") -> str:
+    """Determine the appropriate device based on availability and request."""
+    if requested_device.lower() == "cpu":
+        logger.info("CPU device explicitly requested")
+        return "cpu"
+
+    if torch.cuda.is_available():
+        logger.info("CUDA is available and will be used")
+        return "cuda"
+
+    logger.warning("CUDA requested but not available, falling back to CPU")
+    return "cpu"
+
+
 class Server:
     """Handles server operations for managing connections and processing data."""
 
@@ -48,6 +62,13 @@ class Server:
         self.server_socket: Optional[socket.socket] = None
         self.local_mode = local_mode
         self.config_path = config_path
+
+        # Add device validation when loading config
+        if config_path:
+            config = read_yaml_file(config_path)
+            requested_device = config.get("default", {}).get("device", "cuda")
+            config["default"]["device"] = get_device(requested_device)
+            self.config = config
 
         if not local_mode:
             self._setup_compression()

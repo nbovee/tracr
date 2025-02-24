@@ -76,13 +76,9 @@ class BaseExperiment(ExperimentInterface):
         # Set up directories for storing results and images.
         self.paths = ExperimentPaths()
         self.paths.setup_directories(self.config["model"]["model_name"])
-        # Choose the device from configuration (e.g., "cpu" or "cuda").
-        self.device = self.config["default"]["device"]
 
-        if self.device == "cuda" and not torch.cuda.is_available():
-            logger.warning("CUDA is not available, falling back to CPU")
-            self.device = "cpu"
-
+        # Get the device from config - it should already be validated by server.py/host.py
+        self.device = self.config["default"].get("device", "cpu")
         logger.info(f"Using device: {self.device}")
 
         # Initialize the model (wrapped in a custom class) and post-processing utilities.

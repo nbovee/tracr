@@ -54,6 +54,9 @@ class WrappedModel(BaseModel, ModelInterface):
         ModelInterface.__init__(self, config)
         logger.debug(f"Initializing WrappedModel with config: {config}")
 
+        # Get device from config that was validated upstream
+        self.device = config["default"].get("device", "cpu")
+
         # Basic model attributes and metrics storage.
         self.timer = time.perf_counter_ns
         self.master_dict = master_dict
