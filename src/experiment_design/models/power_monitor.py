@@ -195,9 +195,12 @@ class GPUEnergyMonitor:
             current_battery = psutil.sensors_battery()
 
             # Check if we have valid battery readings
-            if (current_battery and not current_battery.power_plugged and 
-                self._last_power_reading is not None):
-                
+            if (
+                current_battery
+                and not current_battery.power_plugged
+                and self._last_power_reading is not None
+            ):
+
                 last_time, last_percent = self._last_power_reading
                 time_diff = current_time - last_time
                 percent_diff = last_percent - current_battery.percent
@@ -206,7 +209,11 @@ class GPUEnergyMonitor:
                     # Typical laptop battery capacity (50Wh = 50000mWh)
                     BATTERY_CAPACITY_WH = 50.0
                     # Convert percent/hour to watts
-                    power = (percent_diff / 100.0) * BATTERY_CAPACITY_WH * (3600 / time_diff)
+                    power = (
+                        (percent_diff / 100.0)
+                        * BATTERY_CAPACITY_WH
+                        * (3600 / time_diff)
+                    )
 
                     # Update last reading
                     self._last_power_reading = (current_time, current_battery.percent)
