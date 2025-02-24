@@ -32,11 +32,17 @@ DEFAULT_SOURCE_DIR: Final[str] = "results"
 
 def get_device(requested_device: str = "cuda") -> str:
     """Determine the appropriate device based on availability and request."""
-    if requested_device.lower() == "cpu":
+    requested_device = requested_device.lower()
+
+    if requested_device == "cpu":
         logger.info("CPU device explicitly requested")
         return "cpu"
 
-    if torch.cuda.is_available():
+    if (
+        requested_device == "cuda"
+        or requested_device == "gpu"
+        or requested_device == "mps"
+    ) and torch.cuda.is_available():
         logger.info("CUDA is available and will be used")
         return "cuda"
 

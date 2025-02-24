@@ -164,127 +164,74 @@ def create_forward_posthook(
                         else:
                             energy, elapsed_time = 0.0, 0.0
 
-                        # Get system metrics (works for both GPU and CPU)
+                        # Get system metrics based on device type
                         metrics = wrapped_model.energy_monitor.get_system_metrics()
                         if not isinstance(metrics, dict):
                             metrics = {}
 
-                        # Calculate total inference time
-                        total_inference_time = 0.0
-                        layer_times = {}
-                        for idx in wrapped_model.forward_info:
-                            time_value = wrapped_model.forward_info[idx].get(
-                                "inference_time"
+                        # Use metrics based on device type from wrapped_model
+                        if wrapped_model.device == "cpu":
+                            # Use battery metrics for CPU mode
+                            battery_energy = (
+                                wrapped_model.energy_monitor.get_battery_energy()
                             )
-                            if isinstance(time_value, (int, float)) and time_value > 0:
-                                layer_times[idx] = float(time_value)
-                                total_inference_time += float(time_value)
-
-                        # Process metrics for each layer
-                        for idx in wrapped_model.forward_info:
-                            try:
-                                # Calculate layer energy proportion
-                                layer_time = layer_times.get(idx, 0.0)
-                                if (
-                                    total_inference_time > 0
-                                    and isinstance(energy, (int, float))
-                                    and energy > 0
-                                ):
-                                    layer_proportion = layer_time / total_inference_time
-                                    layer_energy = float(energy * layer_proportion)
-                                else:
-                                    layer_energy = 0.0
-
-                                # Calculate communication energy
-                                output_bytes = wrapped_model.forward_info[idx].get(
-                                    "output_bytes", 0
-                                )
-                                if (
-                                    isinstance(output_bytes, (int, float))
-                                    and output_bytes > 0
-                                ):
-                                    NETWORK_ENERGY_PER_BYTE = 0.00000035
-                                    comm_energy = float(
-                                        output_bytes * NETWORK_ENERGY_PER_BYTE
-                                    )
-                                else:
-                                    comm_energy = 0.0
-
-                                # Get power and GPU metrics (0 for CPU)
-                                power_reading = float(metrics.get("power_reading", 0.0))
-                                gpu_utilization = float(
-                                    metrics.get("gpu_utilization", 0.0)
-                                )
-                                total_energy = layer_energy + comm_energy
-
-                                # Create metrics dictionary
-                                energy_metrics = {
-                                    "processing_energy": layer_energy,
-                                    "communication_energy": comm_energy,
-                                    "power_reading": power_reading,
-                                    "gpu_utilization": gpu_utilization,
-                                    "total_energy": total_energy,
-                                    "split_point": wrapped_model.stop_i,
-                                }
-
-                                # Store metrics
-                                if not hasattr(wrapped_model, "layer_energy_data"):
-                                    wrapped_model.layer_energy_data = {}
-                                if idx not in wrapped_model.layer_energy_data:
-                                    wrapped_model.layer_energy_data[idx] = []
-
-                                wrapped_model.layer_energy_data[idx].append(
-                                    energy_metrics
-                                )
-
-                                # Update forward_info with energy values
-                                energy_values = {
-                                    k: v
-                                    for k, v in energy_metrics.items()
-                                    if k != "split_point"
-                                }
-                                wrapped_model.forward_info[idx].update(energy_values)
-
-                                logger.debug(
-                                    f"Layer {idx} - Processing Energy: {layer_energy:.6f}J, "
-                                    f"Communication Energy: {comm_energy:.6f}J, "
-                                    f"Power: {power_reading:.3f}W, "
-                                    f"GPU Util: {gpu_utilization:.1f}%"
-                                )
-
-                            except Exception as layer_error:
-                                logger.error(
-                                    f"Error processing energy metrics for layer {idx}: {layer_error}"
-                                )
-                                # Use safe defaults but don't lose existing metrics
-                                safe_metrics = {
-                                    "processing_energy": 0.0,
-                                    "communication_energy": 0.0,
+                            metrics.update(
+                                {
                                     "power_reading": 0.0,
                                     "gpu_utilization": 0.0,
-                                    "total_energy": 0.0,
+                                    "host_battery_energy_mwh": battery_energy,
+                                    "total_energy": battery_energy,  # Use battery energy as total for CPU
                                 }
-                                # Only update missing metrics
-                                current_metrics = wrapped_model.forward_info[idx]
-                                for k, v in safe_metrics.items():
-                                    if k not in current_metrics:
-                                        current_metrics[k] = v
+                            )
+                        else:
+                            # Use GPU metrics
+                            power_reading = float(metrics.get("power_reading", 0.0))
+                            gpu_utilization = float(metrics.get("gpu_utilization", 0.0))
+
+                            # Calculate layer energy proportion
+                            total_inference_time = sum(
+                                float(
+                                    wrapped_model.forward_info[idx].get(
+                                        "inference_time", 0.0
+                                    )
+                                )
+                                for idx in wrapped_model.forward_info
+                            )
+
+                            if total_inference_time > 0 and energy > 0:
+                                layer_proportion = elapsed_time / total_inference_time
+                                layer_energy = float(energy * layer_proportion)
+                            else:
+                                layer_energy = 0.0
+
+                            # Update metrics
+                            metrics.update(
+                                {
+                                    "power_reading": power_reading,
+                                    "gpu_utilization": gpu_utilization,
+                                    "processing_energy": layer_energy,
+                                    "total_energy": layer_energy,
+                                }
+                            )
+
+                        # Store metrics in forward_info
+                        wrapped_model.forward_info[layer_index].update(metrics)
 
                     except Exception as e:
                         logger.error(f"Error collecting energy metrics: {e}")
-                        # Keep existing metrics, just add missing ones with safe defaults
+                        # Use safe defaults but preserve any existing metrics
                         safe_metrics = {
-                            "processing_energy": 0.0,
-                            "communication_energy": 0.0,
                             "power_reading": 0.0,
                             "gpu_utilization": 0.0,
+                            "processing_energy": 0.0,
                             "total_energy": 0.0,
+                            "host_battery_energy_mwh": 0.0,
                         }
-                        for idx in wrapped_model.forward_info:
-                            current_metrics = wrapped_model.forward_info[idx]
-                            for k, v in safe_metrics.items():
-                                if k not in current_metrics:
-                                    current_metrics[k] = v
+                        # Only update missing metrics
+                        current_metrics = wrapped_model.forward_info[layer_index]
+                        for k, v in safe_metrics.items():
+                            if k not in current_metrics:
+                                current_metrics[k] = v
 
         # Handle output banking and early exit
         if wrapped_model.start_i == 0:

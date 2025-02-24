@@ -38,12 +38,27 @@ except ImportError:
 class GPUEnergyMonitor:
     """Monitor GPU energy consumption for both desktop NVIDIA and Jetson devices."""
 
-    def __init__(self, device_type: str = "auto"):
+    def __init__(self, device_type: str = "auto", force_cpu: bool = False):
         """Initialize GPU/CPU energy monitoring.
 
         Args:
-            device_type: One of ["auto", "nvidia", "jetson", "cpu"]. If "auto", will attempt to detect the correct device type.
+            device_type: One of ["auto", "nvidia", "jetson", "cpu"]
+            force_cpu: Force CPU monitoring even if GPU is available
         """
+        self._forced_cpu = force_cpu
+        # Initialize all attributes to avoid AttributeError
+        self._nvml_initialized = False
+        self._jtop = None
+        self._nvml_handle = None
+        self._battery_initialized = False
+        self._initial_battery = None
+        self._current_split = None
+        self._measurements = {}
+        self._start_power = 0.0
+        self._start_time = 0.0
+        self._start_metrics = {}
+        self._last_power_reading = None
+
         try:
             self.device_type = (
                 self._detect_device_type() if device_type == "auto" else device_type
@@ -52,27 +67,47 @@ class GPUEnergyMonitor:
             logger.info("No GPU detected, falling back to CPU monitoring")
             self.device_type = "cpu"
 
-        self._nvml_initialized = False
-        self._jtop = None
-        self._nvml_handle = None
+        # Initialize battery monitoring first
         self._battery_initialized = PSUTIL_AVAILABLE and self._has_battery()
-        self._initial_battery = None
-        self._current_split = None
-        self._measurements = {}
+        if self._battery_initialized:
+            self.initialize_battery_monitoring()
+            logger.debug("Battery monitoring initialized")
 
-        self.initialize_battery_monitoring()
-        if self.device_type != "cpu":
-            self._setup_monitoring()
-        logger.info(f"Initialized monitoring for {self.device_type}")
+        # Only set up GPU monitoring if not forced to CPU
+        if not self._forced_cpu and self.device_type != "cpu":
+            try:
+                self._setup_monitoring()
+                logger.debug(f"GPU monitoring initialized for {self.device_type}")
+            except Exception as e:
+                logger.warning(
+                    f"GPU monitoring initialization failed: {e}, falling back to CPU"
+                )
+                self.device_type = "cpu"
+
+        logger.info(f"Energy monitoring initialized in {self.device_type} mode")
 
     def _detect_device_type(self) -> str:
         """Detect whether running on a Jetson, desktop NVIDIA, or CPU device."""
+        # First check if we're forced to CPU mode
+        if self._forced_cpu:
+            return "cpu"
+
+        # Then check available hardware
         if JTOP_AVAILABLE and self._is_jetson():
             return "jetson"
-        elif NVIDIA_AVAILABLE:
+        elif NVIDIA_AVAILABLE and self._should_use_gpu():
             return "nvidia"
         else:
             return "cpu"
+
+    def _should_use_gpu(self) -> bool:
+        """Check if GPU should be used based on availability and config"""
+        try:
+            import torch
+
+            return torch.cuda.is_available() and not self._forced_cpu
+        except ImportError:
+            return False
 
     def _is_jetson(self) -> bool:
         """Check if running on a Jetson platform by verifying the existence of typical Jetson file paths."""
@@ -182,42 +217,64 @@ class GPUEnergyMonitor:
             return 0.0
 
     def get_system_metrics(self) -> dict:
-        """Get current system metrics."""
+        """Get current system metrics based on device type."""
         metrics = {}
 
-        if self.device_type in ["nvidia", "jetson"]:
-            # Existing GPU metrics collection
-            if self.device_type == "jetson":
-                if not self._jtop or not self._jtop.is_alive():
-                    return metrics
-                try:
-                    stats = self._jtop.stats
-                    if isinstance(stats, dict):
+        try:
+            if self.device_type == "cpu":
+                # For CPU, focus on battery metrics
+                if self._battery_initialized:
+                    battery = psutil.sensors_battery()
+                    if battery and not battery.power_plugged:
+                        power = self._estimate_cpu_power()
                         metrics.update(
                             {
-                                "power_reading": float(
-                                    stats.get("Power VDD_CPU_GPU_CV", 0)
-                                )
-                                / 1000.0,
-                                "gpu_utilization": float(stats.get("GPU", 0)),
+                                "power_reading": power,
+                                "gpu_utilization": 0.0,
+                                "host_battery_energy_mwh": self.get_battery_energy(),
                             }
                         )
-                except Exception as e:
-                    logger.error(f"Error collecting Jetson metrics: {e}")
-        else:  # CPU mode
-            try:
-                power = self._estimate_cpu_power()
-                metrics.update(
-                    {
-                        "power_reading": power,
-                        "gpu_utilization": 0.0,  # No GPU utilization in CPU mode
-                    }
-                )
-            except Exception as e:
-                logger.error(f"Error collecting CPU metrics: {e}")
+            else:
+                # For GPU, get device-specific metrics
+                if self.device_type == "jetson":
+                    metrics.update(self._get_jetson_metrics())
+                elif self.device_type == "nvidia":
+                    metrics.update(self._get_nvidia_metrics())
+        except Exception as e:
+            logger.error(f"Error getting system metrics: {e}")
+            # Return safe defaults if there's an error
+            metrics = {
+                "power_reading": 0.0,
+                "gpu_utilization": 0.0,
+                "host_battery_energy_mwh": 0.0,
+            }
 
-        logger.debug(f"Collected system metrics: {metrics}")
         return metrics
+
+    def _get_jetson_metrics(self) -> dict:
+        """Get Jetson specific metrics."""
+        try:
+            if self._jtop and self._jtop.is_alive():
+                stats = self._jtop.stats
+                return {
+                    "power_reading": float(stats.get("Power VDD_CPU_GPU_CV", 0))
+                    / 1000.0,
+                    "gpu_utilization": float(stats.get("GPU", 0)),
+                }
+        except Exception as e:
+            logger.error(f"Error getting Jetson metrics: {e}")
+        return {"power_reading": 0.0, "gpu_utilization": 0.0}
+
+    def _get_nvidia_metrics(self) -> dict:
+        """Get NVIDIA GPU specific metrics."""
+        try:
+            if self._nvml_initialized and self._nvml_handle:
+                power = pynvml.nvmlDeviceGetPowerUsage(self._nvml_handle) / 1000.0
+                util = pynvml.nvmlDeviceGetUtilizationRates(self._nvml_handle).gpu
+                return {"power_reading": power, "gpu_utilization": float(util)}
+        except Exception as e:
+            logger.error(f"Error getting NVIDIA metrics: {e}")
+        return {"power_reading": 0.0, "gpu_utilization": 0.0}
 
     def _get_jetson_power(self) -> float:
         """Retrieve Jetson GPU power consumption in watts."""
@@ -258,19 +315,28 @@ class GPUEnergyMonitor:
             return 0.0
 
     def cleanup(self) -> None:
-        """Clean up and release monitoring resources."""
-        if self._jtop and self._jtop.is_alive():
-            try:
-                self._jtop.close()
-            except Exception as e:
-                logger.warning(f"Error closing jtop connection: {e}")
+        """Clean up monitoring resources."""
+        try:
+            # Clean up Jetson monitoring
+            if hasattr(self, "_jtop") and self._jtop is not None:
+                try:
+                    if self._jtop.is_alive():
+                        self._jtop.stop()
+                    self._jtop = None
+                except Exception as e:
+                    logger.debug(f"Error stopping jtop: {e}")
 
-        if self._nvml_initialized:
-            try:
-                pynvml.nvmlShutdown()
-                self._nvml_initialized = False
-            except Exception as e:
-                logger.warning(f"Error shutting down NVML: {e}")
+            # Clean up NVIDIA monitoring
+            if hasattr(self, "_nvml_initialized") and self._nvml_initialized:
+                try:
+                    pynvml.nvmlShutdown()
+                    self._nvml_initialized = False
+                    self._nvml_handle = None
+                except Exception as e:
+                    logger.debug(f"Error shutting down NVML: {e}")
+
+        except Exception as e:
+            logger.debug(f"Error during cleanup: {e}")
 
     def __enter__(self):
         """Enter the context manager; start energy measurement."""
@@ -281,9 +347,15 @@ class GPUEnergyMonitor:
         """Exit the context manager; clean up monitoring resources."""
         self.cleanup()
 
-    def __del__(self):
-        """Ensure cleanup on deletion."""
-        self.cleanup()
+    def __del__(self) -> None:
+        """Ensure cleanup is called when object is destroyed."""
+        try:
+            self.cleanup()
+        except Exception as e:
+            # Use sys.stderr since logger might be gone during shutdown
+            import sys
+
+            print(f"Error during GPUEnergyMonitor cleanup: {e}", file=sys.stderr)
 
     def _calculate_battery_draw(self, battery) -> float:
         """Calculate battery energy consumption in mWh."""

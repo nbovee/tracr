@@ -54,8 +54,8 @@ class WrappedModel(BaseModel, ModelInterface):
         ModelInterface.__init__(self, config)
         logger.debug(f"Initializing WrappedModel with config: {config}")
 
-        # Get device from config that was validated upstream
-        self.device = config["default"].get("device", "cpu")
+        # Get device from config that was validated upstream in server.py/host.py
+        self.device = config.get("default", {}).get("device", "cpu")
 
         # Basic model attributes and metrics storage.
         self.timer = time.perf_counter_ns
@@ -70,16 +70,21 @@ class WrappedModel(BaseModel, ModelInterface):
         self.layer_timing_data = {}  # Historical timing data.
         self.layer_energy_data = {}  # Historical energy data.
 
-        # Initialize energy monitoring with better error handling and CPU fallback
+        # Initialize energy monitoring based on config device
         try:
-            self.energy_monitor = GPUEnergyMonitor()
+            # Use the same device setting from config for monitoring
+            force_cpu = self.device == "cpu"
+            self.energy_monitor = GPUEnergyMonitor(
+                device_type="auto" if not force_cpu else "cpu", force_cpu=force_cpu
+            )
+
             device_type = getattr(self.energy_monitor, "device_type", "unknown")
             if device_type == "cpu":
-                logger.info("Running in CPU-only mode with battery monitoring")
+                logger.info("Using CPU monitoring with battery metrics")
             else:
-                logger.info(f"GPU energy monitoring initialized for {device_type}")
+                logger.info(f"Using GPU monitoring for device type: {device_type}")
         except Exception as e:
-            logger.warning(f"Energy monitoring initialization warning: {e}")
+            logger.warning(f"Energy monitoring initialization failed: {e}")
             self.energy_monitor = None
 
         # Hook state tracking variables.
@@ -94,10 +99,24 @@ class WrappedModel(BaseModel, ModelInterface):
         self._setup_model()
         logger.info("WrappedModel initialization complete")
 
-    def __del__(self):
-        """Cleanup resources."""
-        if hasattr(self, "energy_monitor") and self.energy_monitor:
-            self.energy_monitor.cleanup()
+    def cleanup(self) -> None:
+        """Clean up resources."""
+        if hasattr(self, "energy_monitor") and self.energy_monitor is not None:
+            try:
+                self.energy_monitor.cleanup()
+                self.energy_monitor = None
+            except Exception as e:
+                logger.debug(f"Error cleaning up energy monitor: {e}")
+
+    def __del__(self) -> None:
+        """Ensure cleanup is called when object is destroyed."""
+        try:
+            self.cleanup()
+        except Exception as e:
+            # Use sys.stderr since logger might be gone during shutdown
+            import sys
+
+            print(f"Error during WrappedModel cleanup: {e}", file=sys.stderr)
 
     def _setup_model(self) -> None:
         """Set up model layers, register hooks, and initialize state."""
