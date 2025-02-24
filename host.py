@@ -58,9 +58,9 @@ class ExperimentHost:
         # Load config and validate device
         self.config = self._load_config(config_path)
         requested_device = self.config.get("default", {}).get("device", "cuda")
-        self.config["default"]["device"] = get_device(requested_device)
 
         self._setup_logger(config_path)
+        self.config["default"]["device"] = get_device(requested_device)
         # Create the experiment manager and set up the experiment.
         self.experiment_manager = ExperimentManager(self.config)
         self.experiment = self.experiment_manager.setup_experiment()

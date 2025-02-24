@@ -256,11 +256,15 @@ class GPUEnergyMonitor:
         try:
             if self._jtop and self._jtop.is_alive():
                 stats = self._jtop.stats
-                return {
-                    "power_reading": float(stats.get("Power VDD_CPU_GPU_CV", 0))
-                    / 1000.0,
-                    "gpu_utilization": float(stats.get("GPU", 0)),
-                }
+                # Handle potential None values from Jetson stats
+                power_raw = stats.get("Power VDD_CPU_GPU_CV", 0)
+                gpu_raw = stats.get("GPU", 0)
+
+                # Convert to float safely, defaulting to 0.0 if None
+                power = float(power_raw) / 1000.0 if power_raw is not None else 0.0
+                gpu_util = float(gpu_raw) if gpu_raw is not None else 0.0
+
+                return {"power_reading": power, "gpu_utilization": gpu_util}
         except Exception as e:
             logger.error(f"Error getting Jetson metrics: {e}")
         return {"power_reading": 0.0, "gpu_utilization": 0.0}
@@ -286,9 +290,13 @@ class GPUEnergyMonitor:
             power_key = "Power VDD_CPU_GPU_CV"
             if power_key in stats:
                 try:
-                    power = float(stats[power_key]) / 1000.0  # Convert mW to W.
-                    logger.debug(f"Found GPU power reading: {power}W")
-                    return power
+                    power_raw = stats[power_key]
+                    # Handle None value safely
+                    if power_raw is not None:
+                        power = float(power_raw) / 1000.0  # Convert mW to W
+                        logger.debug(f"Found GPU power reading: {power}W")
+                        return power
+                    return 0.0
                 except (ValueError, TypeError) as e:
                     logger.error(f"Error parsing power value: {e}")
                     return 0.0

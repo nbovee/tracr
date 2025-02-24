@@ -81,6 +81,8 @@ class WrappedModel(BaseModel, ModelInterface):
             device_type = getattr(self.energy_monitor, "device_type", "unknown")
             if device_type == "cpu":
                 logger.info("Using CPU monitoring with battery metrics")
+            elif device_type == "jetson":
+                logger.info("Using Jetson monitoring with power metrics")
             else:
                 logger.info(f"Using GPU monitoring for device type: {device_type}")
         except Exception as e:

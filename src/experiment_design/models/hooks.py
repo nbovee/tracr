@@ -169,8 +169,9 @@ def create_forward_posthook(
                         if not isinstance(metrics, dict):
                             metrics = {}
 
-                        # Use metrics based on device type from wrapped_model
-                        if wrapped_model.device == "cpu":
+                        # Use metrics based on device type
+                        device_type = wrapped_model.energy_monitor.device_type
+                        if device_type == "cpu":
                             # Use battery metrics for CPU mode
                             battery_energy = (
                                 wrapped_model.energy_monitor.get_battery_energy()
@@ -180,11 +181,28 @@ def create_forward_posthook(
                                     "power_reading": 0.0,
                                     "gpu_utilization": 0.0,
                                     "host_battery_energy_mwh": battery_energy,
-                                    "total_energy": battery_energy,  # Use battery energy as total for CPU
+                                    "total_energy": battery_energy,
+                                }
+                            )
+                        elif device_type == "jetson":
+                            # Use Jetson metrics
+                            power_reading = float(metrics.get("power_reading", 0.0))
+                            gpu_utilization = float(metrics.get("gpu_utilization", 0.0))
+                            # Jetson-specific energy calculation
+                            if elapsed_time > 0:
+                                energy = power_reading * elapsed_time
+                            else:
+                                energy = 0.0
+                            metrics.update(
+                                {
+                                    "power_reading": power_reading,
+                                    "gpu_utilization": gpu_utilization,
+                                    "processing_energy": energy,
+                                    "total_energy": energy,
                                 }
                             )
                         else:
-                            # Use GPU metrics
+                            # NVIDIA GPU metrics
                             power_reading = float(metrics.get("power_reading", 0.0))
                             gpu_utilization = float(metrics.get("gpu_utilization", 0.0))
 
@@ -204,7 +222,6 @@ def create_forward_posthook(
                             else:
                                 layer_energy = 0.0
 
-                            # Update metrics
                             metrics.update(
                                 {
                                     "power_reading": power_reading,
