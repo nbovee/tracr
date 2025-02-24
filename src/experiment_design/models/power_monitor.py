@@ -182,17 +182,22 @@ class GPUEnergyMonitor:
     def _estimate_cpu_power(self) -> float:
         """Estimate CPU power consumption from battery changes."""
         try:
+            # Initialize last reading if not exists
             if not hasattr(self, "_last_power_reading"):
-                self._last_power_reading = (
-                    time.time(),
-                    psutil.sensors_battery().percent,
-                )
+                battery = psutil.sensors_battery()
+                if battery and not battery.power_plugged:
+                    self._last_power_reading = (time.time(), battery.percent)
+                else:
+                    self._last_power_reading = None
                 return 0.0
 
             current_time = time.time()
             current_battery = psutil.sensors_battery()
 
-            if current_battery and not current_battery.power_plugged:
+            # Check if we have valid battery readings
+            if (current_battery and not current_battery.power_plugged and 
+                self._last_power_reading is not None):
+                
                 last_time, last_percent = self._last_power_reading
                 time_diff = current_time - last_time
                 percent_diff = last_percent - current_battery.percent
@@ -201,19 +206,19 @@ class GPUEnergyMonitor:
                     # Typical laptop battery capacity (50Wh = 50000mWh)
                     BATTERY_CAPACITY_WH = 50.0
                     # Convert percent/hour to watts
-                    power = (
-                        (percent_diff / 100.0)
-                        * BATTERY_CAPACITY_WH
-                        * (3600 / time_diff)
-                    )
+                    power = (percent_diff / 100.0) * BATTERY_CAPACITY_WH * (3600 / time_diff)
 
                     # Update last reading
                     self._last_power_reading = (current_time, current_battery.percent)
                     return power
 
+            # Reset last reading if conditions not met
+            self._last_power_reading = None
             return 0.0
+
         except Exception as e:
             logger.error(f"Error estimating CPU power: {e}")
+            self._last_power_reading = None
             return 0.0
 
     def get_system_metrics(self) -> dict:
