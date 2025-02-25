@@ -1,9 +1,98 @@
 # SplitTracr: An Experimental Test-bed for Cooperative Inference using Split Computing
 
-An experimental framework for distributed AI experiments, enabling split inference between **server** and **host** devices. `tracr` allows you to distribute deep learning model computations across multiple devices, optimizing resource utilization and enabling edge computing scenarios.
+An experimental framework for distributed AI experiments, enabling split inference between **server** and **host** devices. `tracr` allows you to distribute deep learning model computations across multiple devices, optimizing resource utilization and enabling edge computing scenarios. It has the flexibility to allow you to perform cooperative inference using different deep learning models on different type of devices, with automatic network management and experiment coordination.
 
 > [!Warning]
 > `tracr` is currently an experimental framework intended to explore distributed AI inference patterns. While functional, it is primarily for research and educational purposes.
+
+## Quick Start: Run AlexNet Split Inference
+
+> [!Caution]
+> ### 🔑 Required Prerequisites
+> You **MUST** have:
+> - ✅ Two devices (server and edge) on the same network
+> - ✅ SSH access between devices
+> - ✅ Python 3.10+ on both devices
+> - ✅ CUDA support on server (optional but recommended)
+
+#### 1️⃣ **Clone and Install** 
+```bash
+# On both devices (REQUIRED)
+git clone https://github.com/nbovee/tracr.git
+cd tracr
+python3 -m venv venv
+source venv/bin/activate  # Linux/Mac/WSL
+pip install -r requirements.txt
+```
+
+#### 2️⃣ **Configure Devices** (REQUIRED)
+```bash
+# In the config/ directory (MANDATORY)
+cp devices_template.yaml devices_config.yaml
+```
+Edit `devices_config.yaml` (**MUST** configure correctly):
+```yaml
+devices:
+  - device_type: SERVER           # REQUIRED
+    connection_params:
+      - host: 192.0.0.123         # ⚠️ Your server's IP (REQUIRED)
+        user: user1               # ⚠️ Your username (REQUIRED)
+        pkey_fp: server.rsa       # ⚠️ Will create this key next (REQUIRED)
+        port: 12345               # ⚠️ Communication port (REQUIRED)
+        default: true
+
+  - device_type: PARTICIPANT     # REQUIRED
+    connection_params:
+      - host: 192.0.0.124        # ⚠️ Your edge device's IP (REQUIRED)
+        user: user2              # ⚠️ Your username (REQUIRED)
+        pkey_fp: edge.rsa        # ⚠️ Will create this key next (REQUIRED)
+        port: 12345              # ⚠️ Must match server's port (REQUIRED)
+        default: true
+```
+
+#### 3️⃣ **Set Up SSH Keys** (REQUIRED)
+```bash
+# Create keys directory (MANDATORY)
+mkdir -p config/pkeys/
+
+# On Server (192.0.0.124) (REQUIRED)
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/server_key
+ssh-copy-id -i ~/.ssh/server_key.pub user2@192.0.0.123
+cp ~/.ssh/server_key config/pkeys/server.rsa
+
+# On Edge Device (192.0.0.123) (REQUIRED)
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/edge_key
+ssh-copy-id -i ~/.ssh/edge_key.pub user1@192.0.0.124
+cp ~/.ssh/edge_key config/pkeys/edge.rsa
+
+# Set permissions on both devices (CRITICAL)
+chmod 600 config/pkeys/*.rsa
+```
+
+#### 4️⃣ **Prepare Data Directory** (REQUIRED)
+```bash
+# Create data structure (MANDATORY)
+
+# For the alexnetsplit.yaml, the images should be in:
+mkdir -p data/imagenet/sample_images
+
+# Copy your test images (REQUIRED - any JPEG images)
+cp /path/to/your/images/* data/imagenet/sample_images/
+
+# Download ImageNet class names (REQUIRED)
+wget -O data/imagenet/imagenet_classes.txt https://raw.githubusercontent.com/pytorch/pytorch/master/torch/hub/imagenet_classes.txt
+```
+
+#### 5️⃣ **Run the Experiment**
+```bash
+# On Server (192.0.0.124) - MUST START FIRST
+python server.py
+
+# On Edge Device (192.0.0.123) - START AFTER SERVER
+python host.py --config config/alexnetsplit.yaml
+```
+
+That's it! You should now see the split inference running between your devices. For detailed setup instructions, troubleshooting, and advanced configurations, continue reading below.
 
 ## Table of Contents
 - [Key Features](#key-features)
@@ -18,7 +107,6 @@ An experimental framework for distributed AI experiments, enabling split inferen
   - [Pre-configured Experiments](#2-pre-configured-experiments)
 - [Detailed Setup Guide](#detailed-setup-guide)
   - [Project Structure](#1-project-structure)
-  - [Split Point Data Flow](#split-point-data-flow)
   - [Device Configuration](#2-device-configuration)
   - [Windows WSL Setup](#windows-wsl-setup)
 - [Extending `tracr`](#extending-tracr)
@@ -164,30 +252,6 @@ tracr/
 ├── host.py                # Host device entry point
 └── server.py              # Server entry point
 ```
-
-### Split Point Data Flow
-
-#### Explanation of Tensor/Data Sharing at the Split Point
-
-##### On the Host Side (in NetworkedExperiment.process_single_image):
-
-**Tensor Sharing #1:**
-The input tensor is moved to the proper device (e.g. GPU) before inference.
-
-**Tensor Sharing #2:**
-After the model runs (up to the specified split layer), the resulting output tensor is generated. This tensor is then used to collect per-layer timing information.
-
-**Tensor Sharing #3:**
-The output tensor (generated at the split point) is passed to _prepare_data_for_transfer, where it is paired with the input size (obtained via the post-processor). This tuple, containing the tensor and the size, is then compressed.
-
-**Tensor Sharing #4:**
-The compressed bytes (representing the output tensor and size) are sent via the network client to the server.
-
-##### On the Server Side (in handle_connection of server.py):
-
-The server receives the compressed data, decompresses it to recover the tuple (output, original_size), and then passes it to the experiment's process_data method.
-
-This completes the round-trip data sharing at the split point between the host and the server.
 
 ### 2. Device Configuration
 
