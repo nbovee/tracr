@@ -148,7 +148,7 @@ class ExperimentHost:
                 logger.error("No server device found for copying results")
                 return
 
-            # Ensure network client cleanup before file transfer.
+            # Ensure network client cleanup before file transfer
             if hasattr(self.experiment, "network_client"):
                 self.experiment.network_client.cleanup()
                 time.sleep(2)
@@ -162,8 +162,8 @@ class ExperimentHost:
                 )
             )
 
-            # Use default SSH port (22) instead of the experiment port
-            ssh_port = 22
+            # Use SSH port for file transfer operations
+            ssh_port = server_device.working_cparams.ssh_port
             logger.info(
                 f"Establishing SSH connection to server {server_device.get_host()}..."
             )
@@ -177,7 +177,7 @@ class ExperimentHost:
                         host=server_device.get_host(),
                         user=server_device.get_username(),
                         private_key_path=server_device.get_private_key_path(),
-                        port=ssh_port,
+                        port=ssh_port,  # Use SSH port for file transfer
                         timeout=10.0,
                     )
 
@@ -230,14 +230,16 @@ class ExperimentHost:
                 )
                 return
 
+            # Log both experiment and SSH ports for clarity
             logger.debug(
-                f"Server device info - Host: {server_device.get_host()}, Port: {server_device.get_port()}"
+                f"Server device info - Host: {server_device.get_host()}, "
+                f"Experiment Port: {server_device.get_port()}, "
+                f"SSH Port: {server_device.working_cparams.ssh_port}"
             )
 
             if hasattr(self.experiment, "network_client"):
                 logger.debug("Attempting to connect to server...")
-                # **Tensor/Data Sharing (Host → Server):**
-                # Here, the host's network client establishes a connection to the server.
+                # Use experiment port for network client connection
                 self.experiment.network_client.connect()
                 logger.info(
                     f"Successfully connected to server at {server_device.get_host()}:{server_device.get_port()}"

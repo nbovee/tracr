@@ -71,20 +71,69 @@ def ensure_connection(func):
 class SSHKeyHandler:
     """Handles SSH key operations such as detecting key type and loading keys."""
 
+    REQUIRED_FILE_PERMISSIONS = 0o600  # -rw-------
+    REQUIRED_DIR_PERMISSIONS = 0o700  # drwx------
+
+    @staticmethod
+    def check_key_permissions(key_path: Union[str, Path]) -> bool:
+        """Check if the key file and its parent directory have correct permissions.
+
+        Args:
+            key_path: Path to the SSH key file
+
+        Returns:
+            bool: True if permissions are correct, False otherwise
+
+        Raises:
+            SSHError: If the key file or directory doesn't exist
+        """
+        try:
+            key_path = Path(key_path).resolve()
+            if not key_path.exists():
+                raise SSHError(f"Key file does not exist: {key_path}")
+
+            # Check file permissions
+            file_mode = key_path.stat().st_mode & 0o777
+            if file_mode != SSHKeyHandler.REQUIRED_FILE_PERMISSIONS:
+                logger.error(
+                    f"Invalid key file permissions: {oct(file_mode)} for {key_path}. "
+                    f"Required: {oct(SSHKeyHandler.REQUIRED_FILE_PERMISSIONS)}"
+                )
+                return False
+
+            # Check directory permissions
+            dir_mode = key_path.parent.stat().st_mode & 0o777
+            if dir_mode != SSHKeyHandler.REQUIRED_DIR_PERMISSIONS:
+                logger.error(
+                    f"Invalid key directory permissions: {oct(dir_mode)} for {key_path.parent}. "
+                    f"Required: {oct(SSHKeyHandler.REQUIRED_DIR_PERMISSIONS)}"
+                )
+                return False
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error checking key permissions: {e}")
+            return False
+
     @staticmethod
     def detect_key_type(key_path: Union[str, Path]) -> SSHKeyType:
         """Detect the type of SSH key based on the file extension or content.
         Returns an SSHKeyType enum."""
         try:
-            # Convert key_path to string if not already.
+            # First check permissions
+            if not SSHKeyHandler.check_key_permissions(key_path):
+                raise SSHError(f"Invalid permissions for key file: {key_path}")
+
+            # Convert key_path to string if not already
             key_path_str = str(key_path)
-            # First check the file extension.
+            # First check the file extension
             if key_path_str.endswith((".rsa", ".pem")):
                 return SSHKeyType.RSA
             elif key_path_str.endswith((".ed25519", ".key")):
                 return SSHKeyType.ED25519
 
-            # If no known extension, inspect the file's first line.
+            # If no known extension, inspect the file's first line
             with open(key_path, "r") as key_file:
                 first_line = key_file.readline()
                 if "RSA" in first_line:
@@ -93,14 +142,29 @@ class SSHKeyHandler:
                     return SSHKeyType.ED25519
                 return SSHKeyType.UNKNOWN
         except Exception as e:
-            # Wrap any file reading errors in an SSHError.
+            # Wrap any file reading errors in an SSHError
             raise SSHError(f"Failed to read key file: {e}")
 
     @staticmethod
     def load_key(key_path: Union[str, Path]) -> paramiko.PKey:
         """Load an SSH key from the given file path.
-        Tries to detect the key type and load it using paramiko."""
+        Tries to detect the key type and load it using paramiko.
+
+        Args:
+            key_path: Path to the SSH key file
+
+        Returns:
+            paramiko.PKey: The loaded private key
+
+        Raises:
+            SSHError: If the key cannot be loaded or has invalid permissions
+            AuthenticationError: If the key requires a passphrase
+        """
         try:
+            # Check permissions before attempting to load
+            if not SSHKeyHandler.check_key_permissions(key_path):
+                raise SSHError(f"Invalid permissions for key file: {key_path}")
+
             key_type = SSHKeyHandler.detect_key_type(key_path)
 
             if key_type == SSHKeyType.RSA:
@@ -108,7 +172,7 @@ class SSHKeyHandler:
             elif key_type == SSHKeyType.ED25519:
                 return paramiko.Ed25519Key.from_private_key_file(str(key_path))
             else:
-                # If key type is unknown, try both RSA and ED25519 as fallback.
+                # If key type is unknown, try both RSA and ED25519 as fallback
                 try:
                     return paramiko.RSAKey.from_private_key_file(str(key_path))
                 except Exception:
@@ -118,7 +182,7 @@ class SSHKeyHandler:
                         raise SSHError(f"Unsupported key type for file: {key_path}")
 
         except paramiko.PasswordRequiredException:
-            # This exception is raised if the key is encrypted and requires a passphrase.
+            # This exception is raised if the key is encrypted and requires a passphrase
             raise AuthenticationError(f"Key file {key_path} requires passphrase")
         except Exception as e:
             raise SSHError(f"Failed to load key: {e}")

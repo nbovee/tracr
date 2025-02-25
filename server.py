@@ -165,7 +165,12 @@ class Server:
             logger.error("SERVER device is not reachable. Check network connection.")
             return
 
+        # Use experiment port for network communication
         port = server_device.get_port()
+        if not port:
+            logger.error("No experiment port configured for SERVER device.")
+            return
+
         logger.info(f"Starting networked server on port {port}...")
 
         try:
