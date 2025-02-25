@@ -348,13 +348,43 @@ class WrappedModel(BaseModel, ModelInterface):
             }
 
             # Add energy metrics if available, otherwise use defaults
+            # Ensure we have non-zero energy values for Windows CPU
+            processing_energy = info.get("processing_energy", 0.0)
+            power_reading = info.get("power_reading", 0.0)
+
+            # If processing energy or power reading is zero but we're on Windows CPU,
+            # try to estimate them using the CPU power model
+            if (processing_energy <= 0 or power_reading <= 0) and hasattr(
+                self, "energy_monitor"
+            ):
+                energy_monitor = self.energy_monitor
+                if (
+                    hasattr(energy_monitor, "_os_type")
+                    and energy_monitor._os_type == "Windows"
+                    and energy_monitor.device_type == "cpu"
+                ):
+
+                    # Get power from the Windows CPU model if power reading is zero
+                    if power_reading <= 0:
+                        power_reading = energy_monitor._estimate_windows_cpu_power()
+
+                    # If we have inference time but no processing energy, calculate it
+                    if processing_energy <= 0 and info.get("inference_time"):
+                        inference_time = info.get("inference_time")
+                        processing_energy = power_reading * inference_time
+
+            # Update metrics with the values (original or estimated)
             metrics[layer_idx].update(
                 {
-                    "processing_energy": info.get("processing_energy", 0.0),
+                    "processing_energy": processing_energy,
                     "communication_energy": info.get("communication_energy", 0.0),
-                    "power_reading": info.get("power_reading", 0.0),
+                    "power_reading": power_reading,
                     "gpu_utilization": info.get("gpu_utilization", 0.0),
-                    "total_energy": info.get("total_energy", 0.0),
+                    "cpu_utilization": info.get("cpu_utilization", 0.0),
+                    "total_energy": info.get(
+                        "total_energy",
+                        processing_energy + info.get("communication_energy", 0.0),
+                    ),
                     "host_battery_energy_mwh": info.get("host_battery_energy_mwh", 0.0),
                 }
             )
