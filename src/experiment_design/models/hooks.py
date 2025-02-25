@@ -224,14 +224,42 @@ def create_forward_posthook(
                                 f"Layer {layer_index} calculated energy: {layer_energy}J from power:{power_reading}W × time:{measured_time}s"
                             )
 
+                            # Calculate communication energy based on output size
+                            # This implementation uses a standard model for WiFi communication energy
+                            comm_energy = 0.0
+                            if isinstance(output, torch.Tensor) and layer_index == wrapped_model.stop_i:
+                                # Get output tensor size in bytes
+                                output_bytes = output.element_size() * output.nelement()
+                                # Convert to MB for logging clarity
+                                output_mb = output_bytes / (1024 * 1024)
+                                
+                                # Model parameters for WiFi communication
+                                # Energy per bit values from research papers on mobile communication
+                                # WiFi: ~5-10 nJ/bit, we'll use 7.5 nJ/bit (0.0000000075 J/bit)
+                                ENERGY_PER_BIT_WIFI = 0.0000000075  # Joules per bit for WiFi
+                                
+                                # Convert bytes to bits (8 bits per byte)
+                                output_bits = output_bytes * 8
+                                
+                                # Calculate communication energy: E = energy_per_bit * number_of_bits
+                                comm_energy = ENERGY_PER_BIT_WIFI * output_bits
+                                
+                                # Save for logging
+                                wrapped_model.forward_info[layer_index]["output_bytes"] = output_bytes
+                                wrapped_model.forward_info[layer_index]["output_mb"] = output_mb
+                                
+                                logger.debug(
+                                    f"Layer {layer_index} communication: {output_mb:.2f}MB, energy: {comm_energy:.6f}J"
+                                )
+
                             metrics.update(
                                 {
                                     "power_reading": power_reading,
                                     "gpu_utilization": gpu_utilization,
                                     "memory_utilization": memory_utilization,
                                     "processing_energy": layer_energy,
-                                    "communication_energy": 0.0,  # Would be calculated for networked experiments
-                                    "total_energy": layer_energy,
+                                    "communication_energy": comm_energy,
+                                    "total_energy": layer_energy + comm_energy,
                                 }
                             )
                         else:
@@ -255,12 +283,31 @@ def create_forward_posthook(
                             else:
                                 layer_energy = 0.0
 
+                            # Calculate communication energy (same model as Jetson case)
+                            comm_energy = 0.0
+                            if isinstance(output, torch.Tensor) and layer_index == wrapped_model.stop_i:
+                                output_bytes = output.element_size() * output.nelement()
+                                output_mb = output_bytes / (1024 * 1024)
+                                
+                                # Use same WiFi energy model
+                                ENERGY_PER_BIT_WIFI = 0.0000000075  # Joules per bit for WiFi
+                                output_bits = output_bytes * 8
+                                comm_energy = ENERGY_PER_BIT_WIFI * output_bits
+                                
+                                wrapped_model.forward_info[layer_index]["output_bytes"] = output_bytes
+                                wrapped_model.forward_info[layer_index]["output_mb"] = output_mb
+                                
+                                logger.debug(
+                                    f"Layer {layer_index} communication: {output_mb:.2f}MB, energy: {comm_energy:.6f}J"
+                                )
+
                             metrics.update(
                                 {
                                     "power_reading": power_reading,
                                     "gpu_utilization": gpu_utilization,
                                     "processing_energy": layer_energy,
-                                    "total_energy": layer_energy,
+                                    "communication_energy": comm_energy,
+                                    "total_energy": layer_energy + comm_energy,
                                 }
                             )
 

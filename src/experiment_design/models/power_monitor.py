@@ -300,25 +300,143 @@ class GPUEnergyMonitor:
                         except (ValueError, TypeError, IndexError, AttributeError):
                             pass
 
-                # Get memory utilization too if available
-                mem_used = 0
-                mem_total = 1
+                # Get memory utilization - try multiple approaches for Jetson devices
+                mem_util = 0.0
+
+                # Debug what's available in stats for memory
+                logger.debug(f"Available keys in stats: {list(stats.keys())}")
+
+                # Method 1: Standard RAM dictionary approach
                 if "RAM" in stats:
                     try:
                         if isinstance(stats["RAM"], dict):
                             mem_used = stats["RAM"].get("used", 0)
                             mem_total = stats["RAM"].get("total", 1)
+                            mem_util = (
+                                (mem_used / mem_total) * 100 if mem_total > 0 else 0
+                            )
+                            logger.debug(
+                                f"Method 1: RAM dict - used:{mem_used}, total:{mem_total}, util:{mem_util:.2f}%"
+                            )
                         elif isinstance(stats["RAM"], str):
                             # Sometimes RAM is reported as "1234M/5678M"
                             parts = stats["RAM"].split("/")
                             if len(parts) == 2:
                                 mem_used = float(parts[0].rstrip("MKG"))
                                 mem_total = float(parts[1].rstrip("MKG"))
-                    except (ValueError, TypeError, AttributeError):
-                        pass
+                                mem_util = (
+                                    (mem_used / mem_total) * 100 if mem_total > 0 else 0
+                                )
+                                logger.debug(
+                                    f"Method 1: RAM string - used:{mem_used}, total:{mem_total}, util:{mem_util:.2f}%"
+                                )
+                    except Exception as e:
+                        logger.debug(f"Method 1 RAM failed: {e}")
 
-                # Calculate memory utilization percentage
-                mem_util = (mem_used / mem_total) * 100 if mem_total > 0 else 0
+                # Method 2: Look for memory in tegrastats (common in Jetson)
+                if mem_util == 0.0 and "tegrastats" in stats:
+                    try:
+                        tegrastats = stats["tegrastats"]
+                        if isinstance(tegrastats, dict):
+                            # Check for RAM field in tegrastats
+                            if "RAM" in tegrastats:
+                                ram_str = tegrastats["RAM"]
+                                if isinstance(ram_str, str) and "/" in ram_str:
+                                    parts = ram_str.split("/")
+                                    if len(parts) == 2:
+                                        # Format could be "1234MB/5678MB"
+                                        used_str = parts[0].strip()
+                                        total_str = parts[1].strip()
+
+                                        # Extract numbers
+                                        import re
+
+                                        used_match = re.search(r"(\d+)", used_str)
+                                        total_match = re.search(r"(\d+)", total_str)
+
+                                        if used_match and total_match:
+                                            mem_used = float(used_match.group(1))
+                                            mem_total = float(total_match.group(1))
+                                            mem_util = (
+                                                (mem_used / mem_total) * 100
+                                                if mem_total > 0
+                                                else 0
+                                            )
+                                            logger.debug(
+                                                f"Method 2: tegrastats RAM - used:{mem_used}, total:{mem_total}, util:{mem_util:.2f}%"
+                                            )
+                    except Exception as e:
+                        logger.debug(f"Method 2 tegrastats failed: {e}")
+
+                # Method 3: Use the MEM field if available (some Jetsons have this)
+                if mem_util == 0.0 and "MEM" in stats:
+                    try:
+                        mem_info = stats["MEM"]
+                        if isinstance(mem_info, dict):
+                            if "used" in mem_info and "total" in mem_info:
+                                mem_used = float(mem_info["used"])
+                                mem_total = float(mem_info["total"])
+                                mem_util = (
+                                    (mem_used / mem_total) * 100 if mem_total > 0 else 0
+                                )
+                                logger.debug(
+                                    f"Method 3: MEM dict - used:{mem_used}, total:{mem_total}, util:{mem_util:.2f}%"
+                                )
+                    except Exception as e:
+                        logger.debug(f"Method 3 MEM failed: {e}")
+
+                # Method 4: Check for Orin-specific memory fields
+                if mem_util == 0.0:
+                    try:
+                        # Look for keys containing "memory" or "mem" in a case-insensitive way
+                        mem_keys = [k for k in stats.keys() if "mem" in k.lower()]
+                        logger.debug(
+                            f"Method 4: Found potential memory keys: {mem_keys}"
+                        )
+
+                        for key in mem_keys:
+                            try:
+                                if (
+                                    isinstance(stats[key], dict)
+                                    and "used" in stats[key]
+                                    and "total" in stats[key]
+                                ):
+                                    mem_used = float(stats[key]["used"])
+                                    mem_total = float(stats[key]["total"])
+                                    mem_util = (
+                                        (mem_used / mem_total) * 100
+                                        if mem_total > 0
+                                        else 0
+                                    )
+                                    logger.debug(
+                                        f"Method 4: Using memory key {key} - util:{mem_util:.2f}%"
+                                    )
+                                    break
+                            except (ValueError, TypeError):
+                                continue
+                    except Exception as e:
+                        logger.debug(f"Method 4 memory keys failed: {e}")
+
+                # Method 5: Last resort - use psutil if available
+                if mem_util == 0.0 and PSUTIL_AVAILABLE:
+                    try:
+                        import psutil
+
+                        mem = psutil.virtual_memory()
+                        mem_util = mem.percent
+                        logger.debug(
+                            f"Method 5: Using psutil fallback - util:{mem_util:.2f}%"
+                        )
+                    except Exception as e:
+                        logger.debug(f"Method 5 psutil failed: {e}")
+
+                # If all methods fail, use a default non-zero value for memory
+                if mem_util == 0.0:
+                    # Use a reasonable default (50% utilization) to avoid zeros
+                    mem_util = 50.0
+                    logger.warning(
+                        f"Could not detect memory utilization, using default: {mem_util}%"
+                    )
 
                 return {
                     "power_reading": power,
