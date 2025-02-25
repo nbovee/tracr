@@ -4,6 +4,7 @@ import time
 import logging
 import platform
 import os
+import threading
 from typing import Tuple, Dict, Optional, Any
 from pathlib import Path
 
@@ -66,11 +67,27 @@ class GPUEnergyMonitor:
         self._power_model_initialized = False
         self._cpu_power_model_cache = {}
         self._last_cpu_metrics_time = 0
-        self._cpu_metrics_cache_duration = (
-            0.1  # Cache CPU metrics for 100ms to avoid too frequent calls
-        )
+        self._cpu_metrics_cache_duration = 0.5  # Increased cache duration to 500ms
         self._os_type = platform.system()
         self._cpu_name = self._get_cpu_name()
+
+        # New: Background CPU metrics collection for Windows
+        self._background_metrics_thread = None
+        self._stop_background_thread = False
+        self._background_metrics = {
+            "cpu_percent": 0.0,
+            "memory_percent": 0.0,
+            "cpu_freq": 0.0,
+        }
+        self._lock = threading.Lock()
+
+        # New: Cumulative power metrics for split computation
+        self._cumulative_metrics_enabled = False
+        self._cumulative_start_time = 0.0
+        self._cumulative_cpu_energy = 0.0
+        self._cumulative_power_readings = []
+        self._cumulative_cpu_utilization = []
+        self._cumulative_memory_utilization = []
 
         try:
             self.device_type = (
@@ -101,9 +118,64 @@ class GPUEnergyMonitor:
         if self.device_type == "cpu":
             self._init_cpu_power_model()
 
+            # Start background metrics collection for Windows
+            if self._os_type == "Windows":
+                self._start_background_metrics_collection()
+
         logger.info(f"Energy monitoring initialized in {self.device_type} mode")
         if self.device_type == "cpu":
             logger.info(f"Using CPU: {self._cpu_name}, estimated TDP: {self._tdp}W")
+
+    def _start_background_metrics_collection(self):
+        """Start a background thread to collect CPU metrics without blocking."""
+        if (
+            PSUTIL_AVAILABLE
+            and self._os_type == "Windows"
+            and not self._background_metrics_thread
+        ):
+            self._stop_background_thread = False
+            self._background_metrics_thread = threading.Thread(
+                target=self._background_metrics_worker, daemon=True
+            )
+            self._background_metrics_thread.start()
+            logger.info("Started background CPU metrics collection for Windows")
+
+    def _background_metrics_worker(self):
+        """Background worker to collect CPU metrics periodically."""
+        while not self._stop_background_thread:
+            try:
+                # Get CPU metrics without blocking (interval=None)
+                cpu_percent = psutil.cpu_percent(interval=None)
+                memory = psutil.virtual_memory()
+                memory_percent = memory.percent
+
+                cpu_freq = 0.0
+                if hasattr(psutil, "cpu_freq"):
+                    freq = psutil.cpu_freq()
+                    if freq and hasattr(freq, "current"):
+                        cpu_freq = freq.current
+
+                # Update metrics with thread safety
+                with self._lock:
+                    self._background_metrics = {
+                        "cpu_percent": cpu_percent,
+                        "memory_percent": memory_percent,
+                        "cpu_freq": cpu_freq,
+                    }
+
+                # Sleep for a short time to avoid consuming too much CPU
+                time.sleep(0.1)
+            except Exception as e:
+                logger.debug(f"Error in background metrics worker: {e}")
+                time.sleep(0.5)  # Sleep longer on error
+
+    def _stop_background_metrics_collection(self):
+        """Stop the background metrics collection thread."""
+        if self._background_metrics_thread:
+            self._stop_background_thread = True
+            if self._background_metrics_thread.is_alive():
+                self._background_metrics_thread.join(timeout=1.0)
+            self._background_metrics_thread = None
 
     def _get_cpu_name(self) -> str:
         """Get CPU model name."""
@@ -209,12 +281,20 @@ class GPUEnergyMonitor:
 
             # Take an initial measurement of CPU metrics
             if PSUTIL_AVAILABLE:
-                self._get_cpu_metrics()
+                # Initialize with non-blocking call
+                psutil.cpu_percent(interval=None)
+                # Wait a moment and then get the first reading
+                time.sleep(0.1)
+                self._get_cpu_metrics(non_blocking=True)
         except Exception as e:
             logger.error(f"Failed to initialize CPU power model: {e}")
 
-    def _get_cpu_metrics(self) -> Dict[str, float]:
-        """Get current CPU metrics, with caching to avoid excessive psutil calls."""
+    def _get_cpu_metrics(self, non_blocking=True) -> Dict[str, float]:
+        """Get current CPU metrics, with caching to avoid excessive psutil calls.
+
+        Args:
+            non_blocking: If True, uses background thread or non-blocking calls
+        """
         current_time = time.time()
 
         # Return cached metrics if within cache duration
@@ -227,27 +307,37 @@ class GPUEnergyMonitor:
 
         try:
             if PSUTIL_AVAILABLE:
-                # Get CPU utilization (1 second interval would be more accurate but creates lag)
-                # Using a short interval of 0.1 seconds for responsiveness
-                cpu_percent = psutil.cpu_percent(interval=0.1)
+                # For Windows, prefer using background thread metrics
+                if (
+                    self._os_type == "Windows"
+                    and hasattr(self, "_background_metrics")
+                    and non_blocking
+                ):
+                    with self._lock:
+                        metrics = self._background_metrics.copy()
+                else:
+                    # Use non-blocking call for Windows (interval=None)
+                    # or short interval for other OS
+                    interval = None if non_blocking else 0.1
+                    cpu_percent = psutil.cpu_percent(interval=interval)
 
-                # Get memory usage
-                memory = psutil.virtual_memory()
-                memory_percent = memory.percent
+                    # Get memory usage
+                    memory = psutil.virtual_memory()
+                    memory_percent = memory.percent
 
-                # Get CPU frequency if available
-                cpu_freq = 0.0
-                if hasattr(psutil, "cpu_freq"):
-                    freq = psutil.cpu_freq()
-                    if freq and hasattr(freq, "current"):
-                        cpu_freq = freq.current
+                    # Get CPU frequency if available
+                    cpu_freq = 0.0
+                    if hasattr(psutil, "cpu_freq"):
+                        freq = psutil.cpu_freq()
+                        if freq and hasattr(freq, "current"):
+                            cpu_freq = freq.current
 
-                # Create metrics dictionary
-                metrics = {
-                    "cpu_percent": cpu_percent,
-                    "memory_percent": memory_percent,
-                    "cpu_freq": cpu_freq,
-                }
+                    # Create metrics dictionary
+                    metrics = {
+                        "cpu_percent": cpu_percent,
+                        "memory_percent": memory_percent,
+                        "cpu_freq": cpu_freq,
+                    }
 
                 # Update cache
                 self._cpu_metrics_cache = metrics
@@ -270,8 +360,8 @@ class GPUEnergyMonitor:
             self._init_cpu_power_model()
 
         try:
-            # Get current CPU metrics
-            metrics = self._get_cpu_metrics()
+            # Get current CPU metrics - use non-blocking mode
+            metrics = self._get_cpu_metrics(non_blocking=True)
             cpu_percent = metrics["cpu_percent"]
 
             # Simple CPU power model: Power scales with CPU utilization
@@ -294,12 +384,106 @@ class GPUEnergyMonitor:
             # Ensure power is not negative
             estimated_power = max(0.1, estimated_power)
 
+            # For cumulative measurements, store the power reading
+            if self._cumulative_metrics_enabled:
+                self._cumulative_power_readings.append(estimated_power)
+                self._cumulative_cpu_utilization.append(cpu_percent)
+                self._cumulative_memory_utilization.append(metrics["memory_percent"])
+
             return estimated_power
 
         except Exception as e:
             logger.error(f"Error estimating Windows CPU power: {e}")
             # Return a reasonable default based on TDP
             return 0.4 * self._tdp
+
+    def start_cumulative_measurement(self) -> None:
+        """Start collecting cumulative metrics for split computation.
+
+        This is optimized for Windows CPU devices to collect metrics once
+        at the split point instead of for each layer.
+        """
+        # Only enable for Windows CPU devices
+        if self._os_type == "Windows" and self.device_type == "cpu":
+            self._cumulative_metrics_enabled = True
+            self._cumulative_start_time = time.time()
+            self._cumulative_cpu_energy = 0.0
+            self._cumulative_power_readings = []
+            self._cumulative_cpu_utilization = []
+            self._cumulative_memory_utilization = []
+            logger.info("Started cumulative Windows CPU metrics collection")
+
+            # Take an initial power reading
+            self._estimate_windows_cpu_power()
+
+    def get_cumulative_metrics(self) -> Dict[str, float]:
+        """Get cumulative metrics collected for Windows CPU devices.
+
+        Returns:
+            Dictionary with cumulative power and energy metrics
+        """
+        if not self._cumulative_metrics_enabled:
+            return {}
+
+        try:
+            # Calculate elapsed time
+            elapsed_time = time.time() - self._cumulative_start_time
+
+            # Take a final power reading
+            current_power = self._estimate_windows_cpu_power()
+
+            # Calculate average power from all readings
+            if self._cumulative_power_readings:
+                avg_power = sum(self._cumulative_power_readings) / len(
+                    self._cumulative_power_readings
+                )
+            else:
+                avg_power = current_power
+
+            # Calculate average CPU and memory utilization
+            avg_cpu_util = 0.0
+            if self._cumulative_cpu_utilization:
+                avg_cpu_util = sum(self._cumulative_cpu_utilization) / len(
+                    self._cumulative_cpu_utilization
+                )
+
+            avg_memory_util = 0.0
+            if self._cumulative_memory_utilization:
+                avg_memory_util = sum(self._cumulative_memory_utilization) / len(
+                    self._cumulative_memory_utilization
+                )
+
+            # Calculate total energy (joules) = average power (watts) * time (seconds)
+            total_energy = avg_power * elapsed_time
+
+            metrics = {
+                "power_reading": avg_power,
+                "processing_energy": total_energy,
+                "elapsed_time": elapsed_time,
+                "cpu_utilization": avg_cpu_util,
+                "memory_utilization": avg_memory_util,
+                "gpu_utilization": 0.0,  # Always 0 for CPU devices
+            }
+
+            # Reset cumulative measurement
+            self._cumulative_metrics_enabled = False
+
+            logger.info(
+                f"Cumulative Windows CPU metrics: power={avg_power:.2f}W, energy={total_energy:.6f}J, time={elapsed_time:.4f}s"
+            )
+            return metrics
+
+        except Exception as e:
+            logger.error(f"Error getting cumulative metrics: {e}")
+            self._cumulative_metrics_enabled = False
+            return {
+                "power_reading": 0.0,
+                "processing_energy": 0.0,
+                "elapsed_time": 0.0,
+                "cpu_utilization": 0.0,
+                "memory_utilization": 0.0,
+                "gpu_utilization": 0.0,
+            }
 
     def _detect_device_type(self) -> str:
         """Detect whether running on a Jetson, desktop NVIDIA, or CPU device."""
@@ -372,7 +556,8 @@ class GPUEnergyMonitor:
         energy_joules = avg_power * elapsed_time
 
         # Clean up for next measurement.
-        delattr(self, "_start_power")
+        if hasattr(self, "_start_power"):
+            delattr(self, "_start_power")
 
         return energy_joules, elapsed_time
 
@@ -454,76 +639,71 @@ class GPUEnergyMonitor:
             return 0.0
 
     def get_system_metrics(self) -> dict:
-        """Get current system metrics based on device type."""
-        metrics = {}
-
+        """Get current system metrics depending on the device type."""
         try:
-            if self.device_type == "cpu":
-                # For Windows CPU, use our CPU power model
-                if self._os_type == "Windows":
-                    # Get estimated power
-                    power = self._estimate_windows_cpu_power()
-
-                    # Get CPU metrics
-                    cpu_metrics = self._get_cpu_metrics()
-
-                    metrics.update(
-                        {
-                            "power_reading": power,
-                            "gpu_utilization": 0.0,
-                            "cpu_utilization": cpu_metrics.get("cpu_percent", 0.0),
-                            "memory_utilization": cpu_metrics.get(
-                                "memory_percent", 0.0
-                            ),
-                            "host_battery_energy_mwh": self.get_battery_energy(),
-                        }
-                    )
-                # For non-Windows CPU systems with battery, use battery metrics
-                elif self._battery_initialized:
-                    battery = psutil.sensors_battery()
-                    if battery and not battery.power_plugged:
-                        power = self._estimate_cpu_power()
-                        metrics.update(
-                            {
-                                "power_reading": power,
-                                "gpu_utilization": 0.0,
-                                "host_battery_energy_mwh": self.get_battery_energy(),
-                            }
-                        )
-                    else:
-                        # For plugged-in devices, use CPU model
-                        power = 0.4 * self._tdp  # Default to 40% of TDP
-                        metrics.update(
-                            {
-                                "power_reading": power,
-                                "gpu_utilization": 0.0,
-                                "host_battery_energy_mwh": 0.0,
-                            }
-                        )
-
-                # If no metrics have been added yet, use defaults based on TDP
-                if not metrics:
-                    metrics = {
-                        "power_reading": 0.4 * self._tdp,
-                        "gpu_utilization": 0.0,
-                        "host_battery_energy_mwh": 0.0,
-                    }
+            # For Jetson devices, use Jetson-specific monitoring
+            if self.device_type == "jetson":
+                return self._get_jetson_metrics()
+            # For NVIDIA GPUs, use NVML
+            elif self.device_type == "nvidia":
+                return self._get_nvidia_metrics()
+            # For CPU devices (including Windows)
             else:
-                # For GPU, get device-specific metrics
-                if self.device_type == "jetson":
-                    metrics.update(self._get_jetson_metrics())
-                elif self.device_type == "nvidia":
-                    metrics.update(self._get_nvidia_metrics())
+                # If Windows and cumulative metrics are enabled, use dedicated collection
+                if self._os_type == "Windows" and self._cumulative_metrics_enabled:
+                    return self.get_cumulative_metrics()
+
+                # Otherwise, regular CPU metrics
+                metrics = {}
+
+                # Get CPU metrics - use non-blocking for Windows
+                cpu_info = self._get_cpu_metrics(
+                    non_blocking=(self._os_type == "Windows")
+                )
+                metrics["cpu_percent"] = cpu_info["cpu_percent"]
+                metrics["memory_utilization"] = cpu_info["memory_percent"]
+
+                # Get current power reading
+                power_reading = self.get_current_power()
+                metrics["power_reading"] = power_reading
+
+                # Set other metrics to defaults
+                metrics["gpu_utilization"] = 0.0
+
+                # If battery is available, add battery energy
+                if self._battery_initialized:
+                    battery_energy = self.get_battery_energy()
+                    if battery_energy:
+                        metrics["host_battery_energy_mwh"] = battery_energy
+
+                return metrics
+
         except Exception as e:
             logger.error(f"Error getting system metrics: {e}")
-            # Return safe defaults if there's an error
-            metrics = {
+            # Return sensible defaults
+            return {
                 "power_reading": 0.4 * self._tdp,
                 "gpu_utilization": 0.0,
-                "host_battery_energy_mwh": 0.0,
+                "cpu_utilization": 50.0,
+                "memory_utilization": 50.0,
             }
 
-        return metrics
+    def cleanup(self) -> None:
+        """Clean up resources."""
+        # Stop background metrics collection for Windows
+        if self._os_type == "Windows" and hasattr(self, "_background_metrics_thread"):
+            self._stop_background_metrics_collection()
+
+        # Standard cleanup
+        if hasattr(self, "_jtop") and self._jtop and self._jtop.is_alive():
+            self._jtop.close()
+            self._jtop = None
+        if self._nvml_initialized:
+            try:
+                pynvml.nvmlShutdown()
+                self._nvml_initialized = False
+            except:
+                pass
 
     def _get_jetson_metrics(self) -> dict:
         """Get Jetson specific metrics."""
@@ -780,95 +960,6 @@ class GPUEnergyMonitor:
             return pynvml.nvmlDeviceGetPowerUsage(self._nvml_handle) / 1000.0
         except Exception as e:
             logger.error(f"Error reading NVIDIA power: {e}")
-            return 0.0
-
-    def cleanup(self) -> None:
-        """Clean up monitoring resources."""
-        try:
-            # Clean up Jetson monitoring
-            if hasattr(self, "_jtop") and self._jtop is not None:
-                try:
-                    if self._jtop.is_alive():
-                        self._jtop.stop()
-                    self._jtop = None
-                except Exception as e:
-                    logger.debug(f"Error stopping jtop: {e}")
-
-            # Clean up NVIDIA monitoring
-            if hasattr(self, "_nvml_initialized") and self._nvml_initialized:
-                try:
-                    pynvml.nvmlShutdown()
-                    self._nvml_initialized = False
-                    self._nvml_handle = None
-                except Exception as e:
-                    logger.debug(f"Error shutting down NVML: {e}")
-
-        except Exception as e:
-            logger.debug(f"Error during cleanup: {e}")
-
-    def __enter__(self):
-        """Enter the context manager; start energy measurement."""
-        self.start_measurement()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exit the context manager; clean up monitoring resources."""
-        self.cleanup()
-
-    def __del__(self) -> None:
-        """Ensure cleanup is called when object is destroyed."""
-        try:
-            self.cleanup()
-        except Exception as e:
-            # Use sys.stderr since logger might be gone during shutdown
-            import sys
-
-            print(f"Error during GPUEnergyMonitor cleanup: {e}", file=sys.stderr)
-
-    def _calculate_battery_draw(self, battery) -> float:
-        """Calculate battery energy consumption in mWh."""
-        try:
-            if not hasattr(self, "_last_battery_reading"):
-                self._last_battery_reading = (
-                    battery.percent,
-                    time.time(),
-                    battery.power_plugged,
-                )
-                logger.debug(
-                    f"Initial battery state: {battery.percent}%, plugged={battery.power_plugged}"
-                )
-                return 0.0
-
-            last_percent, last_time, was_plugged = self._last_battery_reading
-            current_time = time.time()
-
-            # Update reading for next time
-            self._last_battery_reading = (
-                battery.percent,
-                current_time,
-                battery.power_plugged,
-            )
-
-            # Only measure when on battery power
-            if battery.power_plugged or was_plugged:
-                logger.debug("Battery is/was plugged in, skipping measurement")
-                return 0.0
-
-            # Calculate energy used
-            percent_diff = last_percent - battery.percent
-            if percent_diff > 0:
-                # Typical laptop battery capacity in mWh
-                TYPICAL_BATTERY_CAPACITY = 50000  # 50Wh = 50000mWh
-                energy_used = (percent_diff / 100.0) * TYPICAL_BATTERY_CAPACITY
-                logger.debug(
-                    f"Battery dropped {percent_diff}%, estimated {energy_used:.2f}mWh used"
-                )
-                return energy_used
-
-            return 0.0
-
-        except Exception as e:
-            logger.error(f"Error calculating battery energy: {e}")
             return 0.0
 
     def _has_battery(self) -> bool:

@@ -4,6 +4,7 @@ import logging
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 from dataclasses import dataclass
 import time
+import platform
 
 import torch
 from torch import Tensor
@@ -88,31 +89,56 @@ def create_forward_prehook(
                     hasattr(wrapped_model, "energy_monitor")
                     and wrapped_model.energy_monitor
                 ):
-                    wrapped_model.energy_monitor.start_measurement()
+                    # Check if we're on Windows CPU - use optimized cumulative collection
+                    is_windows_cpu = (
+                        hasattr(wrapped_model.energy_monitor, "_os_type")
+                        and wrapped_model.energy_monitor._os_type == "Windows"
+                        and wrapped_model.energy_monitor.device_type == "cpu"
+                    )
+
+                    if is_windows_cpu:
+                        # Start cumulative measurements for Windows CPU
+                        wrapped_model.energy_monitor.start_cumulative_measurement()
+                        logger.debug(
+                            "Started cumulative Windows CPU metrics collection"
+                        )
+                    else:
+                        # Standard energy monitoring for other devices
+                        wrapped_model.energy_monitor.start_measurement()
+
                     wrapped_model.current_energy_start = time.time()
                     logger.debug("Started energy monitoring for forward pass")
 
-            # Start per-layer energy monitoring
+            # Only start per-layer energy monitoring for non-Windows CPU devices
+            # This avoids the overhead for Windows CPU
             if (
                 hasattr(wrapped_model, "energy_monitor")
                 and wrapped_model.energy_monitor
                 and layer_index <= wrapped_model.stop_i
             ):
-                # Store energy start time for this specific layer
-                wrapped_model.layer_start_times[layer_index] = time.time()
+                is_windows_cpu = (
+                    hasattr(wrapped_model.energy_monitor, "_os_type")
+                    and wrapped_model.energy_monitor._os_type == "Windows"
+                    and wrapped_model.energy_monitor.device_type == "cpu"
+                )
 
-                # Take initial metrics snapshot for this layer
-                try:
-                    metrics = wrapped_model.energy_monitor.get_system_metrics()
-                    wrapped_model.layer_energy_measurements[layer_index] = {
-                        "start_metrics": metrics,
-                        "start_time": time.time(),
-                    }
-                    logger.debug(f"Layer {layer_index} energy monitoring started")
-                except Exception as e:
-                    logger.debug(
-                        f"Error starting energy monitoring for layer {layer_index}: {e}"
-                    )
+                # Skip per-layer metrics for Windows CPU to avoid overhead
+                if not is_windows_cpu:
+                    # Store energy start time for this specific layer
+                    wrapped_model.layer_start_times[layer_index] = time.time()
+
+                    # Take initial metrics snapshot for this layer
+                    try:
+                        metrics = wrapped_model.energy_monitor.get_system_metrics()
+                        wrapped_model.layer_energy_measurements[layer_index] = {
+                            "start_metrics": metrics,
+                            "start_time": time.time(),
+                        }
+                        logger.debug(f"Layer {layer_index} energy monitoring started")
+                    except Exception as e:
+                        logger.debug(
+                            f"Error starting energy monitoring for layer {layer_index}: {e}"
+                        )
 
         # On the Cloud device, override the input from the first layer.
         else:
@@ -184,12 +210,26 @@ def create_forward_posthook(
                     output_mb = output_bytes / (1024 * 1024)
                     wrapped_model.forward_info[layer_index]["output_mb"] = output_mb
 
+                # Check if we're using a Windows CPU device
+                is_windows_cpu = False
+                if (
+                    hasattr(wrapped_model, "energy_monitor")
+                    and wrapped_model.energy_monitor
+                ):
+                    is_windows_cpu = (
+                        hasattr(wrapped_model.energy_monitor, "_os_type")
+                        and wrapped_model.energy_monitor._os_type == "Windows"
+                        and wrapped_model.energy_monitor.device_type == "cpu"
+                    )
+
                 # Collect per-layer energy metrics for each layer up to the split point
+                # For non-Windows CPU devices only, to avoid performance overhead
                 if (
                     wrapped_model.start_i == 0
                     and layer_index <= wrapped_model.stop_i
                     and hasattr(wrapped_model, "energy_monitor")
                     and wrapped_model.energy_monitor
+                    and not is_windows_cpu  # Skip for Windows CPU
                 ):
                     try:
                         # Get current metrics for this layer
@@ -213,23 +253,8 @@ def create_forward_posthook(
                             # Get metrics based on device type
                             device_type = wrapped_model.energy_monitor.device_type
 
-                            # Get power reading - ensure we always have a value for Windows CPU devices
+                            # Get power reading
                             power_reading = current_metrics.get("power_reading", 0.0)
-
-                            # For Windows CPU, make sure we have a power reading
-                            if (
-                                power_reading <= 0
-                                and device_type == "cpu"
-                                and hasattr(wrapped_model.energy_monitor, "_os_type")
-                            ):
-                                if wrapped_model.energy_monitor._os_type == "Windows":
-                                    # Use the Windows CPU power model
-                                    power_reading = (
-                                        wrapped_model.energy_monitor._estimate_windows_cpu_power()
-                                    )
-                                    logger.debug(
-                                        f"Using Windows CPU power model: {power_reading:.2f}W"
-                                    )
 
                             # If power reading is available, calculate layer energy
                             layer_energy = 0.0
@@ -354,37 +379,112 @@ def create_forward_posthook(
                     and wrapped_model.energy_monitor
                 ):
                     try:
-                        # Get final energy measurements for the entire forward pass
-                        energy_result = wrapped_model.energy_monitor.end_measurement()
-                        if isinstance(energy_result, tuple) and len(energy_result) == 2:
-                            total_energy, total_time = energy_result
-                        else:
-                            total_energy, total_time = 0.0, 0.0
-
-                        # For Windows CPU, ensure we have a non-zero energy value
-                        if (
-                            total_energy <= 0
-                            and hasattr(wrapped_model.energy_monitor, "_os_type")
+                        # Check if we're using a Windows CPU device for optimized metrics
+                        is_windows_cpu = (
+                            hasattr(wrapped_model.energy_monitor, "_os_type")
                             and wrapped_model.energy_monitor._os_type == "Windows"
-                        ):
-                            # Estimate energy based on power reading and time
-                            power = (
-                                wrapped_model.energy_monitor._estimate_windows_cpu_power()
+                            and wrapped_model.energy_monitor.device_type == "cpu"
+                        )
+
+                        if is_windows_cpu:
+                            # For Windows CPU, get cumulative metrics collected during the run
+                            cumulative_metrics = (
+                                wrapped_model.energy_monitor.get_cumulative_metrics()
                             )
-                            total_energy = power * total_time
+
+                            # Apply cumulative metrics to all layers up to split point
+                            if cumulative_metrics:
+                                total_energy = cumulative_metrics.get(
+                                    "processing_energy", 0.0
+                                )
+                                power_reading = cumulative_metrics.get(
+                                    "power_reading", 0.0
+                                )
+                                cpu_utilization = cumulative_metrics.get(
+                                    "cpu_utilization", 0.0
+                                )
+                                memory_utilization = cumulative_metrics.get(
+                                    "memory_utilization", 0.0
+                                )
+                                elapsed_time = cumulative_metrics.get(
+                                    "elapsed_time", 0.0
+                                )
+
+                                # Calculate energy per layer based on time proportions
+                                total_layer_time = 0.0
+                                layer_times = {}
+
+                                # First pass: collect times
+                                for l_idx in range(
+                                    wrapped_model.start_i, wrapped_model.stop_i + 1
+                                ):
+                                    if l_idx in wrapped_model.forward_info:
+                                        layer_time = wrapped_model.forward_info[
+                                            l_idx
+                                        ].get("inference_time", 0.0)
+                                        if layer_time > 0:
+                                            layer_times[l_idx] = layer_time
+                                            total_layer_time += layer_time
+
+                                # If we have valid timing info, distribute energy proportionally
+                                if total_layer_time > 0:
+                                    for l_idx, l_time in layer_times.items():
+                                        energy_proportion = l_time / total_layer_time
+                                        layer_energy = total_energy * energy_proportion
+
+                                        # Update metrics for this layer
+                                        wrapped_model.forward_info[l_idx].update(
+                                            {
+                                                "power_reading": power_reading,
+                                                "gpu_utilization": 0.0,  # Always 0 for CPU
+                                                "cpu_utilization": cpu_utilization,
+                                                "memory_utilization": memory_utilization,
+                                                "processing_energy": layer_energy,
+                                                "total_energy": layer_energy,  # Will add comm energy later for split layer
+                                            }
+                                        )
+                                else:
+                                    # If no valid timing, distribute energy equally
+                                    num_layers = (
+                                        wrapped_model.stop_i - wrapped_model.start_i + 1
+                                    )
+                                    if num_layers > 0:
+                                        layer_energy = total_energy / num_layers
+
+                                        for l_idx in range(
+                                            wrapped_model.start_i,
+                                            wrapped_model.stop_i + 1,
+                                        ):
+                                            if l_idx in wrapped_model.forward_info:
+                                                wrapped_model.forward_info[
+                                                    l_idx
+                                                ].update(
+                                                    {
+                                                        "power_reading": power_reading,
+                                                        "gpu_utilization": 0.0,
+                                                        "cpu_utilization": cpu_utilization,
+                                                        "memory_utilization": memory_utilization,
+                                                        "processing_energy": layer_energy,
+                                                        "total_energy": layer_energy,
+                                                    }
+                                                )
+
                             logger.debug(
-                                f"Estimated Windows CPU energy: {total_energy:.6f}J (power: {power:.2f}W, time: {total_time:.4f}s)"
+                                f"Applied cumulative Windows CPU metrics to layers"
                             )
 
-                        logger.debug(
-                            f"Split layer {layer_index} energy collection - raw energy: {total_energy}, time: {total_time}"
-                        )
-
-                        # Get final system metrics for the split point
-                        metrics = wrapped_model.energy_monitor.get_system_metrics()
-                        logger.debug(
-                            f"Split layer {layer_index} system metrics: {metrics}"
-                        )
+                        else:
+                            # Standard approach for other devices
+                            energy_result = (
+                                wrapped_model.energy_monitor.end_measurement()
+                            )
+                            if (
+                                isinstance(energy_result, tuple)
+                                and len(energy_result) == 2
+                            ):
+                                total_energy, total_time = energy_result
+                            else:
+                                total_energy, total_time = 0.0, 0.0
 
                         # Calculate communication energy based on output size at split point
                         comm_energy = 0.0
@@ -417,37 +517,30 @@ def create_forward_posthook(
                                 "output_mb"
                             ] = output_mb
 
-                        # Get the power reading, using the Windows CPU model if needed
-                        power_reading = metrics.get("power_reading", 0.0)
+                        # Add communication energy to the split layer's total energy
+                        split_layer_info = wrapped_model.forward_info[layer_index]
+                        split_layer_info["communication_energy"] = comm_energy
+                        split_layer_info["total_energy"] = (
+                            split_layer_info.get("processing_energy", 0.0) + comm_energy
+                        )
+
+                        # Get battery energy if available
                         if (
-                            power_reading <= 0
-                            and hasattr(wrapped_model.energy_monitor, "_os_type")
-                            and wrapped_model.energy_monitor._os_type == "Windows"
+                            hasattr(
+                                wrapped_model.energy_monitor, "_battery_initialized"
+                            )
+                            and wrapped_model.energy_monitor._battery_initialized
                         ):
-                            power_reading = (
-                                wrapped_model.energy_monitor._estimate_windows_cpu_power()
-                            )
-
-                        # No need to distribute energy again since we've already done per-layer measurement
-                        split_metrics = {
-                            "power_reading": power_reading,
-                            "gpu_utilization": metrics.get("gpu_utilization", 0.0),
-                            "cpu_utilization": metrics.get("cpu_utilization", 0.0),
-                            "memory_utilization": metrics.get(
-                                "memory_utilization", 0.0
-                            ),
-                            "processing_energy": wrapped_model.forward_info[
-                                layer_index
-                            ].get("processing_energy", 0.0),
-                            "communication_energy": comm_energy,
-                            "total_energy": wrapped_model.forward_info[layer_index].get(
-                                "processing_energy", 0.0
-                            )
-                            + comm_energy,
-                        }
-
-                        # Update split layer metrics
-                        wrapped_model.forward_info[layer_index].update(split_metrics)
+                            try:
+                                battery_energy = (
+                                    wrapped_model.energy_monitor.get_battery_energy()
+                                )
+                                if battery_energy > 0:
+                                    split_layer_info["host_battery_energy_mwh"] = (
+                                        battery_energy
+                                    )
+                            except Exception as e:
+                                logger.debug(f"Error getting battery energy: {e}")
 
                     except Exception as e:
                         logger.error(
