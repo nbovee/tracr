@@ -418,13 +418,18 @@ class DeviceManager:
                 f"PKeys directory not found at {self.DEFAULT_PKEYS_DIR}"
             )
 
-        # Check pkeys directory permissions
-        dir_mode = self.DEFAULT_PKEYS_DIR.stat().st_mode & 0o777
-        if dir_mode != SSHKeyHandler.REQUIRED_DIR_PERMISSIONS:
-            raise SSHError(
-                f"Invalid permissions on pkeys directory: {oct(dir_mode)}. "
-                f"Required: {oct(SSHKeyHandler.REQUIRED_DIR_PERMISSIONS)}"
-            )
+        # Check if running on Windows
+        is_windows = os.name == "nt"
+
+        if not is_windows:
+            # Only check directory permissions on Unix-like systems (Linux/WSL)
+            # Check pkeys directory permissions
+            dir_mode = self.DEFAULT_PKEYS_DIR.stat().st_mode & 0o777
+            if dir_mode != SSHKeyHandler.REQUIRED_DIR_PERMISSIONS:
+                raise SSHError(
+                    f"Invalid permissions on pkeys directory: {oct(dir_mode)}. "
+                    f"Required: {oct(SSHKeyHandler.REQUIRED_DIR_PERMISSIONS)}"
+                )
 
         self._load_devices()
         logger.debug(f"DeviceManager initialized with {len(self.devices)} devices")

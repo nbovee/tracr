@@ -1,6 +1,7 @@
 # src/api/remote_connection.py
 
 import logging
+import os
 import paramiko  # Provides SSH functionality.
 import select  # Used for monitoring I/O events on channels.
 from dataclasses import dataclass
@@ -92,25 +93,43 @@ class SSHKeyHandler:
             if not key_path.exists():
                 raise SSHError(f"Key file does not exist: {key_path}")
 
-            # Check file permissions
-            file_mode = key_path.stat().st_mode & 0o777
-            if file_mode != SSHKeyHandler.REQUIRED_FILE_PERMISSIONS:
-                logger.error(
-                    f"Invalid key file permissions: {oct(file_mode)} for {key_path}. "
-                    f"Required: {oct(SSHKeyHandler.REQUIRED_FILE_PERMISSIONS)}"
-                )
-                return False
+            # Check if running on Windows
+            is_windows = os.name == "nt"
 
-            # Check directory permissions
-            dir_mode = key_path.parent.stat().st_mode & 0o777
-            if dir_mode != SSHKeyHandler.REQUIRED_DIR_PERMISSIONS:
-                logger.error(
-                    f"Invalid key directory permissions: {oct(dir_mode)} for {key_path.parent}. "
-                    f"Required: {oct(SSHKeyHandler.REQUIRED_DIR_PERMISSIONS)}"
-                )
-                return False
+            if is_windows:
+                # On Windows, just check if the file exists and is readable
+                # Windows doesn't use the same permission model as Unix
+                try:
+                    with open(key_path, "r") as f:
+                        # Just try to read a byte to verify access
+                        f.read(1)
+                    return True
+                except PermissionError:
+                    logger.error(
+                        f"Cannot read key file: {key_path}. Check Windows permissions."
+                    )
+                    return False
+            else:
+                # Unix-style permission checks (Linux/WSL)
+                # Check file permissions
+                file_mode = key_path.stat().st_mode & 0o777
+                if file_mode != SSHKeyHandler.REQUIRED_FILE_PERMISSIONS:
+                    logger.error(
+                        f"Invalid key file permissions: {oct(file_mode)} for {key_path}. "
+                        f"Required: {oct(SSHKeyHandler.REQUIRED_FILE_PERMISSIONS)}"
+                    )
+                    return False
 
-            return True
+                # Check directory permissions
+                dir_mode = key_path.parent.stat().st_mode & 0o777
+                if dir_mode != SSHKeyHandler.REQUIRED_DIR_PERMISSIONS:
+                    logger.error(
+                        f"Invalid key directory permissions: {oct(dir_mode)} for {key_path.parent}. "
+                        f"Required: {oct(SSHKeyHandler.REQUIRED_DIR_PERMISSIONS)}"
+                    )
+                    return False
+
+                return True
 
         except Exception as e:
             logger.error(f"Error checking key permissions: {e}")
