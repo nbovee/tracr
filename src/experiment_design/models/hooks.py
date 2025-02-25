@@ -213,14 +213,32 @@ def create_forward_posthook(
                             # Get metrics based on device type
                             device_type = wrapped_model.energy_monitor.device_type
 
-                            # Get power reading
+                            # Get power reading - ensure we always have a value for Windows CPU devices
                             power_reading = current_metrics.get("power_reading", 0.0)
+
+                            # For Windows CPU, make sure we have a power reading
+                            if (
+                                power_reading <= 0
+                                and device_type == "cpu"
+                                and hasattr(wrapped_model.energy_monitor, "_os_type")
+                            ):
+                                if wrapped_model.energy_monitor._os_type == "Windows":
+                                    # Use the Windows CPU power model
+                                    power_reading = (
+                                        wrapped_model.energy_monitor._estimate_windows_cpu_power()
+                                    )
+                                    logger.debug(
+                                        f"Using Windows CPU power model: {power_reading:.2f}W"
+                                    )
 
                             # If power reading is available, calculate layer energy
                             layer_energy = 0.0
                             if power_reading > 0 and measured_time > 0:
                                 # Energy = Power × Time
                                 layer_energy = power_reading * measured_time
+                                logger.debug(
+                                    f"Layer {layer_index} energy: {layer_energy:.6f}J (power: {power_reading:.2f}W, time: {measured_time:.4f}s)"
+                                )
 
                             # Calculate communication energy for this layer if it's the split point
                             comm_energy = 0.0
@@ -256,12 +274,16 @@ def create_forward_posthook(
                             memory_utilization = current_metrics.get(
                                 "memory_utilization", 0.0
                             )
+                            cpu_utilization = current_metrics.get(
+                                "cpu_utilization", 0.0
+                            )
 
                             # Store layer-specific energy metrics
                             metrics = {
                                 "power_reading": power_reading,
                                 "gpu_utilization": gpu_utilization,
                                 "memory_utilization": memory_utilization,
+                                "cpu_utilization": cpu_utilization,
                                 "processing_energy": layer_energy,
                                 "communication_energy": (
                                     comm_energy
@@ -306,6 +328,7 @@ def create_forward_posthook(
                                 "memory_utilization": metrics.get(
                                     "memory_utilization", 0.0
                                 ),
+                                "cpu_utilization": metrics.get("cpu_utilization", 0.0),
                                 "total_energy": metrics.get("total_energy", 0.0),
                                 "elapsed_time": measured_time,
                                 "split_point": split_point,
@@ -315,7 +338,7 @@ def create_forward_posthook(
                                 layer_metrics
                             )
                             logger.debug(
-                                f"Layer {layer_index} energy metrics recorded: {layer_metrics}"
+                                f"Layer {layer_index} energy metrics recorded: power={layer_metrics['power_reading']:.2f}W, energy={layer_metrics['processing_energy']:.6f}J"
                             )
 
                     except Exception as e:
@@ -337,6 +360,21 @@ def create_forward_posthook(
                             total_energy, total_time = energy_result
                         else:
                             total_energy, total_time = 0.0, 0.0
+
+                        # For Windows CPU, ensure we have a non-zero energy value
+                        if (
+                            total_energy <= 0
+                            and hasattr(wrapped_model.energy_monitor, "_os_type")
+                            and wrapped_model.energy_monitor._os_type == "Windows"
+                        ):
+                            # Estimate energy based on power reading and time
+                            power = (
+                                wrapped_model.energy_monitor._estimate_windows_cpu_power()
+                            )
+                            total_energy = power * total_time
+                            logger.debug(
+                                f"Estimated Windows CPU energy: {total_energy:.6f}J (power: {power:.2f}W, time: {total_time:.4f}s)"
+                            )
 
                         logger.debug(
                             f"Split layer {layer_index} energy collection - raw energy: {total_energy}, time: {total_time}"
@@ -379,10 +417,22 @@ def create_forward_posthook(
                                 "output_mb"
                             ] = output_mb
 
+                        # Get the power reading, using the Windows CPU model if needed
+                        power_reading = metrics.get("power_reading", 0.0)
+                        if (
+                            power_reading <= 0
+                            and hasattr(wrapped_model.energy_monitor, "_os_type")
+                            and wrapped_model.energy_monitor._os_type == "Windows"
+                        ):
+                            power_reading = (
+                                wrapped_model.energy_monitor._estimate_windows_cpu_power()
+                            )
+
                         # No need to distribute energy again since we've already done per-layer measurement
                         split_metrics = {
-                            "power_reading": metrics.get("power_reading", 0.0),
+                            "power_reading": power_reading,
                             "gpu_utilization": metrics.get("gpu_utilization", 0.0),
+                            "cpu_utilization": metrics.get("cpu_utilization", 0.0),
                             "memory_utilization": metrics.get(
                                 "memory_utilization", 0.0
                             ),
