@@ -10,7 +10,7 @@ from functools import lru_cache
 from typing import Optional, Dict, Any, Final
 import time
 
-# Add project root to path so we can import from src module
+# Add project root to path so we can import from src module in lieu of direct installation
 project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
@@ -22,7 +22,7 @@ from src.api import (  # noqa: E402
 )
 from src.experiment_design.datasets import DataManager  # noqa: E402
 from src.utils import read_yaml_file  # noqa: E402
-from src.api.remote_connection import create_ssh_client
+from src.api.remote_connection import create_ssh_client  # noqa: E402
 
 DEFAULT_SOURCE_DIR: Final[str] = "results"
 # TODO: Make this configurable.

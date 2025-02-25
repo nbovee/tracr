@@ -200,7 +200,6 @@ class GPUEnergyMonitor:
                 and not current_battery.power_plugged
                 and self._last_power_reading is not None
             ):
-
                 last_time, last_percent = self._last_power_reading
                 time_diff = current_time - last_time
                 percent_diff = last_percent - current_battery.percent

@@ -177,9 +177,9 @@ def create_forward_posthook(
                 # Calculate output tensor size
                 if isinstance(output, torch.Tensor):
                     output_bytes = output.element_size() * output.nelement()
-                    wrapped_model.forward_info[layer_index][
-                        "output_bytes"
-                    ] = output_bytes
+                    wrapped_model.forward_info[layer_index]["output_bytes"] = (
+                        output_bytes
+                    )
                     # Also store in MB for easier reading
                     output_mb = output_bytes / (1024 * 1024)
                     wrapped_model.forward_info[layer_index]["output_mb"] = output_mb
@@ -372,12 +372,12 @@ def create_forward_posthook(
                             )
 
                             # Save for logging
-                            wrapped_model.forward_info[layer_index][
-                                "output_bytes"
-                            ] = output_bytes
-                            wrapped_model.forward_info[layer_index][
-                                "output_mb"
-                            ] = output_mb
+                            wrapped_model.forward_info[layer_index]["output_bytes"] = (
+                                output_bytes
+                            )
+                            wrapped_model.forward_info[layer_index]["output_mb"] = (
+                                output_mb
+                            )
 
                         # No need to distribute energy again since we've already done per-layer measurement
                         split_metrics = {
