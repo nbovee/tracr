@@ -2,30 +2,32 @@
 
 import logging
 import socket
-import socketserver
-import struct
-import threading
+import socketserver  # For building a TCP logging server.
+import struct  # For packing/unpacking binary data.
+import threading  # For thread-safe operations.
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Dict, Optional, List
 from logging.handlers import RotatingFileHandler, SocketHandler
-from rich.logging import RichHandler
+from rich.logging import RichHandler  # For pretty console logging.
 
 from src.utils.file_manager import get_repo_root
 
+# Define a directory for log files and ensure it exists.
 LOGS_DIR = Path(get_repo_root()) / "logs"
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Constants for logging server configuration.
 DEFAULT_PORT: int = 9020
 BUFFER_SIZE: int = 100
-MAX_LOG_SIZE: int = 10**6
-BACKUP_COUNT: int = 5
-SOCKET_TIMEOUT: float = 1.0
+MAX_LOG_SIZE: int = 10**6  # Maximum log file size before rotation.
+BACKUP_COUNT: int = 5  # Number of backup files to keep.
+SOCKET_TIMEOUT: float = 1.0  # Socket timeout for log transmission.
 
 
 class DeviceType(Enum):
-    """Device type enumeration."""
+    """Enumeration for device types."""
 
     SERVER = auto()
     PARTICIPANT = auto()
@@ -35,43 +37,49 @@ class DeviceType(Enum):
 class LogConfig:
     """Configuration settings for logging."""
 
-    level: int
-    default_file: Path
+    level: int  # Logging level (e.g., INFO, DEBUG).
+    default_file: Path  # File path for default logging.
     model_file: Optional[Path] = None
 
 
 class LoggingContext:
-    """Thread-safe context manager for device type."""
+    """Thread-safe context manager for storing the current device type.
+    This is used to include device-specific information in log messages."""
 
     _device: Optional[DeviceType] = None
     _lock = threading.Lock()
 
     @classmethod
     def set_device(cls, device: DeviceType) -> None:
-        """Set current device type thread-safely."""
+        """Set the current device type in a thread-safe manner."""
         with cls._lock:
             cls._device = device
 
     @classmethod
     def get_device(cls) -> Optional[DeviceType]:
-        """Get current device type thread-safely."""
+        """Retrieve the current device type in a thread-safe manner."""
         with cls._lock:
             return cls._device
 
 
 class ColorByDeviceFormatter(logging.Formatter):
-    """Format logs with device-specific colors."""
+    """Custom formatter that adds device-specific color coding to log messages.
+    Device types are mapped to specific colors, and key alert keywords are highlighted.
+    """
 
     COLORS = {DeviceType.SERVER.name: "cyan", DeviceType.PARTICIPANT.name: "green"}
     ALERT_KEYWORDS = ["timed out", "error", "failed", "exception", "warning"]
 
     def format(self, record: logging.LogRecord) -> str:
-        """Format log record with color coding."""
+        """Format the log record.
+        The message is split to separate metadata from the actual log text,
+        then colored according to the current device type."""
         message = super().format(record).split(" - ", 1)[-1]
         device = LoggingContext.get_device()
         device_str = device.name if device else "UNKNOWN"
         color = self.COLORS.get(device_str, "white")
 
+        # Highlight alert keywords with bold red.
         for keyword in self.ALERT_KEYWORDS:
             if keyword.lower() in message.lower():
                 message = message.replace(keyword, f"[bold red]{keyword}[/bold red]")
@@ -80,18 +88,20 @@ class ColorByDeviceFormatter(logging.Formatter):
 
 
 class BufferedSocketHandler(SocketHandler):
-    """Thread-safe buffered socket handler for log transmission."""
+    """A buffered socket handler for transmitting log messages over the network.
+    Buffers messages until a specified threshold is reached before sending them."""
 
     def __init__(self, host: str, port: int, buffer_size: int = BUFFER_SIZE):
         super().__init__(host, port)
-        self.buffer: List[str] = []
+        self.buffer: List[str] = []  # List to store log messages temporarily.
         self.buffer_size = buffer_size
         self.lock = threading.Lock()
         self.sock: Optional[socket.socket] = None
+        # Flag to indicate if a connection error has occurred.
         self.connection_error = False
 
     def createSocket(self) -> None:
-        """Create non-blocking socket connection."""
+        """Create a non-blocking socket connection for log transmission."""
         if self.connection_error:
             return
 
@@ -106,7 +116,8 @@ class BufferedSocketHandler(SocketHandler):
             raise ConnectionError(f"Socket creation failed: {e}") from e
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Buffer and emit log record."""
+        """Buffer and emit a log record.
+        Formats the record and adds it to the buffer; flushes the buffer if full."""
         if self.connection_error:
             return
 
@@ -122,7 +133,7 @@ class BufferedSocketHandler(SocketHandler):
             self.handleError(record)
 
     def flush(self) -> None:
-        """Flush buffered logs to socket."""
+        """Flush buffered logs by sending each message over the socket."""
         if not self.buffer or self.connection_error:
             return
 
@@ -134,21 +145,23 @@ class BufferedSocketHandler(SocketHandler):
                 self.buffer.clear()
 
     def _send_log(self, msg: str) -> None:
-        """Send single log message over socket."""
+        """Send a single log message over the socket with a length prefix."""
         if not self.sock or self.connection_error:
             return
 
         try:
             msg_bytes = msg.encode("utf-8")
+            # Prepend the message length as a 4-byte big-endian integer.
             self.sock.sendall(struct.pack(">L", len(msg_bytes)) + msg_bytes)
         except BlockingIOError:
+            # If non-blocking send fails, re-buffer the message.
             self.buffer.append(msg)
         except Exception:
             self.connection_error = True
             raise
 
     def close(self) -> None:
-        """Close socket handler."""
+        """Flush any remaining messages and close the socket."""
         with self.lock:
             self.flush()
             if self.sock:
@@ -157,26 +170,32 @@ class BufferedSocketHandler(SocketHandler):
 
 
 class LogRecordStreamHandler(socketserver.StreamRequestHandler):
-    """Handle incoming log records from network."""
+    """Handles incoming log records from the network.
+    Reads messages that are sent with a length prefix and logs them."""
 
     def handle(self) -> None:
-        """Process incoming log stream."""
+        """Continuously process incoming log messages until the connection is closed."""
         while True:
             try:
+                # Read the first 4 bytes to determine message length.
                 chunk = self.connection.recv(4)
                 if len(chunk) < 4:
                     break
                 slen = struct.unpack(">L", chunk)[0]
+                # Read the actual log message based on the length.
                 chunk = self.connection.recv(slen)
                 while len(chunk) < slen:
                     chunk += self.connection.recv(slen - len(chunk))
+                # Log the received message.
                 logging.getLogger("split_computing_logger").info(chunk.decode("utf-8"))
             except Exception:
                 break
 
 
 class DaemonThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
-    """Threaded TCP server for log handling."""
+    """A threaded TCP server for centralized log handling.
+    This server uses daemon threads to handle multiple log record streams concurrently.
+    """
 
     allow_reuse_address = True
     daemon_threads = True
@@ -187,7 +206,9 @@ def setup_logger(
     device: Optional[DeviceType] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> logging.Logger:
-    """Configure and return the application logger."""
+    """Configure and return the application logger.
+    If the logger already has handlers, it is returned immediately.
+    Otherwise, logging configuration is parsed and applied."""
     logger = logging.getLogger("split_computing_logger")
     if logger.hasHandlers():
         return logger
@@ -198,7 +219,8 @@ def setup_logger(
 
 
 def _parse_log_config(config: Optional[Dict[str, Any]]) -> LogConfig:
-    """Parse logging configuration from dict."""
+    """Parse logging configuration from a dictionary.
+    Provides default values if not explicitly defined."""
     level = logging.INFO
     default_file = LOGS_DIR / "app.log"
     model_file = None
@@ -219,7 +241,9 @@ def _configure_logger(
     is_server: bool,
     device: Optional[DeviceType],
 ) -> None:
-    """Configure logger with handlers and formatters."""
+    """Configure the logger by setting levels, adding handlers, and applying formatters.
+    File handlers are used for persistent logging, while a rich handler is added for console output.
+    The device type is set in the logging context."""
     logger.setLevel(config.level)
 
     file_formatter = logging.Formatter(
@@ -227,7 +251,7 @@ def _configure_logger(
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # Add handlers
+    # Initialize handlers for file and console logging.
     handlers = [
         RotatingFileHandler(
             config.default_file, maxBytes=MAX_LOG_SIZE, backupCount=BACKUP_COUNT
@@ -250,6 +274,7 @@ def _configure_logger(
     )
     handlers.append(rich_handler)
 
+    # Set level and formatter for each handler.
     for handler in handlers:
         handler.setLevel(config.level)
         handler.setFormatter(
@@ -259,7 +284,7 @@ def _configure_logger(
         )
         logger.addHandler(handler)
 
-    # Set device type
+    # Set the device type in the logging context.
     if device:
         LoggingContext.set_device(device)
     else:
@@ -273,7 +298,8 @@ def start_logging_server(
     device: Optional[DeviceType] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> Optional[DaemonThreadingTCPServer]:
-    """Start TCP server for centralized logging."""
+    """Start a TCP server for centralized logging.
+    A new thread is started to run the server, and the server object is returned."""
     logger = setup_logger(is_server=True, device=device, config=config)
     try:
         server = DaemonThreadingTCPServer(("", port), LogRecordStreamHandler)
@@ -288,7 +314,7 @@ def start_logging_server(
 
 
 def shutdown_logging_server(server: DaemonThreadingTCPServer) -> None:
-    """Shutdown logging server gracefully."""
+    """Shutdown the logging server gracefully."""
     if server:
         logging.getLogger("split_computing_logger").info("Shutting down logging server")
         server.shutdown()

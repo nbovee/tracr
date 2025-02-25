@@ -3,12 +3,15 @@
 LAYER_TEMPLATE = {
     "layer_id": None,
     "layer_type": None,
-    "input_shape": None,
-    "output_shape": None,
-    "params": None,
     "inference_time": None,
     "output_bytes": None,
-    "completed_by_node": None,
+    # Essential energy/power metrics
+    "processing_energy": None,  # Energy used for computation (Joules)
+    "communication_energy": None,  # Energy used for data transfer (Joules)
+    "power_reading": None,  # Instantaneous power reading (Watts)
+    # Additional metrics for analysis
+    "gpu_utilization": None,  # GPU utilization percentage
+    "total_energy": None,  # Total energy (processing + communication)
 }
 
 # Dataset-specific weight mappings

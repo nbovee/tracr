@@ -1,0 +1,55 @@
+# config/fasterrcnnsplit.yaml
+
+# Configuration for FasterRCNN split inference on onion dataset
+# Specialized for weed detection in onion fields
+
+# DEFAULT CONFIGURATIONS
+default:
+  device: "cuda"                # Using GPU for better performance with object detection
+  font_path: "fonts/DejaVuSans-Bold.ttf"
+  save_layer_images: true       # Save intermediate layer outputs for visualization
+
+# LOGGING CONFIGURATIONS
+logging:
+  log_level: "INFO"
+  log_file: "logs/fasterrcnn.log"
+
+# MODEL CONFIGURATIONS
+model:
+  model_name: "fasterrcnn_resnet50_fpn"  # Using ResNet50 backbone
+  version: "v1"
+  pretrained: true                       # Start with COCO pretrained weights
+  weight_path: null                      # Will be updated with fine-tuned weights
+  input_size: [3, 800, 800]             # Standard size for object detection
+  split_layer: -1                        # Auto-determine optimal split point
+  save_layers: [0, 5, 10, 15]           # Save key layer outputs for analysis
+  num_classes: 2                         # Binary: weed vs no-weed
+  mode: "eval"                          # Evaluation mode for inference
+  depth: 3                              # Deeper exploration for complex architecture
+  flush_buffer_size: 50                 # Reduced due to larger memory footprint
+  warmup_iterations: 5                  # Warmup for stable GPU performance
+  log_file: "logs/fasterrcnn_model.log"
+
+# DATASET CONFIGURATIONS
+dataset:
+  module: "onion"                       # Custom onion dataset module
+  class: "OnionDataset"
+  args:
+    root: "data/onion"                  # Root directory for onion dataset
+    class_names: ["with_weeds", "without_weeds"]
+    img_directory: "data/onion/images"
+    transform: null                     # Using default FasterRCNN transforms
+    max_samples: -1                     # Process all available samples
+
+# DATALOADER CONFIGURATIONS
+dataloader:
+  batch_size: 1                         # Process one image at a time for split inference
+  shuffle: false                        # Maintain consistent order for evaluation
+  num_workers: 4                        # Parallel data loading
+  collate_fn: "rcnn_collate"           # Special collate for object detection
+
+# COMPRESSION CONFIGURATIONS
+compression:
+  clevel: 5                            # Balanced compression level
+  filter: "SHUFFLE"                    # Good for floating-point data
+  codec: "ZSTD"                        # Efficient compression algorithm 

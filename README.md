@@ -5,6 +5,95 @@ An experimental framework for distributed AI experiments, enabling split inferen
 > [!Warning]
 > `tracr` is currently an experimental framework intended to explore distributed AI inference patterns. While functional, it is primarily for research and educational purposes.
 
+## Quick Start: Run AlexNet Split Inference
+
+> [!Caution]
+> ### 🔑 Required Prerequisites
+> You **MUST** have:
+> - ✅ Two devices (server and edge) on the same network
+> - ✅ SSH access between devices
+> - ✅ Python 3.10+ on both devices
+> - ✅ CUDA support on server (optional but recommended)
+
+#### 1️⃣ **Clone and Install** 
+```bash
+# On both devices (REQUIRED)
+git clone https://github.com/nbovee/tracr.git
+cd tracr
+python3 -m venv venv
+source venv/bin/activate  # Linux/Mac/WSL
+pip install -r requirements.txt
+```
+
+#### 2️⃣ **Configure Devices** (REQUIRED)
+```bash
+# In the config/ directory (MANDATORY)
+cp devices_template.yaml devices_config.yaml
+```
+Edit `devices_config.yaml` (**MUST** configure correctly):
+```yaml
+devices:
+  - device_type: SERVER           # REQUIRED
+    connection_params:
+      - host: 192.0.0.123         # ⚠️ Your server's IP (REQUIRED)
+        user: user1               # ⚠️ Your username (REQUIRED)
+        pkey_fp: server.rsa       # ⚠️ Will create this key next (REQUIRED)
+        port: 12345               # ⚠️ Communication port (REQUIRED)
+        default: true
+
+  - device_type: PARTICIPANT     # REQUIRED
+    connection_params:
+      - host: 192.0.0.124        # ⚠️ Your edge device's IP (REQUIRED)
+        user: user2              # ⚠️ Your username (REQUIRED)
+        pkey_fp: edge.rsa        # ⚠️ Will create this key next (REQUIRED)
+        port: 12345              # ⚠️ Must match server's port (REQUIRED)
+        default: true
+```
+
+#### 3️⃣ **Set Up SSH Keys** (REQUIRED)
+```bash
+# Create keys directory (MANDATORY)
+mkdir -p config/pkeys/
+
+# On Server (192.0.0.124) (REQUIRED)
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/server_key
+ssh-copy-id -i ~/.ssh/server_key.pub user2@192.0.0.123
+cp ~/.ssh/server_key config/pkeys/server.rsa
+
+# On Edge Device (192.0.0.123) (REQUIRED)
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/edge_key
+ssh-copy-id -i ~/.ssh/edge_key.pub user1@192.0.0.124
+cp ~/.ssh/edge_key config/pkeys/edge.rsa
+
+# Set permissions on both devices (CRITICAL)
+chmod 600 config/pkeys/*.rsa
+```
+
+#### 4️⃣ **Prepare Data Directory** (REQUIRED)
+```bash
+# Create data structure (MANDATORY)
+
+# For the alexnetsplit.yaml, the images should be in:
+mkdir -p data/imagenet/sample_images
+
+# Copy your test images (REQUIRED - any JPEG images)
+cp /path/to/your/images/* data/imagenet/sample_images/
+
+# Download ImageNet class names (REQUIRED)
+wget -O data/imagenet/imagenet_classes.txt https://raw.githubusercontent.com/pytorch/pytorch/master/torch/hub/imagenet_classes.txt
+```
+
+#### 5️⃣ **Run the Experiment**
+```bash
+# On Server (192.0.0.124) - MUST START FIRST
+python server.py
+
+# On Edge Device (192.0.0.123) - START AFTER SERVER
+python host.py --config config/alexnetsplit.yaml
+```
+
+That's it! You should now see the split inference running between your devices. For detailed setup instructions, troubleshooting, and advanced configurations, continue reading below.
+
 ## Table of Contents
 - [Key Features](#key-features)
 - [Install](#install)

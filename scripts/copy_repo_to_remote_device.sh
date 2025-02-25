@@ -32,8 +32,7 @@ def get_participant_details():
             return None
             
         with open(config_path, 'r') as f:
-            config_content = f.read()
-            config = yaml.safe_load(config_content)
+            config = yaml.safe_load(f)
         
         if not config or 'devices' not in config:
             print("Error: Invalid config format - 'devices' key not found", file=sys.stderr)
@@ -41,13 +40,18 @@ def get_participant_details():
         
         # Find the PARTICIPANT device
         for device in config['devices']:
-            if device['device_type'] == 'PARTICIPANT':
+            if device['device_type'] == 'PARTICIPANT' and device.get('connection_params'):
                 conn = device['connection_params'][0]  # Get first connection params
-                # Print only the necessary details to stdout
-                print(conn['user'])
-                print(conn['host'])
-                print(conn.get('port', 22))
-                return True
+                if all(key in conn for key in ['user', 'host', 'pkey_fp']):
+                    # Print connection details to stdout
+                    print(conn['user'])
+                    print(conn['host'])
+                    print(conn.get('ssh_port', 22))  # Use ssh_port if available, else 22
+                    print(conn['pkey_fp'])  # Add private key filename
+                    return True
+                else:
+                    print("Error: Missing required connection parameters", file=sys.stderr)
+                    return None
                 
         print("Error: No PARTICIPANT device found in config", file=sys.stderr)
         return None
@@ -68,11 +72,12 @@ EOF
 # Capture the output into an array
 mapfile -t config_details < <(get_device_config)
 
-# Check if we got exactly 3 lines of output
-if [ ${#config_details[@]} -eq 3 ]; then
+# Check if we got exactly 4 lines of output (user, host, port, key_file)
+if [ ${#config_details[@]} -eq 4 ]; then
     REMOTE_USER="${config_details[0]}"
     REMOTE_HOST="${config_details[1]}"
     REMOTE_PORT="${config_details[2]}"
+    KEY_FILE="${config_details[3]}"
 else
     echo "Error: Could not read PARTICIPANT device configuration from devices_config.yaml"
     exit 1
@@ -81,6 +86,7 @@ fi
 echo "User: ${REMOTE_USER}"
 echo "Host: ${REMOTE_HOST}"
 echo "Port: ${REMOTE_PORT}"
+echo "Key File: ${KEY_FILE}"
 
 REMOTE_TMP_DIR="/tmp/tracr"
 
@@ -90,6 +96,7 @@ EXCLUDES=(
     ".git"
     "__pycache__"
     "venv"
+    "data/imagenet"
     "data/imagenet2_tr"
     "data/imagenet10_tr"
     "data/imagenet50_tr"
@@ -183,19 +190,8 @@ check_fix_ssh_permissions() {
         chmod 700 "$pkey_dir"
     fi
     
-    # Find the correct key file based on devices_config.yaml
-    local key_file=""
-    while IFS= read -r line; do
-        if [[ $line =~ pkey_fp:[[:space:]]*([^[:space:]]*) ]]; then
-            key_file="${pkey_dir}/${BASH_REMATCH[1]}"
-            break
-        fi
-    done < "${PROJECT_ROOT}/config/devices_config.yaml"
-    
-    if [ -z "$key_file" ]; then
-        log_message "Error: Could not find private key filename in devices_config.yaml"
-        return 1
-    fi
+    # Use the key file from devices_config.yaml
+    local key_file="${pkey_dir}/${KEY_FILE}"
     
     log_message "Checking key file: $key_file"
     

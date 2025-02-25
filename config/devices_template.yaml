@@ -55,6 +55,7 @@
 #    mkdir -p config/pkeys/
 #    cp ~/.ssh/device_name_key config/pkeys/device_name.rsa
 #    chmod 600 config/pkeys/*.rsa
+#    chmod 700 config/pkeys/
 # 4. Test connection: ssh -i ~/.ssh/device_name_key user@device_ip
 
 # TROUBLESHOOTING:
@@ -70,13 +71,25 @@
 #    - Ensure private keys are in config/pkeys/ directory
 #    - Test SSH connection manually first
 
+# CONNECTION PARAMETERS:
+# Required fields:
+#   - host: Remote host address (IP or hostname)
+#   - user: SSH username for authentication
+#   - pkey_fp: Private key filename in config/pkeys directory
+#
+# Optional fields:
+#   - port: Port for experiment communication (e.g., 12345)
+#   - ssh_port: Port for SSH operations (defaults to 22)
+#   - default: Whether this is the default connection (defaults to true)
+
 devices:
   - device_type: SERVER                 # Main computing device
     connection_params:
       - host: <server_ip_address>       # (for WSL, use the windows IP)
         user: <username>                # SSH username
         pkey_fp: <server_key.rsa>       # Private key filename in config/pkeys/
-        port: <port_number>             # Default: 22 (for WSL, ensure port is forwarded)
+        port: 12345                     # Port for experiment communication
+        ssh_port: 22                    # Port for SSH operations (file transfer, commands)
         default: true                   # Primary connection parameters
 
   - device_type: PARTICIPANT            # Edge device
@@ -84,5 +97,22 @@ devices:
       - host: <participant_ip_address> 
         user: <username>                # SSH username
         pkey_fp: <participant_key.rsa>  # Private key filename in config/pkeys/
-        port: <port_number>             # Default: 22
+        port: 12345                     # Port for experiment communication
+        ssh_port: 22                    # Port for SSH operations
         default: true                   # Primary connection parameters
+
+# Example of multiple connection parameters for a device:
+#  - device_type: SERVER
+#    connection_params:
+#      - host: 192.168.1.100           # Primary connection
+#        user: admin
+#        pkey_fp: server_primary.rsa
+#        port: 12345
+#        ssh_port: 22
+#        default: true
+#      - host: 10.0.0.100              # Fallback connection
+#        user: admin
+#        pkey_fp: server_backup.rsa
+#        port: 12345
+#        ssh_port: 22
+#        default: false

@@ -18,7 +18,7 @@ model:
   pretrained: true
   weight_path: null
   input_size: [3, 224, 224]
-  split_layer: 6  # Split after the second residual block
+  split_layer: 10
   save_layers: [2, 4, 6]
   num_classes: 1000
   mode: eval

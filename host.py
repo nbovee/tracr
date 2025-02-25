@@ -25,20 +25,46 @@ from src.utils import read_yaml_file  # noqa: E402
 from src.api.remote_connection import create_ssh_client
 
 DEFAULT_SOURCE_DIR: Final[str] = "results"
+# TODO: Make this configurable.
+# Destination directory on server to copy results over from host when experiment is complete
+# DEFAULT_DEST_DIR: Final[str] = "/mnt/c/Users/racr/Desktop/tracr/results"
 
-# Destination directory on server to copy results over to from host when experiment is complete
-DEFAULT_DEST_DIR: Final[str] = "/mnt/c/Users/racr/Desktop/tracr/results"
+
+def get_device(requested_device: str = "cuda") -> str:
+    """Determine the appropriate device based on availability and request."""
+    requested_device = requested_device.lower()
+
+    if requested_device == "cpu":
+        logger.info("CPU device explicitly requested")
+        return "cpu"
+
+    if (
+        requested_device == "cuda"
+        or requested_device == "gpu"
+        or requested_device == "mps"
+    ) and torch.cuda.is_available():
+        logger.info("CUDA is available and will be used")
+        return "cuda"
+
+    logger.warning("CUDA requested but not available, falling back to CPU")
+    return "cpu"
 
 
 class ExperimentHost:
-    """Manages the experiment setup and execution."""
+    """Manages the experiment setup and execution on the host side."""
 
     def __init__(self, config_path: str) -> None:
         """Initialize with configuration and set up components."""
+        # Load config and validate device
         self.config = self._load_config(config_path)
+        requested_device = self.config.get("default", {}).get("device", "cuda")
+
         self._setup_logger(config_path)
+        self.config["default"]["device"] = get_device(requested_device)
+        # Create the experiment manager and set up the experiment.
         self.experiment_manager = ExperimentManager(self.config)
         self.experiment = self.experiment_manager.setup_experiment()
+        # Establish a network connection to the server.
         self._setup_network_connection()
         self.setup_dataloader()
         self.experiment.data_loader = self.data_loader
@@ -108,6 +134,8 @@ class ExperimentHost:
     def run_experiment(self) -> None:
         """Execute the experiment."""
         logger.info("Starting experiment execution...")
+        # This call eventually triggers the networked experiment code, where
+        # tensors and data are sent to the server.
         self.experiment.run()
 
     def _copy_results_to_server(self) -> None:
@@ -120,7 +148,7 @@ class ExperimentHost:
                 logger.error("No server device found for copying results")
                 return
 
-            # Wait for network connection to close completely
+            # Ensure network client cleanup before file transfer
             if hasattr(self.experiment, "network_client"):
                 self.experiment.network_client.cleanup()
                 time.sleep(2)
@@ -134,8 +162,8 @@ class ExperimentHost:
                 )
             )
 
-            # Use default SSH port (22) instead of the experiment port
-            ssh_port = 22
+            # Use SSH port for file transfer operations
+            ssh_port = server_device.working_cparams.ssh_port
             logger.info(
                 f"Establishing SSH connection to server {server_device.get_host()}..."
             )
@@ -149,7 +177,7 @@ class ExperimentHost:
                         host=server_device.get_host(),
                         user=server_device.get_username(),
                         private_key_path=server_device.get_private_key_path(),
-                        port=ssh_port,
+                        port=ssh_port,  # Use SSH port for file transfer
                         timeout=10.0,
                     )
 
@@ -181,7 +209,8 @@ class ExperimentHost:
         try:
             if hasattr(self.experiment, "network_client"):
                 self.experiment.network_client.cleanup()
-            self._copy_results_to_server()
+            # Optionally copy results to server
+            # self._copy_results_to_server()
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
         finally:
@@ -201,12 +230,16 @@ class ExperimentHost:
                 )
                 return
 
+            # Log both experiment and SSH ports for clarity
             logger.debug(
-                f"Server device info - Host: {server_device.get_host()}, Port: {server_device.get_port()}"
+                f"Server device info - Host: {server_device.get_host()}, "
+                f"Experiment Port: {server_device.get_port()}, "
+                f"SSH Port: {server_device.working_cparams.ssh_port}"
             )
 
             if hasattr(self.experiment, "network_client"):
                 logger.debug("Attempting to connect to server...")
+                # Use experiment port for network client connection
                 self.experiment.network_client.connect()
                 logger.info(
                     f"Successfully connected to server at {server_device.get_host()}:{server_device.get_port()}"
