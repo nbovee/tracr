@@ -93,8 +93,10 @@ def create_forward_prehook(
                 # Return a dummy tensor with the correct input size.
                 hook_output = torch.randn(1, *wrapped_model.input_size).to(device)
 
-        # Record layer start time for timing measurement.
+        # Record layer start time for timing measurement - use perf_counter for high precision
         if wrapped_model.log:
+            # Always record time, even if we've already processed this layer
+            # This ensures we capture accurate timing data
             start_time = time.perf_counter()
             wrapped_model.layer_times[layer_index] = start_time
             logger.debug(f"Layer {layer_index} start time recorded: {start_time}")
@@ -160,14 +162,20 @@ def create_forward_posthook(
                         # Get energy measurements
                         energy_result = wrapped_model.energy_monitor.end_measurement()
                         if isinstance(energy_result, tuple) and len(energy_result) == 2:
-                            energy, elapsed_time = energy_result
+                            energy, measured_time = energy_result
                         else:
-                            energy, elapsed_time = 0.0, 0.0
+                            energy, measured_time = 0.0, 0.0
+
+                        logger.debug(
+                            f"Layer {layer_index} energy collection - raw energy: {energy}, time: {measured_time}"
+                        )
 
                         # Get system metrics based on device type
                         metrics = wrapped_model.energy_monitor.get_system_metrics()
                         if not isinstance(metrics, dict):
                             metrics = {}
+
+                        logger.debug(f"Layer {layer_index} system metrics: {metrics}")
 
                         # Use metrics based on device type
                         device_type = wrapped_model.energy_monitor.device_type
@@ -188,17 +196,42 @@ def create_forward_posthook(
                             # Use Jetson metrics
                             power_reading = float(metrics.get("power_reading", 0.0))
                             gpu_utilization = float(metrics.get("gpu_utilization", 0.0))
-                            # Jetson-specific energy calculation
-                            if elapsed_time > 0:
-                                energy = power_reading * elapsed_time
+                            memory_utilization = float(
+                                metrics.get("memory_utilization", 0.0)
+                            )
+
+                            # If we didn't get proper elapsed time from energy monitor, use the layer time
+                            if elapsed_time > 0 and measured_time <= 0:
+                                measured_time = elapsed_time
+
+                            # Jetson-specific energy calculation - ensure we have a non-zero power reading
+                            if measured_time > 0:
+                                if power_reading > 0:
+                                    # Energy = Power × Time
+                                    layer_energy = power_reading * measured_time
+                                else:
+                                    # Fallback calculation if power reading failed
+                                    # Use a typical Jetson power draw as fallback (10W)
+                                    fallback_power = 10.0
+                                    layer_energy = fallback_power * measured_time
+                                    logger.warning(
+                                        f"Using fallback power calculation for layer {layer_index}"
+                                    )
                             else:
-                                energy = 0.0
+                                layer_energy = 0.0
+
+                            logger.debug(
+                                f"Layer {layer_index} calculated energy: {layer_energy}J from power:{power_reading}W × time:{measured_time}s"
+                            )
+
                             metrics.update(
                                 {
                                     "power_reading": power_reading,
                                     "gpu_utilization": gpu_utilization,
-                                    "processing_energy": energy,
-                                    "total_energy": energy,
+                                    "memory_utilization": memory_utilization,
+                                    "processing_energy": layer_energy,
+                                    "communication_energy": 0.0,  # Would be calculated for networked experiments
+                                    "total_energy": layer_energy,
                                 }
                             )
                         else:
@@ -234,13 +267,48 @@ def create_forward_posthook(
                         # Store metrics in forward_info
                         wrapped_model.forward_info[layer_index].update(metrics)
 
+                        # Store in layer_energy_data for historical tracking
+                        if not hasattr(wrapped_model, "layer_energy_data"):
+                            wrapped_model.layer_energy_data = {}
+                        if layer_index not in wrapped_model.layer_energy_data:
+                            wrapped_model.layer_energy_data[layer_index] = []
+
+                        split_point = (
+                            wrapped_model.stop_i
+                            if hasattr(wrapped_model, "stop_i")
+                            else -1
+                        )
+                        wrapped_model.layer_energy_data[layer_index].append(
+                            {
+                                "processing_energy": metrics.get(
+                                    "processing_energy", 0.0
+                                ),
+                                "communication_energy": metrics.get(
+                                    "communication_energy", 0.0
+                                ),
+                                "power_reading": metrics.get("power_reading", 0.0),
+                                "gpu_utilization": metrics.get("gpu_utilization", 0.0),
+                                "memory_utilization": (
+                                    metrics.get("memory_utilization", 0.0)
+                                    if "memory_utilization" in metrics
+                                    else 0.0
+                                ),
+                                "total_energy": metrics.get("total_energy", 0.0),
+                                "elapsed_time": measured_time,
+                                "split_point": split_point,
+                            }
+                        )
+
                     except Exception as e:
-                        logger.error(f"Error collecting energy metrics: {e}")
+                        logger.error(
+                            f"Error collecting energy metrics: {e}", exc_info=True
+                        )
                         # Use safe defaults but preserve any existing metrics
                         safe_metrics = {
                             "power_reading": 0.0,
                             "gpu_utilization": 0.0,
                             "processing_energy": 0.0,
+                            "communication_energy": 0.0,
                             "total_energy": 0.0,
                             "host_battery_energy_mwh": 0.0,
                         }

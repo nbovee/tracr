@@ -268,18 +268,68 @@ class GPUEnergyMonitor:
         try:
             if self._jtop and self._jtop.is_alive():
                 stats = self._jtop.stats
-                # Handle potential None values from Jetson stats
-                power_raw = stats.get("Power VDD_CPU_GPU_CV", 0)
-                gpu_raw = stats.get("GPU", 0)
 
-                # Convert to float safely, defaulting to 0.0 if None
-                power = float(power_raw) / 1000.0 if power_raw is not None else 0.0
-                gpu_util = float(gpu_raw) if gpu_raw is not None else 0.0
+                # Get power using our improved _get_jetson_power method
+                power = self._get_jetson_power()
 
-                return {"power_reading": power, "gpu_utilization": gpu_util}
+                # Get GPU utilization - try multiple possible keys
+                gpu_util = 0.0
+                gpu_keys = ["GPU", "GPU1", "GPU0", "gpu_usage"]
+
+                for gpu_key in gpu_keys:
+                    if gpu_key in stats and stats[gpu_key] is not None:
+                        try:
+                            gpu_util = float(stats[gpu_key])
+                            logger.debug(
+                                f"Found GPU utilization using key '{gpu_key}': {gpu_util}%"
+                            )
+                            break
+                        except (ValueError, TypeError):
+                            continue
+
+                # If GPU utilization wasn't found through direct keys, try entries in tegrastats
+                if gpu_util == 0.0 and "tegrastats" in stats:
+                    # Orin often reports GPU utilization here
+                    tegrastats = stats["tegrastats"]
+                    if isinstance(tegrastats, dict) and "GR3D_FREQ" in tegrastats:
+                        try:
+                            gpu_util = float(tegrastats["GR3D_FREQ"].split("%")[0])
+                            logger.debug(
+                                f"Found GPU utilization in tegrastats: {gpu_util}%"
+                            )
+                        except (ValueError, TypeError, IndexError, AttributeError):
+                            pass
+
+                # Get memory utilization too if available
+                mem_used = 0
+                mem_total = 1
+                if "RAM" in stats:
+                    try:
+                        if isinstance(stats["RAM"], dict):
+                            mem_used = stats["RAM"].get("used", 0)
+                            mem_total = stats["RAM"].get("total", 1)
+                        elif isinstance(stats["RAM"], str):
+                            # Sometimes RAM is reported as "1234M/5678M"
+                            parts = stats["RAM"].split("/")
+                            if len(parts) == 2:
+                                mem_used = float(parts[0].rstrip("MKG"))
+                                mem_total = float(parts[1].rstrip("MKG"))
+                    except (ValueError, TypeError, AttributeError):
+                        pass
+
+                # Calculate memory utilization percentage
+                mem_util = (mem_used / mem_total) * 100 if mem_total > 0 else 0
+
+                return {
+                    "power_reading": power,
+                    "gpu_utilization": gpu_util,
+                    "memory_utilization": mem_util,
+                }
+
         except Exception as e:
-            logger.error(f"Error getting Jetson metrics: {e}")
-        return {"power_reading": 0.0, "gpu_utilization": 0.0}
+            logger.error(f"Error getting Jetson metrics: {e}", exc_info=True)
+
+        return {"power_reading": 0.0, "gpu_utilization": 0.0, "memory_utilization": 0.0}
 
     def _get_nvidia_metrics(self) -> dict:
         """Get NVIDIA GPU specific metrics."""
@@ -299,23 +349,41 @@ class GPUEnergyMonitor:
 
         try:
             stats = self._jtop.stats
-            power_key = "Power VDD_CPU_GPU_CV"
-            if power_key in stats:
-                try:
-                    power_raw = stats[power_key]
-                    # Handle None value safely
-                    if power_raw is not None:
-                        power = float(power_raw) / 1000.0  # Convert mW to W
-                        logger.debug(f"Found GPU power reading: {power}W")
-                        return power
-                    return 0.0
-                except (ValueError, TypeError) as e:
-                    logger.error(f"Error parsing power value: {e}")
-                    return 0.0
 
-            logger.warning("Could not find Power VDD_CPU_GPU_CV in stats")
-            logger.debug(
-                f"Available power keys: {[k for k in stats.keys() if k.startswith('Power')]}"
+            # List of potential power keys in Jetson platforms
+            jetson_power_keys = [
+                "Power VDD_CPU_GPU_CV",  # Xavier/Nano
+                "Power SYS5V_CPU",  # Orin
+                "Power VDDQ_VDD2_1V8AO",  # Another possible Orin key
+                "Power CV",  # Sometimes found on Orin
+                "Power POM_5V_GPU",  # Sometimes found on Orin
+                "Power A0",  # Generic fallback
+            ]
+
+            # Try each power key until we find a valid one
+            for power_key in jetson_power_keys:
+                if power_key in stats and stats[power_key] is not None:
+                    try:
+                        power = float(stats[power_key]) / 1000.0  # Convert mW to W
+                        logger.debug(f"Using power key '{power_key}': {power}W")
+                        return power
+                    except (ValueError, TypeError):
+                        continue
+
+            # If no specific keys work, try any power key
+            all_power_keys = [k for k in stats.keys() if k.startswith("Power")]
+            for key in all_power_keys:
+                if stats[key] is not None:
+                    try:
+                        power = float(stats[key]) / 1000.0  # Convert mW to W
+                        logger.debug(f"Using fallback power key '{key}': {power}W")
+                        return power
+                    except (ValueError, TypeError):
+                        continue
+
+            # Last resort: log all available keys
+            logger.warning(
+                f"No valid power keys found. Available stats keys: {list(stats.keys())}"
             )
             return 0.0
 
