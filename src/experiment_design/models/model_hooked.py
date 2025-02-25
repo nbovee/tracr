@@ -390,4 +390,44 @@ class WrappedModel(BaseModel, ModelInterface):
                 }
             )
 
+            # Windows CPU specific handling - check for zero or invalid energy values
+            if hasattr(self, "is_windows_cpu") and self.is_windows_cpu:
+                # If either processing_energy or power_reading is zero, try to get estimates
+                if (
+                    metrics[layer_idx]["processing_energy"] == 0
+                    or metrics[layer_idx]["power_reading"] == 0
+                ):
+                    # Get inference time for this layer
+                    inference_time = metrics[layer_idx]["inference_time"]
+
+                    # If we have a valid inference time, we can estimate energy
+                    if inference_time and inference_time > 0:
+                        # Try to get power estimate from energy monitor
+                        if hasattr(self, "energy_monitor") and self.energy_monitor:
+                            # Get power estimate from Windows CPU model
+                            power_reading = (
+                                self.energy_monitor._estimate_windows_cpu_power()
+                            )
+                            if power_reading > 0:
+                                # Update power reading
+                                metrics[layer_idx]["power_reading"] = power_reading
+
+                                # If processing energy is zero, calculate it from power and inference time
+                                if metrics[layer_idx]["processing_energy"] == 0:
+                                    processing_energy = power_reading * inference_time
+                                    metrics[layer_idx][
+                                        "processing_energy"
+                                    ] = processing_energy
+
+                                # Update total energy as well
+                                metrics[layer_idx]["total_energy"] = (
+                                    metrics[layer_idx]["processing_energy"]
+                                    + metrics[layer_idx]["communication_energy"]
+                                )
+
+                                logger.debug(
+                                    f"Updated Windows CPU metrics for layer {layer_idx}: "
+                                    f"power={power_reading:.2f}W, energy={processing_energy:.6f}J"
+                                )
+
         return metrics

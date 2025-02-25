@@ -411,7 +411,6 @@ class GPUEnergyMonitor:
             self._cumulative_power_readings = []
             self._cumulative_cpu_utilization = []
             self._cumulative_memory_utilization = []
-            logger.info("Started cumulative Windows CPU metrics collection")
 
             # Take an initial power reading
             self._estimate_windows_cpu_power()
