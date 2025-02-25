@@ -576,6 +576,48 @@ class BaseExperiment(ExperimentInterface):
                     .reset_index()
                 )
 
+                # Fix the aggregation for better research paper representation:
+                # Only average power and GPU metrics across layers that actually executed (non-zero values)
+                for split_layer in energy_summary["Split Layer"].unique():
+                    # Get metrics for this split layer
+                    split_metrics = layer_metrics_df[
+                        layer_metrics_df["Split Layer"] == split_layer
+                    ]
+
+                    # Filter to only include layers with non-zero power readings
+                    active_layers = split_metrics[
+                        split_metrics["Power Reading (W)"] > 0
+                    ]
+
+                    if not active_layers.empty:
+                        # Recalculate averages only for active layers
+                        energy_summary.loc[
+                            energy_summary["Split Layer"] == split_layer,
+                            "Power Reading (W)",
+                        ] = active_layers["Power Reading (W)"].mean()
+
+                        energy_summary.loc[
+                            energy_summary["Split Layer"] == split_layer,
+                            "GPU Utilization (%)",
+                        ] = active_layers["GPU Utilization (%)"].mean()
+
+                        # Only recalculate memory utilization if the column exists
+                        if "Memory Utilization (%)" in active_layers.columns:
+                            # Filter to non-null values
+                            memory_active = active_layers[
+                                active_layers["Memory Utilization (%)"].notnull()
+                            ]
+                            if not memory_active.empty:
+                                energy_summary.loc[
+                                    energy_summary["Split Layer"] == split_layer,
+                                    "Memory Utilization (%)",
+                                ] = memory_active["Memory Utilization (%)"].mean()
+
+                # Add explanation in the logs for transparency
+                logger.info(
+                    "Adjusted Energy Analysis metrics to only average across active layers for accurate paper representation"
+                )
+
                 energy_summary.to_excel(
                     writer, sheet_name="Energy Analysis", index=False
                 )

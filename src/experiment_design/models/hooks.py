@@ -77,7 +77,13 @@ def create_forward_prehook(
             if layer_index == 0:
                 wrapped_model.banked_output = {}
                 wrapped_model.layer_times = {}  # Store start times for each layer
-                # Start energy monitoring for first layer
+                # Initialize per-layer energy tracking dictionaries if they don't exist
+                if not hasattr(wrapped_model, "layer_energy_measurements"):
+                    wrapped_model.layer_energy_measurements = {}
+                    wrapped_model.layer_start_times = {}
+                    wrapped_model.layer_energy_times = {}
+
+                # Start global energy monitoring for the entire forward pass
                 if (
                     hasattr(wrapped_model, "energy_monitor")
                     and wrapped_model.energy_monitor
@@ -85,6 +91,29 @@ def create_forward_prehook(
                     wrapped_model.energy_monitor.start_measurement()
                     wrapped_model.current_energy_start = time.time()
                     logger.debug("Started energy monitoring for forward pass")
+
+            # Start per-layer energy monitoring
+            if (
+                hasattr(wrapped_model, "energy_monitor")
+                and wrapped_model.energy_monitor
+                and layer_index <= wrapped_model.stop_i
+            ):
+                # Store energy start time for this specific layer
+                wrapped_model.layer_start_times[layer_index] = time.time()
+
+                # Take initial metrics snapshot for this layer
+                try:
+                    metrics = wrapped_model.energy_monitor.get_system_metrics()
+                    wrapped_model.layer_energy_measurements[layer_index] = {
+                        "start_metrics": metrics,
+                        "start_time": time.time(),
+                    }
+                    logger.debug(f"Layer {layer_index} energy monitoring started")
+                except Exception as e:
+                    logger.debug(
+                        f"Error starting energy monitoring for layer {layer_index}: {e}"
+                    )
+
         # On the Cloud device, override the input from the first layer.
         else:
             if layer_index == 0:
@@ -151,182 +180,121 @@ def create_forward_posthook(
                     wrapped_model.forward_info[layer_index][
                         "output_bytes"
                     ] = output_bytes
+                    # Also store in MB for easier reading
+                    output_mb = output_bytes / (1024 * 1024)
+                    wrapped_model.forward_info[layer_index]["output_mb"] = output_mb
 
-                # Collect energy metrics at final layer or split point
+                # Collect per-layer energy metrics for each layer up to the split point
                 if (
-                    layer_index == wrapped_model.stop_i
+                    wrapped_model.start_i == 0
+                    and layer_index <= wrapped_model.stop_i
                     and hasattr(wrapped_model, "energy_monitor")
                     and wrapped_model.energy_monitor
                 ):
                     try:
-                        # Get energy measurements
-                        energy_result = wrapped_model.energy_monitor.end_measurement()
-                        if isinstance(energy_result, tuple) and len(energy_result) == 2:
-                            energy, measured_time = energy_result
-                        else:
-                            energy, measured_time = 0.0, 0.0
-
-                        logger.debug(
-                            f"Layer {layer_index} energy collection - raw energy: {energy}, time: {measured_time}"
+                        # Get current metrics for this layer
+                        current_metrics = (
+                            wrapped_model.energy_monitor.get_system_metrics()
                         )
 
-                        # Get system metrics based on device type
-                        metrics = wrapped_model.energy_monitor.get_system_metrics()
-                        if not isinstance(metrics, dict):
-                            metrics = {}
+                        # Skip if we don't have start metrics for this layer
+                        if (
+                            hasattr(wrapped_model, "layer_energy_measurements")
+                            and layer_index in wrapped_model.layer_energy_measurements
+                        ):
+                            start_metrics = wrapped_model.layer_energy_measurements[
+                                layer_index
+                            ].get("start_metrics", {})
+                            start_time = wrapped_model.layer_energy_measurements[
+                                layer_index
+                            ].get("start_time", 0)
+                            measured_time = time.time() - start_time
 
-                        logger.debug(f"Layer {layer_index} system metrics: {metrics}")
+                            # Get metrics based on device type
+                            device_type = wrapped_model.energy_monitor.device_type
 
-                        # Use metrics based on device type
-                        device_type = wrapped_model.energy_monitor.device_type
-                        if device_type == "cpu":
-                            # Use battery metrics for CPU mode
-                            battery_energy = (
-                                wrapped_model.energy_monitor.get_battery_energy()
-                            )
-                            metrics.update(
-                                {
-                                    "power_reading": 0.0,
-                                    "gpu_utilization": 0.0,
-                                    "host_battery_energy_mwh": battery_energy,
-                                    "total_energy": battery_energy,
-                                }
-                            )
-                        elif device_type == "jetson":
-                            # Use Jetson metrics
-                            power_reading = float(metrics.get("power_reading", 0.0))
-                            gpu_utilization = float(metrics.get("gpu_utilization", 0.0))
-                            memory_utilization = float(
-                                metrics.get("memory_utilization", 0.0)
-                            )
+                            # Get power reading
+                            power_reading = current_metrics.get("power_reading", 0.0)
 
-                            # If we didn't get proper elapsed time from energy monitor, use the layer time
-                            if elapsed_time > 0 and measured_time <= 0:
-                                measured_time = elapsed_time
+                            # If power reading is available, calculate layer energy
+                            layer_energy = 0.0
+                            if power_reading > 0 and measured_time > 0:
+                                # Energy = Power × Time
+                                layer_energy = power_reading * measured_time
 
-                            # Jetson-specific energy calculation - ensure we have a non-zero power reading
-                            if measured_time > 0:
-                                if power_reading > 0:
-                                    # Energy = Power × Time
-                                    layer_energy = power_reading * measured_time
-                                else:
-                                    # Fallback calculation if power reading failed
-                                    # Use a typical Jetson power draw as fallback (10W)
-                                    fallback_power = 10.0
-                                    layer_energy = fallback_power * measured_time
-                                    logger.warning(
-                                        f"Using fallback power calculation for layer {layer_index}"
-                                    )
-                            else:
-                                layer_energy = 0.0
-
-                            logger.debug(
-                                f"Layer {layer_index} calculated energy: {layer_energy}J from power:{power_reading}W × time:{measured_time}s"
-                            )
-
-                            # Calculate communication energy based on output size
-                            # This implementation uses a standard model for WiFi communication energy
+                            # Calculate communication energy for this layer if it's the split point
                             comm_energy = 0.0
-                            if isinstance(output, torch.Tensor) and layer_index == wrapped_model.stop_i:
+                            if layer_index == wrapped_model.stop_i and isinstance(
+                                output, torch.Tensor
+                            ):
                                 # Get output tensor size in bytes
                                 output_bytes = output.element_size() * output.nelement()
                                 # Convert to MB for logging clarity
                                 output_mb = output_bytes / (1024 * 1024)
-                                
+
                                 # Model parameters for WiFi communication
                                 # Energy per bit values from research papers on mobile communication
                                 # WiFi: ~5-10 nJ/bit, we'll use 7.5 nJ/bit (0.0000000075 J/bit)
-                                ENERGY_PER_BIT_WIFI = 0.0000000075  # Joules per bit for WiFi
-                                
+                                ENERGY_PER_BIT_WIFI = (
+                                    0.0000000075  # Joules per bit for WiFi
+                                )
+
                                 # Convert bytes to bits (8 bits per byte)
                                 output_bits = output_bytes * 8
-                                
+
                                 # Calculate communication energy: E = energy_per_bit * number_of_bits
                                 comm_energy = ENERGY_PER_BIT_WIFI * output_bits
-                                
-                                # Save for logging
-                                wrapped_model.forward_info[layer_index]["output_bytes"] = output_bytes
-                                wrapped_model.forward_info[layer_index]["output_mb"] = output_mb
-                                
+
                                 logger.debug(
                                     f"Layer {layer_index} communication: {output_mb:.2f}MB, energy: {comm_energy:.6f}J"
                                 )
 
-                            metrics.update(
-                                {
-                                    "power_reading": power_reading,
-                                    "gpu_utilization": gpu_utilization,
-                                    "memory_utilization": memory_utilization,
-                                    "processing_energy": layer_energy,
-                                    "communication_energy": comm_energy,
-                                    "total_energy": layer_energy + comm_energy,
-                                }
+                            # Extract other metrics
+                            gpu_utilization = current_metrics.get(
+                                "gpu_utilization", 0.0
                             )
-                        else:
-                            # NVIDIA GPU metrics
-                            power_reading = float(metrics.get("power_reading", 0.0))
-                            gpu_utilization = float(metrics.get("gpu_utilization", 0.0))
-
-                            # Calculate layer energy proportion
-                            total_inference_time = sum(
-                                float(
-                                    wrapped_model.forward_info[idx].get(
-                                        "inference_time", 0.0
-                                    )
-                                )
-                                for idx in wrapped_model.forward_info
+                            memory_utilization = current_metrics.get(
+                                "memory_utilization", 0.0
                             )
 
-                            if total_inference_time > 0 and energy > 0:
-                                layer_proportion = elapsed_time / total_inference_time
-                                layer_energy = float(energy * layer_proportion)
-                            else:
-                                layer_energy = 0.0
+                            # Store layer-specific energy metrics
+                            metrics = {
+                                "power_reading": power_reading,
+                                "gpu_utilization": gpu_utilization,
+                                "memory_utilization": memory_utilization,
+                                "processing_energy": layer_energy,
+                                "communication_energy": (
+                                    comm_energy
+                                    if layer_index == wrapped_model.stop_i
+                                    else 0.0
+                                ),
+                                "total_energy": layer_energy
+                                + (
+                                    comm_energy
+                                    if layer_index == wrapped_model.stop_i
+                                    else 0.0
+                                ),
+                                "elapsed_time": measured_time,
+                            }
 
-                            # Calculate communication energy (same model as Jetson case)
-                            comm_energy = 0.0
-                            if isinstance(output, torch.Tensor) and layer_index == wrapped_model.stop_i:
-                                output_bytes = output.element_size() * output.nelement()
-                                output_mb = output_bytes / (1024 * 1024)
-                                
-                                # Use same WiFi energy model
-                                ENERGY_PER_BIT_WIFI = 0.0000000075  # Joules per bit for WiFi
-                                output_bits = output_bytes * 8
-                                comm_energy = ENERGY_PER_BIT_WIFI * output_bits
-                                
-                                wrapped_model.forward_info[layer_index]["output_bytes"] = output_bytes
-                                wrapped_model.forward_info[layer_index]["output_mb"] = output_mb
-                                
-                                logger.debug(
-                                    f"Layer {layer_index} communication: {output_mb:.2f}MB, energy: {comm_energy:.6f}J"
-                                )
+                            # Store metrics in forward_info for this layer
+                            wrapped_model.forward_info[layer_index].update(metrics)
 
-                            metrics.update(
-                                {
-                                    "power_reading": power_reading,
-                                    "gpu_utilization": gpu_utilization,
-                                    "processing_energy": layer_energy,
-                                    "communication_energy": comm_energy,
-                                    "total_energy": layer_energy + comm_energy,
-                                }
+                            # Store in layer_energy_data for historical tracking
+                            if not hasattr(wrapped_model, "layer_energy_data"):
+                                wrapped_model.layer_energy_data = {}
+                            if layer_index not in wrapped_model.layer_energy_data:
+                                wrapped_model.layer_energy_data[layer_index] = []
+
+                            # Add the current split point info to the measurements
+                            split_point = (
+                                wrapped_model.stop_i
+                                if hasattr(wrapped_model, "stop_i")
+                                else -1
                             )
 
-                        # Store metrics in forward_info
-                        wrapped_model.forward_info[layer_index].update(metrics)
-
-                        # Store in layer_energy_data for historical tracking
-                        if not hasattr(wrapped_model, "layer_energy_data"):
-                            wrapped_model.layer_energy_data = {}
-                        if layer_index not in wrapped_model.layer_energy_data:
-                            wrapped_model.layer_energy_data[layer_index] = []
-
-                        split_point = (
-                            wrapped_model.stop_i
-                            if hasattr(wrapped_model, "stop_i")
-                            else -1
-                        )
-                        wrapped_model.layer_energy_data[layer_index].append(
-                            {
+                            # Add metrics to historical data
+                            layer_metrics = {
                                 "processing_energy": metrics.get(
                                     "processing_energy", 0.0
                                 ),
@@ -335,20 +303,105 @@ def create_forward_posthook(
                                 ),
                                 "power_reading": metrics.get("power_reading", 0.0),
                                 "gpu_utilization": metrics.get("gpu_utilization", 0.0),
-                                "memory_utilization": (
-                                    metrics.get("memory_utilization", 0.0)
-                                    if "memory_utilization" in metrics
-                                    else 0.0
+                                "memory_utilization": metrics.get(
+                                    "memory_utilization", 0.0
                                 ),
                                 "total_energy": metrics.get("total_energy", 0.0),
                                 "elapsed_time": measured_time,
                                 "split_point": split_point,
                             }
-                        )
+
+                            wrapped_model.layer_energy_data[layer_index].append(
+                                layer_metrics
+                            )
+                            logger.debug(
+                                f"Layer {layer_index} energy metrics recorded: {layer_metrics}"
+                            )
 
                     except Exception as e:
                         logger.error(
-                            f"Error collecting energy metrics: {e}", exc_info=True
+                            f"Error collecting energy metrics for layer {layer_index}: {e}",
+                            exc_info=True,
+                        )
+
+                # Special handling for final measurements at the split point
+                if (
+                    layer_index == wrapped_model.stop_i
+                    and hasattr(wrapped_model, "energy_monitor")
+                    and wrapped_model.energy_monitor
+                ):
+                    try:
+                        # Get final energy measurements for the entire forward pass
+                        energy_result = wrapped_model.energy_monitor.end_measurement()
+                        if isinstance(energy_result, tuple) and len(energy_result) == 2:
+                            total_energy, total_time = energy_result
+                        else:
+                            total_energy, total_time = 0.0, 0.0
+
+                        logger.debug(
+                            f"Split layer {layer_index} energy collection - raw energy: {total_energy}, time: {total_time}"
+                        )
+
+                        # Get final system metrics for the split point
+                        metrics = wrapped_model.energy_monitor.get_system_metrics()
+                        logger.debug(
+                            f"Split layer {layer_index} system metrics: {metrics}"
+                        )
+
+                        # Calculate communication energy based on output size at split point
+                        comm_energy = 0.0
+                        if isinstance(output, torch.Tensor):
+                            # Get output tensor size in bytes
+                            output_bytes = output.element_size() * output.nelement()
+                            # Convert to MB for logging clarity
+                            output_mb = output_bytes / (1024 * 1024)
+
+                            # Model parameters for WiFi communication
+                            ENERGY_PER_BIT_WIFI = (
+                                0.0000000075  # Joules per bit for WiFi
+                            )
+
+                            # Convert bytes to bits (8 bits per byte)
+                            output_bits = output_bytes * 8
+
+                            # Calculate communication energy: E = energy_per_bit * number_of_bits
+                            comm_energy = ENERGY_PER_BIT_WIFI * output_bits
+
+                            logger.debug(
+                                f"Split layer {layer_index} communication: {output_mb:.2f}MB, energy: {comm_energy:.6f}J"
+                            )
+
+                            # Save for logging
+                            wrapped_model.forward_info[layer_index][
+                                "output_bytes"
+                            ] = output_bytes
+                            wrapped_model.forward_info[layer_index][
+                                "output_mb"
+                            ] = output_mb
+
+                        # No need to distribute energy again since we've already done per-layer measurement
+                        split_metrics = {
+                            "power_reading": metrics.get("power_reading", 0.0),
+                            "gpu_utilization": metrics.get("gpu_utilization", 0.0),
+                            "memory_utilization": metrics.get(
+                                "memory_utilization", 0.0
+                            ),
+                            "processing_energy": wrapped_model.forward_info[
+                                layer_index
+                            ].get("processing_energy", 0.0),
+                            "communication_energy": comm_energy,
+                            "total_energy": wrapped_model.forward_info[layer_index].get(
+                                "processing_energy", 0.0
+                            )
+                            + comm_energy,
+                        }
+
+                        # Update split layer metrics
+                        wrapped_model.forward_info[layer_index].update(split_metrics)
+
+                    except Exception as e:
+                        logger.error(
+                            f"Error collecting final energy metrics: {e}", exc_info=True
                         )
                         # Use safe defaults but preserve any existing metrics
                         safe_metrics = {
