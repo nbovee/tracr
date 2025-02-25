@@ -4,6 +4,7 @@ import atexit
 import copy
 import logging
 import time
+import platform
 from contextlib import nullcontext
 from typing import Any, Dict, Optional, Union, ClassVar
 
@@ -70,6 +71,10 @@ class WrappedModel(BaseModel, ModelInterface):
         self.layer_timing_data = {}  # Historical timing data.
         self.layer_energy_data = {}  # Historical energy data.
 
+        # Track if we're on Windows CPU for optimized metrics
+        self.is_windows_cpu = False
+        self.os_type = platform.system()
+
         # Initialize energy monitoring based on config device
         try:
             # Use the same device setting from config for monitoring
@@ -80,7 +85,15 @@ class WrappedModel(BaseModel, ModelInterface):
 
             device_type = getattr(self.energy_monitor, "device_type", "unknown")
             if device_type == "cpu":
-                logger.info("Using CPU monitoring with battery metrics")
+                # Check if we're on Windows CPU for optimized metrics path
+                if (
+                    hasattr(self.energy_monitor, "_os_type")
+                    and self.energy_monitor._os_type == "Windows"
+                ):
+                    self.is_windows_cpu = True
+                    logger.info("Using optimized Windows CPU monitoring")
+                else:
+                    logger.info("Using CPU monitoring with battery metrics")
             elif device_type == "jetson":
                 logger.info("Using Jetson monitoring with power metrics")
             else:
@@ -182,6 +195,8 @@ class WrappedModel(BaseModel, ModelInterface):
                     "communication_energy": 0.0,
                     "power_reading": 0.0,
                     "gpu_utilization": 0.0,
+                    "memory_utilization": 0.0,
+                    "cpu_utilization": 0.0,
                     "total_energy": 0.0,
                     "host_battery_energy_mwh": 0.0,
                 }
@@ -347,45 +362,32 @@ class WrappedModel(BaseModel, ModelInterface):
                 "output_bytes": info.get("output_bytes"),
             }
 
-            # Add energy metrics if available, otherwise use defaults
-            # Ensure we have non-zero energy values for Windows CPU
+            # Get energy metrics directly from forward_info
             processing_energy = info.get("processing_energy", 0.0)
             power_reading = info.get("power_reading", 0.0)
+            communication_energy = info.get("communication_energy", 0.0)
+            gpu_utilization = info.get("gpu_utilization", 0.0)
+            cpu_utilization = info.get("cpu_utilization", 0.0)
+            memory_utilization = info.get("memory_utilization", 0.0)
+            host_battery_energy_mwh = info.get("host_battery_energy_mwh", 0.0)
 
-            # If processing energy or power reading is zero but we're on Windows CPU,
-            # try to estimate them using the CPU power model
-            if (processing_energy <= 0 or power_reading <= 0) and hasattr(
-                self, "energy_monitor"
-            ):
-                energy_monitor = self.energy_monitor
-                if (
-                    hasattr(energy_monitor, "_os_type")
-                    and energy_monitor._os_type == "Windows"
-                    and energy_monitor.device_type == "cpu"
-                ):
+            # Calculate total energy if not already present
+            total_energy = info.get("total_energy")
+            if total_energy is None:
+                total_energy = processing_energy + communication_energy
 
-                    # Get power from the Windows CPU model if power reading is zero
-                    if power_reading <= 0:
-                        power_reading = energy_monitor._estimate_windows_cpu_power()
-
-                    # If we have inference time but no processing energy, calculate it
-                    if processing_energy <= 0 and info.get("inference_time"):
-                        inference_time = info.get("inference_time")
-                        processing_energy = power_reading * inference_time
-
-            # Update metrics with the values (original or estimated)
+            # Update metrics with the values
             metrics[layer_idx].update(
                 {
                     "processing_energy": processing_energy,
-                    "communication_energy": info.get("communication_energy", 0.0),
+                    "communication_energy": communication_energy,
                     "power_reading": power_reading,
-                    "gpu_utilization": info.get("gpu_utilization", 0.0),
-                    "cpu_utilization": info.get("cpu_utilization", 0.0),
-                    "total_energy": info.get(
-                        "total_energy",
-                        processing_energy + info.get("communication_energy", 0.0),
-                    ),
-                    "host_battery_energy_mwh": info.get("host_battery_energy_mwh", 0.0),
+                    "gpu_utilization": gpu_utilization,
+                    "cpu_utilization": cpu_utilization,
+                    "memory_utilization": memory_utilization,
+                    "total_energy": total_energy,
+                    "host_battery_energy_mwh": host_battery_energy_mwh,
                 }
             )
+
         return metrics
