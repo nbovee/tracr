@@ -514,6 +514,67 @@ class BaseExperiment(ExperimentInterface):
                 except (TypeError, ValueError):
                     metrics_entry["Host Battery Energy (mWh)"] = 0.0
 
+                # Special handling for Windows CPU - get missing metrics directly
+                is_windows_cpu = False
+                if hasattr(self.model, "is_windows_cpu"):
+                    is_windows_cpu = self.model.is_windows_cpu
+
+                if is_windows_cpu and (
+                    avg_metrics["Power Reading (W)"] == 0
+                    or avg_metrics["Processing Energy (J)"] == 0
+                ):
+                    # If we have zero values, try to get directly from the layer metrics using get_layer_metrics
+                    try:
+                        direct_metrics = self.model.get_layer_metrics().get(
+                            layer_idx, {}
+                        )
+                        if direct_metrics:
+                            # Update with non-zero values from direct metrics
+                            if direct_metrics.get("power_reading", 0) > 0:
+                                avg_metrics["Power Reading (W)"] = direct_metrics[
+                                    "power_reading"
+                                ]
+                                metrics_entry["Power Reading (W)"] = direct_metrics[
+                                    "power_reading"
+                                ]
+
+                            if direct_metrics.get("processing_energy", 0) > 0:
+                                avg_metrics["Processing Energy (J)"] = direct_metrics[
+                                    "processing_energy"
+                                ]
+                                metrics_entry["Processing Energy (J)"] = direct_metrics[
+                                    "processing_energy"
+                                ]
+
+                                # Update total energy
+                                comm_energy = avg_metrics["Communication Energy (J)"]
+                                avg_metrics["Total Energy (J)"] = (
+                                    direct_metrics["processing_energy"] + comm_energy
+                                )
+                                metrics_entry["Total Energy (J)"] = (
+                                    direct_metrics["processing_energy"] + comm_energy
+                                )
+
+                            # Memory utilization if available
+                            if (
+                                "memory_utilization" in direct_metrics
+                                and direct_metrics["memory_utilization"] > 0
+                            ):
+                                avg_metrics["Memory Utilization (%)"] = direct_metrics[
+                                    "memory_utilization"
+                                ]
+                                metrics_entry["Memory Utilization (%)"] = (
+                                    direct_metrics["memory_utilization"]
+                                )
+
+                            logger.debug(
+                                f"Updated Windows CPU metrics for layer {layer_idx} from direct metrics"
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to get direct Windows CPU metrics for layer {layer_idx}: {e}"
+                        )
+
                 layer_metrics.append(metrics_entry)
 
         # Create DataFrames and save to Excel
@@ -527,6 +588,69 @@ class BaseExperiment(ExperimentInterface):
             )
         else:
             logger.info(f"Collected metrics for {len(layer_metrics_df)} layer entries")
+
+            # Check if we're running on Windows CPU and need to fix any zero values
+            is_windows_cpu = False
+            if hasattr(self.model, "is_windows_cpu"):
+                is_windows_cpu = self.model.is_windows_cpu
+
+            if is_windows_cpu:
+                # For Windows CPU, make sure we have valid non-zero metrics
+                # Sometimes the hooks don't capture every layer, so we need to get direct metrics
+                logger.info("Applying Windows CPU specific post-processing for metrics")
+
+                for idx, row in layer_metrics_df.iterrows():
+                    # Check if we have zero values for critical metrics
+                    if (
+                        row["Processing Energy (J)"] == 0
+                        or row["Power Reading (W)"] == 0
+                    ):
+                        layer_id = row["Layer ID"]
+                        inference_time = (
+                            row["Layer Latency (ms)"] / 1000.0
+                        )  # Convert to seconds
+
+                        # Get metrics directly using model's get_layer_metrics method
+                        try:
+                            updated_metrics = self.model.get_layer_metrics().get(
+                                layer_id, {}
+                            )
+
+                            # Apply the non-zero metrics
+                            if updated_metrics.get("power_reading", 0) > 0:
+                                layer_metrics_df.at[idx, "Power Reading (W)"] = (
+                                    updated_metrics["power_reading"]
+                                )
+
+                            if updated_metrics.get("processing_energy", 0) > 0:
+                                layer_metrics_df.at[idx, "Processing Energy (J)"] = (
+                                    updated_metrics["processing_energy"]
+                                )
+
+                                # Update total energy as well
+                                comm_energy = layer_metrics_df.at[
+                                    idx, "Communication Energy (J)"
+                                ]
+                                layer_metrics_df.at[idx, "Total Energy (J)"] = (
+                                    updated_metrics["processing_energy"] + comm_energy
+                                )
+
+                            # Memory/CPU utilization if available
+                            if (
+                                "memory_utilization" in updated_metrics
+                                and updated_metrics["memory_utilization"] > 0
+                            ):
+                                layer_metrics_df.at[idx, "Memory Utilization (%)"] = (
+                                    updated_metrics["memory_utilization"]
+                                )
+
+                            logger.debug(
+                                f"Updated metrics for layer {layer_id} in dataframe"
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to update Windows CPU metrics for layer {layer_id}: {e}"
+                            )
 
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         output_file = self.paths.model_dir / f"analysis_{timestamp}.xlsx"
@@ -621,6 +745,59 @@ class BaseExperiment(ExperimentInterface):
                 energy_summary.to_excel(
                     writer, sheet_name="Energy Analysis", index=False
                 )
+
+                # Special handling for Windows CPU metrics in summary
+                if is_windows_cpu:
+                    # Make sure the energy summary has valid non-zero values
+                    for idx, row in energy_summary.iterrows():
+                        split_layer = row["Split Layer"]
+
+                        # If we have zero power reading or processing energy, get them directly
+                        if (
+                            row["Power Reading (W)"] == 0
+                            or row["Processing Energy (J)"] == 0
+                        ):
+                            # Get layer-specific metrics for this split
+                            split_metrics = layer_metrics_df[
+                                layer_metrics_df["Split Layer"] == split_layer
+                            ]
+
+                            # Check if we have any valid metrics for this split
+                            valid_metrics = split_metrics[
+                                split_metrics["Power Reading (W)"] > 0
+                            ]
+                            if not valid_metrics.empty:
+                                # Use the non-zero metrics to update the summary
+                                energy_summary.loc[idx, "Power Reading (W)"] = (
+                                    valid_metrics["Power Reading (W)"].mean()
+                                )
+                                energy_summary.loc[idx, "Processing Energy (J)"] = (
+                                    valid_metrics["Processing Energy (J)"].sum()
+                                )
+                                energy_summary.loc[idx, "Total Energy (J)"] = (
+                                    valid_metrics["Processing Energy (J)"].sum()
+                                    + valid_metrics["Communication Energy (J)"].sum()
+                                )
+
+                                # Memory utilization if available
+                                if "Memory Utilization (%)" in valid_metrics.columns:
+                                    mem_values = valid_metrics[
+                                        "Memory Utilization (%)"
+                                    ].dropna()
+                                    if not mem_values.empty:
+                                        energy_summary.loc[
+                                            idx, "Memory Utilization (%)"
+                                        ] = mem_values.mean()
+
+                                logger.info(
+                                    f"Updated Energy Analysis summary for split {split_layer}"
+                                )
+
+                    # Write updated summary to Excel
+                    energy_summary.to_excel(
+                        writer, sheet_name="Energy Analysis (Updated)", index=False
+                    )
+                    logger.info("Added updated Energy Analysis sheet for Windows CPU")
 
         logger.info(f"Results saved to {output_file}")
 

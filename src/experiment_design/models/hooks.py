@@ -469,10 +469,6 @@ def create_forward_posthook(
                                                     }
                                                 )
 
-                            logger.debug(
-                                f"Applied cumulative Windows CPU metrics to layers"
-                            )
-
                         else:
                             # Standard approach for other devices
                             energy_result = (
