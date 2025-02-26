@@ -1074,10 +1074,12 @@ class NetworkedExperiment(BaseExperiment):
             total_travel = sum(t.travel_time for t in times)
             total_server = sum(t.server_time for t in times)
 
-            # Get total battery energy used for this split layer from PowerMonitor
+            # Record battery energy if available - important for power profiling
             total_battery_energy = 0.0
             if hasattr(self.model, "energy_monitor"):
-                total_battery_energy = self.model.energy_monitor.get_battery_energy()
+                battery_energy = self.model.energy_monitor.get_battery_energy()
+                # Make sure battery_energy is not None before comparing
+                total_battery_energy = 0.0 if battery_energy is None else battery_energy
                 if total_battery_energy > 0:
                     logger.info(
                         f"Split layer {split_layer} used {total_battery_energy:.2f}mWh"

@@ -651,7 +651,8 @@ def create_forward_posthook(
                                 battery_energy = (
                                     wrapped_model.energy_monitor.get_battery_energy()
                                 )
-                                if battery_energy > 0:
+                                # Ensure battery_energy is not None before comparing
+                                if battery_energy is not None and battery_energy > 0:
                                     split_layer_info["host_battery_energy_mwh"] = (
                                         battery_energy
                                     )
@@ -668,7 +669,8 @@ def create_forward_posthook(
                                 battery_energy = (
                                     wrapped_model.energy_monitor.get_battery_energy()
                                 )
-                                if battery_energy > 0:
+                                # Ensure battery_energy is not None before comparing
+                                if battery_energy is not None and battery_energy > 0:
                                     split_layer_info["host_battery_energy_mwh"] = (
                                         battery_energy
                                     )
