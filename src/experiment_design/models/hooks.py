@@ -611,13 +611,27 @@ def create_forward_posthook(
                             )
 
                         # Apply communication energy to Windows CPU data in layer_energy_data
-                        if is_windows_cpu and comm_energy > 0 and layer_index == wrapped_model.stop_i:
+                        if (
+                            is_windows_cpu
+                            and comm_energy > 0
+                            and layer_index == wrapped_model.stop_i
+                        ):
                             # Update the energy data for the split layer
-                            if hasattr(wrapped_model, "layer_energy_data") and layer_index in wrapped_model.layer_energy_data:
-                                for energy_record in wrapped_model.layer_energy_data[layer_index]:
+                            if (
+                                hasattr(wrapped_model, "layer_energy_data")
+                                and layer_index in wrapped_model.layer_energy_data
+                            ):
+                                for energy_record in wrapped_model.layer_energy_data[
+                                    layer_index
+                                ]:
                                     energy_record["communication_energy"] = comm_energy
-                                    energy_record["total_energy"] = energy_record.get("processing_energy", 0.0) + comm_energy
-                                logger.debug(f"Updated communication energy for Windows CPU split layer {layer_index}: {comm_energy:.6f}J")
+                                    energy_record["total_energy"] = (
+                                        energy_record.get("processing_energy", 0.0)
+                                        + comm_energy
+                                    )
+                                logger.debug(
+                                    f"Updated communication energy for Windows CPU split layer {layer_index}: {comm_energy:.6f}J"
+                                )
 
                         # Add communication energy to the split layer's total energy
                         split_layer_info = wrapped_model.forward_info[layer_index]
@@ -643,7 +657,7 @@ def create_forward_posthook(
                                     )
                             except Exception as e:
                                 logger.debug(f"Error getting battery energy: {e}")
-                        
+
                         # For Windows CPU, always try to get battery energy even if not formally initialized
                         elif (
                             hasattr(wrapped_model.energy_monitor, "_os_type")
@@ -651,17 +665,35 @@ def create_forward_posthook(
                             and wrapped_model.energy_monitor.device_type == "cpu"
                         ):
                             try:
-                                battery_energy = wrapped_model.energy_monitor.get_battery_energy()
+                                battery_energy = (
+                                    wrapped_model.energy_monitor.get_battery_energy()
+                                )
                                 if battery_energy > 0:
-                                    split_layer_info["host_battery_energy_mwh"] = battery_energy
-                                    logger.debug(f"Got Windows battery energy: {battery_energy} mWh")
-                                    
+                                    split_layer_info["host_battery_energy_mwh"] = (
+                                        battery_energy
+                                    )
+                                    logger.debug(
+                                        f"Got Windows battery energy: {battery_energy} mWh"
+                                    )
+
                                     # Make sure it's also in layer_energy_data for experiment_mgmt.py
-                                    if hasattr(wrapped_model, "layer_energy_data") and layer_index in wrapped_model.layer_energy_data:
-                                        for energy_record in wrapped_model.layer_energy_data[layer_index]:
-                                            energy_record["host_battery_energy_mwh"] = battery_energy
+                                    if (
+                                        hasattr(wrapped_model, "layer_energy_data")
+                                        and layer_index
+                                        in wrapped_model.layer_energy_data
+                                    ):
+                                        for (
+                                            energy_record
+                                        ) in wrapped_model.layer_energy_data[
+                                            layer_index
+                                        ]:
+                                            energy_record["host_battery_energy_mwh"] = (
+                                                battery_energy
+                                            )
                             except Exception as e:
-                                logger.debug(f"Error getting Windows battery energy: {e}")
+                                logger.debug(
+                                    f"Error getting Windows battery energy: {e}"
+                                )
 
                     except Exception as e:
                         logger.error(

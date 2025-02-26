@@ -614,17 +614,35 @@ class BaseExperiment(ExperimentInterface):
                                     direct_metrics["processing_energy"] + comm_energy
                                 )
 
-                            # Memory utilization if available
-                            if (
-                                "memory_utilization" in direct_metrics
-                                and direct_metrics["memory_utilization"] > 0
-                            ):
-                                avg_metrics["Memory Utilization (%)"] = direct_metrics[
-                                    "memory_utilization"
-                                ]
-                                metrics_entry["Memory Utilization (%)"] = (
-                                    direct_metrics["memory_utilization"]
-                                )
+                                # Memory utilization if available
+                                if (
+                                    "memory_utilization" in direct_metrics
+                                    and direct_metrics["memory_utilization"] > 0
+                                ):
+                                    avg_metrics["Memory Utilization (%)"] = (
+                                        direct_metrics["memory_utilization"]
+                                    )
+                                    metrics_entry["Memory Utilization (%)"] = (
+                                        direct_metrics["memory_utilization"]
+                                    )
+
+                                # Host Battery Energy if available
+                                if "Host Battery Energy (mWh)" in direct_metrics.keys():
+                                    battery_values = direct_metrics[
+                                        "Host Battery Energy (mWh)"
+                                    ].dropna()
+                                    if not battery_values.empty:
+                                        # Use the first non-zero value
+                                        non_zero_values = battery_values[
+                                            battery_values > 0
+                                        ]
+                                        if not non_zero_values.empty:
+                                            metrics_entry[
+                                                "Host Battery Energy (mWh)"
+                                            ] = non_zero_values.iloc[0]
+                                            logger.info(
+                                                f"Updated Host Battery Energy for layer {layer_idx}: {non_zero_values.iloc[0]:.2f} mWh"
+                                            )
 
                             logger.debug(
                                 f"Updated Windows CPU metrics for layer {layer_idx} from direct metrics"
@@ -702,6 +720,22 @@ class BaseExperiment(ExperimentInterface):
                                 layer_metrics_df.at[idx, "Memory Utilization (%)"] = (
                                     updated_metrics["memory_utilization"]
                                 )
+
+                            # Host Battery Energy if available
+                            if "Host Battery Energy (mWh)" in updated_metrics.keys():
+                                battery_values = updated_metrics[
+                                    "Host Battery Energy (mWh)"
+                                ].dropna()
+                                if not battery_values.empty:
+                                    # Use the first non-zero value
+                                    non_zero_values = battery_values[battery_values > 0]
+                                    if not non_zero_values.empty:
+                                        layer_metrics_df.at[
+                                            idx, "Host Battery Energy (mWh)"
+                                        ] = non_zero_values.iloc[0]
+                                        logger.info(
+                                            f"Updated Host Battery Energy for layer {layer_id}: {non_zero_values.iloc[0]:.2f} mWh"
+                                        )
 
                             logger.debug(
                                 f"Updated metrics for layer {layer_id} in dataframe"
@@ -823,7 +857,8 @@ class BaseExperiment(ExperimentInterface):
 
                             # Check if we have any valid metrics for this split
                             valid_metrics = split_metrics[
-                                split_metrics["Power Reading (W)"] > 0
+                                (split_metrics["Power Reading (W)"] > 0)
+                                | (split_metrics["Host Battery Energy (mWh)"] > 0)
                             ]
                             if not valid_metrics.empty:
                                 # Use the non-zero metrics to update the summary
@@ -848,6 +883,24 @@ class BaseExperiment(ExperimentInterface):
                                             idx, "Memory Utilization (%)"
                                         ] = mem_values.mean()
 
+                                # Host Battery Energy if available
+                                if "Host Battery Energy (mWh)" in valid_metrics.columns:
+                                    battery_values = valid_metrics[
+                                        "Host Battery Energy (mWh)"
+                                    ].dropna()
+                                    if not battery_values.empty:
+                                        # Use the first non-zero value
+                                        non_zero_values = battery_values[
+                                            battery_values > 0
+                                        ]
+                                        if not non_zero_values.empty:
+                                            energy_summary.loc[
+                                                idx, "Host Battery Energy (mWh)"
+                                            ] = non_zero_values.iloc[0]
+                                            logger.info(
+                                                f"Updated Host Battery Energy for split {split_layer}: {non_zero_values.iloc[0]:.2f} mWh"
+                                            )
+
                                 logger.info(
                                     f"Updated Energy Analysis summary for split {split_layer}"
                                 )
@@ -857,6 +910,44 @@ class BaseExperiment(ExperimentInterface):
                         writer, sheet_name="Energy Analysis", index=False
                     )
                     logger.info("Updated Energy Analysis sheet for Windows CPU")
+
+                    # Extra check to ensure battery energy is included
+                    # Always update battery energy values in summary from layer metrics
+                    if (
+                        "Host Battery Energy (mWh)" in layer_metrics_df.columns
+                        and "Host Battery Energy (mWh)" in energy_summary.columns
+                    ):
+                        for idx, row in energy_summary.iterrows():
+                            split_layer = row["Split Layer"]
+                            # Get all metrics for this split layer
+                            split_metrics = layer_metrics_df[
+                                layer_metrics_df["Split Layer"] == split_layer
+                            ]
+                            # Filter to non-zero battery values
+                            battery_metrics = split_metrics[
+                                split_metrics["Host Battery Energy (mWh)"] > 0
+                            ]
+
+                            if not battery_metrics.empty:
+                                # Use the first non-zero battery value
+                                battery_value = battery_metrics[
+                                    "Host Battery Energy (mWh)"
+                                ].iloc[0]
+                                # Update summary
+                                energy_summary.loc[idx, "Host Battery Energy (mWh)"] = (
+                                    battery_value
+                                )
+                                logger.info(
+                                    f"Ensured Host Battery Energy in summary for split {split_layer}: {battery_value:.2f} mWh"
+                                )
+
+                        # Write updated summary again with all battery values
+                        energy_summary.to_excel(
+                            writer, sheet_name="Energy Analysis", index=False
+                        )
+                        logger.info(
+                            "Final update to Energy Analysis with battery values for Windows CPU"
+                        )
 
         logger.info(f"Results saved to {output_file}")
 
