@@ -443,6 +443,49 @@ def create_forward_posthook(
                                                 "total_energy": layer_energy,  # Will add comm energy later for split layer
                                             }
                                         )
+
+                                        # Important: Also store these metrics in layer_energy_data for experiment_mgmt.py
+                                        if not hasattr(
+                                            wrapped_model, "layer_energy_data"
+                                        ):
+                                            wrapped_model.layer_energy_data = {}
+                                        if l_idx not in wrapped_model.layer_energy_data:
+                                            wrapped_model.layer_energy_data[l_idx] = []
+
+                                        # Add metrics to historical data with split point reference
+                                        layer_metrics = {
+                                            "processing_energy": layer_energy,
+                                            "communication_energy": 0.0,  # Will be set for split layer later
+                                            "power_reading": power_reading,
+                                            "gpu_utilization": 0.0,
+                                            "memory_utilization": memory_utilization,
+                                            "cpu_utilization": cpu_utilization,
+                                            "total_energy": layer_energy,
+                                            "elapsed_time": l_time,
+                                            "split_point": wrapped_model.stop_i,
+                                        }
+
+                                        # Check if these metrics already exist to avoid duplicates
+                                        metrics_exist = False
+                                        for existing in wrapped_model.layer_energy_data[
+                                            l_idx
+                                        ]:
+                                            if (
+                                                existing.get("processing_energy")
+                                                == layer_energy
+                                                and existing.get("power_reading")
+                                                == power_reading
+                                            ):
+                                                metrics_exist = True
+                                                break
+
+                                        if not metrics_exist:
+                                            wrapped_model.layer_energy_data[
+                                                l_idx
+                                            ].append(layer_metrics)
+                                            logger.debug(
+                                                f"Added Windows CPU energy metrics to layer_energy_data for layer {l_idx}"
+                                            )
                                 else:
                                     # If no valid timing, distribute energy equally
                                     num_layers = (
@@ -468,6 +511,60 @@ def create_forward_posthook(
                                                         "total_energy": layer_energy,
                                                     }
                                                 )
+
+                                                # Important: Also store these metrics in layer_energy_data for experiment_mgmt.py
+                                                if not hasattr(
+                                                    wrapped_model, "layer_energy_data"
+                                                ):
+                                                    wrapped_model.layer_energy_data = {}
+                                                if (
+                                                    l_idx
+                                                    not in wrapped_model.layer_energy_data
+                                                ):
+                                                    wrapped_model.layer_energy_data[
+                                                        l_idx
+                                                    ] = []
+
+                                                # Add metrics to historical data with split point reference
+                                                layer_metrics = {
+                                                    "processing_energy": layer_energy,
+                                                    "communication_energy": 0.0,  # Will be set for split layer later
+                                                    "power_reading": power_reading,
+                                                    "gpu_utilization": 0.0,
+                                                    "memory_utilization": memory_utilization,
+                                                    "cpu_utilization": cpu_utilization,
+                                                    "total_energy": layer_energy,
+                                                    "elapsed_time": 0.0,
+                                                    "split_point": wrapped_model.stop_i,
+                                                }
+
+                                                # Check if these metrics already exist to avoid duplicates
+                                                metrics_exist = False
+                                                for (
+                                                    existing
+                                                ) in wrapped_model.layer_energy_data[
+                                                    l_idx
+                                                ]:
+                                                    if (
+                                                        existing.get(
+                                                            "processing_energy"
+                                                        )
+                                                        == layer_energy
+                                                        and existing.get(
+                                                            "power_reading"
+                                                        )
+                                                        == power_reading
+                                                    ):
+                                                        metrics_exist = True
+                                                        break
+
+                                                if not metrics_exist:
+                                                    wrapped_model.layer_energy_data[
+                                                        l_idx
+                                                    ].append(layer_metrics)
+                                                    logger.debug(
+                                                        f"Added Windows CPU energy metrics to layer_energy_data for layer {l_idx}"
+                                                    )
 
                         else:
                             # Standard approach for other devices
