@@ -393,17 +393,28 @@ class WrappedModel(BaseModel, ModelInterface):
                     logger.debug(
                         f"Estimated power for layer {layer_idx}: {power_reading:.2f}W"
                     )
-                
+
                 # For Windows CPU at split layer, make sure communication energy is properly set
-                if layer_idx == self.stop_i and layer_data.get("communication_energy", 0) == 0:
+                if (
+                    layer_idx == self.stop_i
+                    and layer_data.get("communication_energy", 0) == 0
+                ):
                     # Check if there's communication energy available in layer_energy_data
-                    if hasattr(self, "layer_energy_data") and layer_idx in self.layer_energy_data:
+                    if (
+                        hasattr(self, "layer_energy_data")
+                        and layer_idx in self.layer_energy_data
+                    ):
                         for energy_record in self.layer_energy_data[layer_idx]:
                             comm_energy = energy_record.get("communication_energy", 0.0)
                             if comm_energy > 0:
                                 layer_data["communication_energy"] = comm_energy
-                                layer_data["total_energy"] = layer_data.get("processing_energy", 0.0) + comm_energy
-                                logger.debug(f"Applied communication energy from layer_energy_data for layer {layer_idx}: {comm_energy:.6f}J")
+                                layer_data["total_energy"] = (
+                                    layer_data.get("processing_energy", 0.0)
+                                    + comm_energy
+                                )
+                                logger.debug(
+                                    f"Applied communication energy from layer_energy_data for layer {layer_idx}: {comm_energy:.6f}J"
+                                )
                                 break
 
                 # Ensure metrics are stored in layer_energy_data

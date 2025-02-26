@@ -1011,11 +1011,11 @@ class GPUEnergyMonitor:
                 # Use PowerShell to get battery information
                 try:
                     import subprocess
-                    
+
                     # PowerShell command to get battery information (capacity, etc)
-                    cmd = "powershell -Command \"(Get-WmiObject -Class Win32_Battery).EstimatedChargeRemaining\""
+                    cmd = 'powershell -Command "(Get-WmiObject -Class Win32_Battery).EstimatedChargeRemaining"'
                     result = subprocess.check_output(cmd, shell=True, text=True).strip()
-                    
+
                     # Parse the result - just return a placeholder value for now
                     # Actual battery energy consumption requires more complex calculations
                     # This is just to ensure the field isn't zero in the output
@@ -1026,13 +1026,15 @@ class GPUEnergyMonitor:
                 except Exception as e:
                     logger.debug(f"Error getting Windows battery info: {e}")
                     return 15.75  # Return a constant value even if there's an error
-                    
+
             elif self._os_type == "Linux":
                 # Existing Linux implementation
                 if self._battery_initialized and hasattr(self, "_battery_start_energy"):
                     try:
                         # Calculate energy used since the last measurement
-                        current_energy = self._battery_start_energy - self._battery_energy
+                        current_energy = (
+                            self._battery_start_energy - self._battery_energy
+                        )
                         self._battery_energy = self._battery_start_energy
                         return current_energy
                     except Exception as e:
