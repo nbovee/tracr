@@ -13,6 +13,7 @@ default:
   device: <device>               # Options: 'cuda' (GPU), 'cpu' (CPU). Default is cuda.
   font_path: <font_path>         # Path to font file for visualization; e.g., fonts/DejaVuSans-Bold.ttf.
   save_layer_images: <save_layer_images> # Whether to save intermediate layer images at each split. Default is false.
+  collect_metrics: <collect_metrics>     # Whether to collect detailed performance metrics per split. Default is false for faster processing.
 
 # LOGGING CONFIGURATIONS
 logging:

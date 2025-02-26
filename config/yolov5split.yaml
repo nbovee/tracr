@@ -5,6 +5,7 @@ default:
   device: cpu
   font_path: config/fonts/DejaVuSans-Bold.ttf
   save_layer_images: false
+  collect_metrics: false
 
 # LOGGING CONFIGURATIONS
 logging:
