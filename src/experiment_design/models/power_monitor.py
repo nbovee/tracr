@@ -676,7 +676,7 @@ class GPUEnergyMonitor:
                 # If battery is available, add battery energy
                 if self._battery_initialized:
                     battery_energy = self.get_battery_energy()
-                    if battery_energy:
+                    if battery_energy is not None and battery_energy > 0:
                         metrics["host_battery_energy_mwh"] = battery_energy
 
                 return metrics
