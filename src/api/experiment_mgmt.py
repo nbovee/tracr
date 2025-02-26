@@ -854,9 +854,9 @@ class BaseExperiment(ExperimentInterface):
 
                     # Write updated summary to Excel
                     energy_summary.to_excel(
-                        writer, sheet_name="Energy Analysis (Updated)", index=False
+                        writer, sheet_name="Energy Analysis", index=False
                     )
-                    logger.info("Added updated Energy Analysis sheet for Windows CPU")
+                    logger.info("Updated Energy Analysis sheet for Windows CPU")
 
         logger.info(f"Results saved to {output_file}")
 
