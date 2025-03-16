@@ -15,14 +15,13 @@ from torchinfo import summary  # type: ignore
 
 from src.interface import ModelInterface
 
-from .core.base import BaseModel
+from .core import BaseModel, LAYER_TEMPLATE
 from .hooks import (
     create_forward_prehook,
     create_forward_posthook,
     EarlyOutput,
     HookExitException,
 )
-from .core.templates import LAYER_TEMPLATE
 from .metrics import create_power_monitor, MetricsCollector
 
 # Ensure CUDA memory is freed at exit.
