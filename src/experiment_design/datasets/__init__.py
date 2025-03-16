@@ -1,16 +1,24 @@
-# src/experiment_design/datasets/__init__.py
+"""Datasets package for experiment design."""
 
-from .base import BaseDataset
-from .collate_fns import COLLATE_FUNCTIONS
-from .dataloader import DataManager, DataLoaderIterator
-from .imagenet import ImageNetDataset
-from .onion import OnionDataset
+# Dataset implementations
+from .imagenet import ImageNetDataset, load_imagenet_dataset
+from .onion import OnionDataset, load_onion_dataset
+from .custom import (
+    CustomDataset,
+    load_custom_dataset,
+    custom_collate,
+    create_custom_transform,
+)
 
 __all__ = [
-    "COLLATE_FUNCTIONS",
-    "BaseDataset",
-    "DataManager",
-    "DataLoaderIterator",
+    # Standard dataset implementations
     "ImageNetDataset",
     "OnionDataset",
+    "load_imagenet_dataset",
+    "load_onion_dataset",
+    # Custom dataset implementation
+    "CustomDataset",
+    "load_custom_dataset",
+    "custom_collate",
+    "create_custom_transform",
 ]

@@ -73,9 +73,17 @@ class BaseModel(nn.Module):
         if not self.dataset_config:
             raise ValueError(f"Dataset configuration for '{self.model_name}' not found")
 
-        self.dataset_module = self.dataset_config["module"]
-        self.dataset_class = self.dataset_config["class"]
-        self.dataset_args = self.dataset_config.get("args", {})
+        # Get dataset name - required parameter
+        self.dataset_name = self.dataset_config.get("name")
+        if not self.dataset_name:
+            raise ValueError(
+                "Dataset name not specified in config (required 'name' field)"
+            )
+
+        # Extract all other parameters except name
+        self.dataset_args = {
+            k: v for k, v in self.dataset_config.items() if k != "name"
+        }
 
     def _setup_dataloader_configs(self) -> None:
         """Set up dataloader-specific configuration parameters."""

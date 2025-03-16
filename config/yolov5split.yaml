@@ -1,18 +1,24 @@
 # config/yolov5split.yaml
 
+# ================================================================
 # DEFAULT CONFIGURATIONS
+# ================================================================
 default:
   device: cpu
   font_path: config/fonts/DejaVuSans-Bold.ttf
   save_layer_images: false
   collect_metrics: false
 
+# ================================================================
 # LOGGING CONFIGURATIONS
+# ================================================================
 logging:
-  log_level: INFO
+  log_level: DEBUG
   log_file: logs/app.log
 
+# ================================================================
 # MODEL CONFIGURATIONS
+# ================================================================
 model:
   model_name: yolov5s
   version: null
@@ -28,25 +34,29 @@ model:
   warmup_iterations: 10
   log_file: logs/yolov5split.log
 
+# ================================================================
 # DATASET CONFIGURATIONS
+# ================================================================
 dataset:
-  module: onion
-  class: OnionDataset
-  args:
-    root: data/onion
-    class_names: ["with_weeds", "without_weeds"]
-    img_directory: data/onion/testing
-    transform: null
-    max_samples: -1
+  name: onion
+  root: data/onion
+  class_names: ["with_weeds", "without_weeds"]
+  img_directory: data/onion/testing
+  transform: null
+  max_samples: -1
 
+# ================================================================
 # DATALOADER CONFIGURATIONS
+# ================================================================
 dataloader:
   batch_size: 1
   shuffle: false
   num_workers: 4
   collate_fn: onion_collate
 
+# ================================================================
 # COMPRESSION CONFIGURATIONS
+# ================================================================
 compression:
   clevel: 3
   filter: SHUFFLE

@@ -1,18 +1,24 @@
 # config/resnetsplit.yaml
 
+# ================================================================
 # DEFAULT CONFIGURATIONS
+# ================================================================
 default:
   device: cuda
   font_path: config/fonts/DejaVuSans-Bold.ttf
   save_layer_images: false
   collect_metrics: false
 
+# ================================================================
 # LOGGING CONFIGURATIONS
+# ================================================================
 logging:
   log_level: INFO
   log_file: logs/app.log
 
+# ================================================================
 # MODEL CONFIGURATIONS
+# ================================================================
 model:
   model_name: resnet18
   version: null
@@ -28,25 +34,29 @@ model:
   warmup_iterations: 10
   log_file: logs/resnetsplit.log
 
+# ================================================================
 # DATASET CONFIGURATIONS
+# ================================================================
 dataset:
-  module: imagenet
-  class: ImageNetDataset
-  args:
-    root: data/imagenet
-    class_names: data/imagenet/imagenet_classes.txt
-    img_directory: data/imagenet/sample_images
-    transform: null
-    max_samples: -1
+  name: "imagenet"
+  root: "data/imagenet"
+  class_names: "data/imagenet/imagenet_classes.txt"
+  img_directory: "data/imagenet/sample_images"
+  transform: null
+  max_samples: -1
 
+# ================================================================
 # DATALOADER CONFIGURATIONS
+# ================================================================
 dataloader:
   batch_size: 1
   shuffle: false
   num_workers: 4
   collate_fn: imagenet_collate
 
+# ================================================================
 # COMPRESSION CONFIGURATIONS
+# ================================================================
 compression:
   clevel: 3
   filter: SHUFFLE
