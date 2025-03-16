@@ -169,7 +169,8 @@ class Server:
 
     def _setup_and_run_local_experiment(self) -> None:
         """Set up and run a local experiment based on configuration."""
-        from src.experiment_design.datasets import DataManager
+        # Import DatasetRegistry from the new location
+        from src.experiment_design.datasets.core.loaders import DatasetRegistry
         import torch.utils.data
 
         # Load experiment configuration
@@ -186,11 +187,34 @@ class Server:
         # Get the appropriate collate function if specified
         collate_fn = self._get_collate_function(dataloader_config)
 
-        # Create dataset and data loader
-        dataset = DataManager.get_dataset(
-            {"dataset": dataset_config, "dataloader": dataloader_config}
-        )
+        # Get dataset name - required parameter
+        dataset_name = dataset_config.get("name")
+        if not dataset_name:
+            logger.error("Dataset name not specified in config (required 'name' field)")
+            return
 
+        # Create a copy of the dataset config for loading
+        complete_config = dataset_config.copy()
+
+        # Add transform from dataloader config if not already specified
+        if "transform" not in complete_config and "transform" in dataloader_config:
+            complete_config["transform"] = dataloader_config.get("transform")
+
+        # Load dataset using registry
+        try:
+            # First register the dataset if needed
+            if DatasetRegistry.get_metadata(dataset_name) is None:
+                logger.info(f"Registering dataset '{dataset_name}'")
+                DatasetRegistry.register_dataset(dataset_name)
+
+            # Now load the dataset
+            dataset = DatasetRegistry.load(complete_config)
+            logger.info(f"Loaded dataset '{dataset_name}' successfully")
+        except Exception as e:
+            logger.error(f"Failed to load dataset '{dataset_name}': {e}")
+            raise  # Re-raise to ensure the error is properly handled
+
+        # Create data loader
         data_loader = torch.utils.data.DataLoader(
             dataset,
             batch_size=dataloader_config.get("batch_size"),
@@ -209,12 +233,26 @@ class Server:
             return None
 
         try:
-            from src.experiment_design.datasets.collate_fns import COLLATE_FUNCTIONS
+            # Updated import path to use the new core module structure
+            from src.experiment_design.datasets.core.collate_fns import CollateRegistry
 
             collate_fn_name = dataloader_config["collate_fn"]
-            collate_fn = COLLATE_FUNCTIONS[collate_fn_name]
-            logger.debug(f"Using custom collate function: {collate_fn_name}")
+            collate_fn = CollateRegistry.get(collate_fn_name)
+
+            if not collate_fn:
+                logger.warning(
+                    f"Collate function '{collate_fn_name}' not found in registry. "
+                    "Using default collation."
+                )
+                return None
+
+            logger.debug(f"Using registered collate function: {collate_fn_name}")
             return collate_fn
+        except ImportError as e:
+            logger.warning(
+                f"Failed to import collate functions: {e}. Using default collation."
+            )
+            return None
         except KeyError:
             logger.warning(
                 f"Collate function '{dataloader_config['collate_fn']}' not found. "

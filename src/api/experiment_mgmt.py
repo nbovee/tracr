@@ -105,7 +105,8 @@ class BaseExperiment(ExperimentInterface):
 
     def _load_class_names(self) -> List[str]:
         """Load class names either from a list in the config or from a text file."""
-        class_names_path = self.config["dataset"]["args"]["class_names"]
+        # Get class_names directly from the dataset config (new format)
+        class_names_path = self.config["dataset"].get("class_names")
         if isinstance(class_names_path, list):
             return class_names_path
         try:
