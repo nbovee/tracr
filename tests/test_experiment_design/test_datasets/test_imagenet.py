@@ -8,7 +8,6 @@ import torch
 import torchvision.transforms as T
 
 # Fix the path to include the project root, not just the parent directory
-# below, go one level up more
 project_root = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
