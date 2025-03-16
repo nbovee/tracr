@@ -1,6 +1,7 @@
 """Power and energy monitoring for split computing experiments."""
 
 from .base import PowerMonitor
+from .collector import MetricsCollector
 from .cpu import CPUPowerMonitor
 from .exceptions import PowerMonitorError, MonitoringInitError
 from .factory import create_power_monitor
@@ -9,6 +10,7 @@ from .nvidia import NvidiaGPUMonitor
 
 __all__ = [
     "PowerMonitor",
+    "MetricsCollector",
     "CPUPowerMonitor",
     "NvidiaGPUMonitor",
     "JetsonMonitor",

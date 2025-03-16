@@ -23,7 +23,7 @@ from .hooks import (
     HookExitException,
 )
 from .core.templates import LAYER_TEMPLATE
-from .metrics import create_power_monitor
+from .metrics import create_power_monitor, MetricsCollector
 
 # Ensure CUDA memory is freed at exit.
 atexit.register(torch.cuda.empty_cache)
@@ -83,6 +83,11 @@ class WrappedModel(BaseModel, ModelInterface):
                 device_type="auto" if not force_cpu else "cpu", force_cpu=force_cpu
             )
 
+            # Create metrics collector with the energy monitor
+            self.metrics_collector = MetricsCollector(
+                energy_monitor=self.energy_monitor, device_type=self.device
+            )
+
             # Check for Windows CPU for optimized metrics path
             if self.energy_monitor.device_type == "cpu" and self.os_type == "Windows":
                 self.is_windows_cpu = True
@@ -92,6 +97,7 @@ class WrappedModel(BaseModel, ModelInterface):
         except Exception as e:
             logger.warning(f"Energy monitoring initialization failed: {e}")
             self.energy_monitor = None
+            self.metrics_collector = None
 
         # Hook state tracking variables.
         self.start_i: Optional[int] = None  # First layer to process.
@@ -342,153 +348,17 @@ class WrappedModel(BaseModel, ModelInterface):
         self.model.load_state_dict(state_dict)
 
     def get_layer_metrics(self) -> Dict[int, Dict[str, Any]]:
-        """Get layer-specific metrics collected during inference.
-        Returns a dictionary with layer indices as keys and metrics as values."""
-        metrics = {}
-
-        # Make sure forward_info exists
-        if not hasattr(self, "forward_info"):
-            return metrics
-
-        is_windows_cpu = hasattr(self, "is_windows_cpu") and self.is_windows_cpu
-
-        # Process each layer's metrics
-        for layer_idx, layer_data in self.forward_info.items():
-            # Skip if no valid metrics
-            if not layer_data:
-                continue
-
-            # Special handling for Windows CPU metrics
-            if is_windows_cpu:
-                # Check if we need to estimate power or energy
-                processing_energy = layer_data.get("processing_energy", 0.0)
-                power_reading = layer_data.get("power_reading", 0.0)
-                inference_time = layer_data.get("inference_time", 0.0)
-
-                if processing_energy == 0 and power_reading > 0 and inference_time > 0:
-                    # Estimate processing energy from power and time
-                    processing_energy = power_reading * inference_time
-                    layer_data["processing_energy"] = processing_energy
-                    layer_data["total_energy"] = processing_energy + layer_data.get(
-                        "communication_energy", 0.0
-                    )
-                    logger.debug(
-                        f"Estimated processing energy for layer {layer_idx}: {processing_energy:.6f}J"
-                    )
-                elif (
-                    power_reading == 0 and processing_energy > 0 and inference_time > 0
-                ):
-                    # Estimate power from energy and time
-                    power_reading = processing_energy / inference_time
-                    layer_data["power_reading"] = power_reading
-                    logger.debug(
-                        f"Estimated power for layer {layer_idx}: {power_reading:.2f}W"
-                    )
-
-                # For Windows CPU at split layer, make sure communication energy is properly set
-                if (
-                    layer_idx == self.stop_i
-                    and layer_data.get("communication_energy", 0) == 0
-                ):
-                    # Check if there's communication energy available in layer_energy_data
-                    if (
-                        hasattr(self, "layer_energy_data")
-                        and layer_idx in self.layer_energy_data
-                    ):
-                        for energy_record in self.layer_energy_data[layer_idx]:
-                            comm_energy = energy_record.get("communication_energy", 0.0)
-                            if comm_energy > 0:
-                                layer_data["communication_energy"] = comm_energy
-                                layer_data["total_energy"] = (
-                                    layer_data.get("processing_energy", 0.0)
-                                    + comm_energy
-                                )
-                                logger.debug(
-                                    f"Applied communication energy from layer_energy_data for layer {layer_idx}: {comm_energy:.6f}J"
-                                )
-                                break
-
-                # Ensure metrics are stored in layer_energy_data
-                if hasattr(self, "_ensure_energy_data_stored"):
-                    self._ensure_energy_data_stored(layer_idx)
-
-            # Collect raw metrics
-            metrics[layer_idx] = {
-                "layer_id": layer_data.get("layer_id", f"layer_{layer_idx}"),
-                "layer_type": layer_data.get("layer_type", "Unknown"),
-                "inference_time": layer_data.get("inference_time", 0.0),
-                "output_bytes": layer_data.get("output_bytes", 0),
-                "output_mb": layer_data.get("output_mb", 0.0),
-                "processing_energy": layer_data.get("processing_energy", 0.0),
-                "communication_energy": layer_data.get("communication_energy", 0.0),
-                "power_reading": layer_data.get("power_reading", 0.0),
-                "gpu_utilization": layer_data.get("gpu_utilization", 0.0),
-                "memory_utilization": layer_data.get("memory_utilization", 0.0),
-                "total_energy": layer_data.get("total_energy", 0.0),
-            }
-
-            # Include battery energy if available
-            if "host_battery_energy_mwh" in layer_data:
-                metrics[layer_idx]["host_battery_energy_mwh"] = layer_data[
-                    "host_battery_energy_mwh"
-                ]
-
-        return metrics
+        """Get layer-specific metrics collected during inference."""
+        # Only use metrics collector, no fallback needed
+        if hasattr(self, "metrics_collector") and self.metrics_collector:
+            return self.metrics_collector.get_all_layer_metrics()
+        # Return empty dict if no metrics collector
+        return {}
 
     def _ensure_energy_data_stored(self, layer_idx):
-        """Ensure that energy metrics from forward_info are also stored in layer_energy_data.
-        This is critical for metrics aggregation in experiment_mgmt.py."""
-        if not hasattr(self, "layer_energy_data"):
-            self.layer_energy_data = {}
-
-        if layer_idx not in self.layer_energy_data:
-            self.layer_energy_data[layer_idx] = []
-
-        # Check if we have forward_info for this layer
-        if hasattr(self, "forward_info") and layer_idx in self.forward_info:
-            # Get relevant metrics from forward_info
-            metrics = {
-                "processing_energy": self.forward_info[layer_idx].get(
-                    "processing_energy", 0.0
-                ),
-                "communication_energy": self.forward_info[layer_idx].get(
-                    "communication_energy", 0.0
-                ),
-                "power_reading": self.forward_info[layer_idx].get("power_reading", 0.0),
-                "gpu_utilization": self.forward_info[layer_idx].get(
-                    "gpu_utilization", 0.0
-                ),
-                "memory_utilization": self.forward_info[layer_idx].get(
-                    "memory_utilization", 0.0
-                ),
-                "cpu_utilization": self.forward_info[layer_idx].get(
-                    "cpu_utilization", 0.0
-                ),
-                "total_energy": self.forward_info[layer_idx].get("total_energy", 0.0),
-                "elapsed_time": self.forward_info[layer_idx].get("inference_time", 0.0),
-            }
-
-            # Add split point if applicable
-            if hasattr(self, "stop_i"):
-                metrics["split_point"] = self.stop_i
-
-            # Check if metrics already exist in layer_energy_data to avoid duplicates
-            existing_metrics = False
-            for existing in self.layer_energy_data[layer_idx]:
-                # Check if all key metrics match
-                if (
-                    existing.get("processing_energy") == metrics["processing_energy"]
-                    and existing.get("power_reading") == metrics["power_reading"]
-                    and existing.get("memory_utilization")
-                    == metrics["memory_utilization"]
-                ):
-                    existing_metrics = True
-                    break
-
-            if not existing_metrics:
-                self.layer_energy_data[layer_idx].append(metrics)
-                logger.debug(
-                    f"Added energy metrics to layer_energy_data for layer {layer_idx}"
-                )
-
-        return self.layer_energy_data
+        """Get energy data from metrics collector."""
+        if hasattr(self, "metrics_collector") and self.metrics_collector:
+            energy_data = self.metrics_collector.get_energy_data()
+            return energy_data
+        # Return empty dict if no metrics collector
+        return {}
