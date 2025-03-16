@@ -968,14 +968,26 @@ class NetworkedExperiment(BaseExperiment):
         self.initial_battery = None
         if (
             hasattr(self.model, "energy_monitor")
-            and self.model.energy_monitor._battery_initialized
+            and self.model.energy_monitor is not None
         ):
-            battery = psutil.sensors_battery()
-            if battery and not battery.power_plugged:
-                self.initial_battery = battery.percent
-                logger.info(
-                    f"Starting experiment with battery at {self.initial_battery}%"
+            # Check if the monitor has a method to check battery status
+            if hasattr(self.model.energy_monitor, "_has_battery"):
+                has_battery = self.model.energy_monitor._has_battery
+            elif hasattr(self.model.energy_monitor, "_check_battery"):
+                has_battery = self.model.energy_monitor._check_battery()
+            else:
+                # Fall back to checking for the attribute directly
+                has_battery = getattr(
+                    self.model.energy_monitor, "_battery_initialized", False
                 )
+
+            if has_battery:
+                battery = psutil.sensors_battery()
+                if battery and not battery.power_plugged:
+                    self.initial_battery = battery.percent
+                    logger.info(
+                        f"Starting experiment with battery at {self.initial_battery}%"
+                    )
 
     def process_single_image(
         self,
@@ -1057,8 +1069,21 @@ class NetworkedExperiment(BaseExperiment):
         split_dir.mkdir(exist_ok=True)
 
         # Start battery measurement for this split layer using PowerMonitor
-        if hasattr(self.model, "energy_monitor"):
-            self.model.energy_monitor.start_split_measurement(split_layer)
+        if (
+            hasattr(self.model, "energy_monitor")
+            and self.model.energy_monitor is not None
+        ):
+            try:
+                # Check if the monitor has the start_split_measurement method
+                if hasattr(self.model.energy_monitor, "start_split_measurement"):
+                    self.model.energy_monitor.start_split_measurement(split_layer)
+                else:
+                    # Fallback when the method doesn't exist
+                    logger.debug(
+                        f"Energy monitor doesn't support split measurements for layer {split_layer}"
+                    )
+            except Exception as e:
+                logger.warning(f"Error starting split measurement: {e}")
 
         if split_layer not in self.layer_timing_data:
             self.layer_timing_data[split_layer] = {}
@@ -1077,21 +1102,33 @@ class NetworkedExperiment(BaseExperiment):
 
             # Record battery energy if available - important for power profiling
             total_battery_energy = 0.0
-            if hasattr(self.model, "energy_monitor"):
-                battery_energy = self.model.energy_monitor.get_battery_energy()
-                # Make sure battery_energy is not None before comparing
-                total_battery_energy = 0.0 if battery_energy is None else battery_energy
-                if total_battery_energy > 0:
-                    logger.info(
-                        f"Split layer {split_layer} used {total_battery_energy:.2f}mWh"
+            if (
+                hasattr(self.model, "energy_monitor")
+                and self.model.energy_monitor is not None
+            ):
+                if hasattr(self.model.energy_monitor, "get_battery_energy"):
+                    battery_energy = self.model.energy_monitor.get_battery_energy()
+                    # Make sure battery_energy is not None before comparing
+                    total_battery_energy = (
+                        0.0 if battery_energy is None else battery_energy
                     )
+                    if total_battery_energy > 0:
+                        logger.info(
+                            f"Split layer {split_layer} used {total_battery_energy:.2f}mWh"
+                        )
 
-                # Store the battery energy in forward_info for this split layer
-                if hasattr(self.model, "forward_info"):
-                    if split_layer in self.model.forward_info:
-                        self.model.forward_info[split_layer][
-                            "host_battery_energy_mwh"
-                        ] = total_battery_energy
+                        # Store the battery energy in forward_info for this split layer
+                        if hasattr(self.model, "forward_info"):
+                            if split_layer in self.model.forward_info:
+                                self.model.forward_info[split_layer][
+                                    "host_battery_energy_mwh"
+                                ] = total_battery_energy
+                else:
+                    # Fallback for when the method doesn't exist
+                    total_battery_energy = 0.0
+                    logger.debug(
+                        "Energy monitor doesn't support battery energy measurements"
+                    )
 
             self._log_performance_summary(
                 total_host, total_travel, total_server, total_battery_energy
@@ -1131,23 +1168,28 @@ class NetworkedExperiment(BaseExperiment):
 
             # After all images are processed, calculate total battery energy used
             if self.initial_battery is not None:
-                battery = psutil.sensors_battery()
-                if battery and not battery.power_plugged:
-                    percent_diff = self.initial_battery - battery.percent
-                    if percent_diff > 0:
-                        TYPICAL_BATTERY_CAPACITY = 50000  # 50Wh = 50000mWh
-                        host_battery_energy = (
-                            percent_diff / 100.0
-                        ) * TYPICAL_BATTERY_CAPACITY
-                        logger.info(
-                            f"Total experiment used {percent_diff:.2f}% battery ({host_battery_energy:.2f}mWh)"
-                        )
+                try:
+                    battery = psutil.sensors_battery()
+                    if battery and not battery.power_plugged:
+                        percent_diff = self.initial_battery - battery.percent
+                        if percent_diff > 0:
+                            TYPICAL_BATTERY_CAPACITY = 50000  # 50Wh = 50000mWh
+                            host_battery_energy = (
+                                percent_diff / 100.0
+                            ) * TYPICAL_BATTERY_CAPACITY
+                            logger.info(
+                                f"Total experiment used {percent_diff:.2f}% battery ({host_battery_energy:.2f}mWh)"
+                            )
 
-                        # Store the total battery energy with the split layer
-                        if hasattr(self.model, "forward_info"):
-                            self.model.forward_info[self.current_split][
-                                "host_battery_energy_mwh"
-                            ] = host_battery_energy
+                            # Store the total battery energy with the split layer
+                            if hasattr(self.model, "forward_info"):
+                                self.model.forward_info[self.current_split][
+                                    "host_battery_energy_mwh"
+                                ] = host_battery_energy
+                except Exception as e:
+                    logger.warning(
+                        f"Error calculating battery energy in run_experiment: {e}"
+                    )
 
         except Exception as e:
             logger.error(f"Error running experiment: {e}")

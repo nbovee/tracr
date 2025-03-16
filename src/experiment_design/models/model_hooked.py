@@ -1,4 +1,4 @@
-# src/experiment_design/models/model_hooked.py
+"""Implementation of a model that can be hooked into a split computing framework."""
 
 import atexit
 import copy
@@ -13,17 +13,17 @@ import torch
 from PIL import Image
 from torchinfo import summary  # type: ignore
 
-from .base import BaseModel
+from src.interface import ModelInterface
+
+from .core.base import BaseModel
 from .hooks import (
     create_forward_prehook,
     create_forward_posthook,
     EarlyOutput,
     HookExitException,
 )
-from .templates import LAYER_TEMPLATE
-from src.api import MasterDict
-from src.interface import ModelInterface
-from .power_monitor import GPUEnergyMonitor
+from .core.templates import LAYER_TEMPLATE
+from .metrics import create_power_monitor
 
 # Ensure CUDA memory is freed at exit.
 atexit.register(torch.cuda.empty_cache)
@@ -48,7 +48,7 @@ class WrappedModel(BaseModel, ModelInterface):
     DEFAULT_WARMUP_ITERS: ClassVar[int] = 2
 
     def __init__(
-        self, config: Dict[str, Any], master_dict: Optional[MasterDict] = None, **kwargs
+        self, config: Dict[str, Any], master_dict: Optional[Any] = None, **kwargs
     ) -> None:
         """Initialize wrapped model with configuration and optional master dictionary."""
         BaseModel.__init__(self, config)
@@ -79,25 +79,16 @@ class WrappedModel(BaseModel, ModelInterface):
         try:
             # Use the same device setting from config for monitoring
             force_cpu = self.device == "cpu"
-            self.energy_monitor = GPUEnergyMonitor(
+            self.energy_monitor = create_power_monitor(
                 device_type="auto" if not force_cpu else "cpu", force_cpu=force_cpu
             )
 
-            device_type = getattr(self.energy_monitor, "device_type", "unknown")
-            if device_type == "cpu":
-                # Check if we're on Windows CPU for optimized metrics path
-                if (
-                    hasattr(self.energy_monitor, "_os_type")
-                    and self.energy_monitor._os_type == "Windows"
-                ):
-                    self.is_windows_cpu = True
-                    logger.info("Using optimized Windows CPU monitoring")
-                else:
-                    logger.info("Using CPU monitoring with battery metrics")
-            elif device_type == "jetson":
-                logger.info("Using Jetson monitoring with power metrics")
+            # Check for Windows CPU for optimized metrics path
+            if self.energy_monitor.device_type == "cpu" and self.os_type == "Windows":
+                self.is_windows_cpu = True
+                logger.info("Using optimized Windows CPU monitoring")
             else:
-                logger.info(f"Using GPU monitoring for device type: {device_type}")
+                logger.info(f"Using {self.energy_monitor.device_type} monitoring")
         except Exception as e:
             logger.warning(f"Energy monitoring initialization failed: {e}")
             self.energy_monitor = None

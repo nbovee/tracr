@@ -4,7 +4,6 @@ import logging
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 from dataclasses import dataclass
 import time
-import platform
 
 import torch
 from torch import Tensor
