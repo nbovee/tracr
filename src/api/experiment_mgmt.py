@@ -252,72 +252,72 @@ class BaseExperiment(ExperimentInterface):
             "total_energy": 0.0,
         }
 
-        energy_data = getattr(self.model, "layer_energy_data", {})
-        if not energy_data:
-            # Check if we're on Windows CPU and might need to get metrics via get_layer_metrics
-            is_windows_cpu = (
-                hasattr(self.model, "is_windows_cpu") and self.model.is_windows_cpu
+        # First try to get metrics directly from get_layer_metrics which uses metrics_collector
+        metrics_from_model = self.model.get_layer_metrics()
+        if metrics_from_model:
+            logger.info(
+                f"Retrieved metrics from metrics collector for split {split_idx}"
             )
 
-            if is_windows_cpu:
-                logger.warning(
-                    "No direct energy data available, using Windows CPU power model"
+            # Calculate metrics using data from all layers up to the split point
+            layers_processed = 0
+            max_power = 0.0
+            total_energy = 0.0
+            total_comm_energy = 0.0
+
+            # Get metrics for each layer up to split_idx
+            for layer_idx in range(split_idx + 1):
+                if layer_idx in metrics_from_model:
+                    layer_data = metrics_from_model[layer_idx]
+
+                    # Only include layers with valid data
+                    if layer_data.get("power_reading", 0) > 0:
+                        # Update max power
+                        max_power = max(max_power, layer_data.get("power_reading", 0))
+
+                        # Sum energies
+                        total_energy += layer_data.get("processing_energy", 0)
+
+                        # Only add communication energy at the split point
+                        if layer_idx == split_idx:
+                            total_comm_energy = layer_data.get(
+                                "communication_energy", 0
+                            )
+
+                        # Get memory utilization if available
+                        if layer_data.get("memory_utilization", 0) > 0:
+                            metrics["memory_utilization"] = max(
+                                metrics["memory_utilization"],
+                                layer_data.get("memory_utilization", 0),
+                            )
+
+                        layers_processed += 1
+
+            # Only update metrics if we found valid data
+            if layers_processed > 0:
+                metrics["processing_energy"] = total_energy
+                metrics["communication_energy"] = total_comm_energy
+                metrics["power_reading"] = max_power
+                metrics["total_energy"] = total_energy + total_comm_energy
+
+                logger.info(
+                    f"Aggregated metrics for split {split_idx}: power={max_power:.2f}W, energy={total_energy:.6f}J"
                 )
-                metrics_from_model = self.model.get_layer_metrics()
+                return metrics
 
-                # Check if we have valid metrics
-                if metrics_from_model:
-                    # Calculate metrics using data from all layers up to the split point
-                    layers_processed = 0
-                    max_power = 0.0
-                    total_energy = 0.0
-                    total_comm_energy = 0.0
-
-                    # Get metrics for each layer up to split_idx
-                    for layer_idx in range(split_idx + 1):
-                        if layer_idx in metrics_from_model:
-                            layer_data = metrics_from_model[layer_idx]
-
-                            # Only include layers with valid data
-                            if layer_data.get("power_reading", 0) > 0:
-                                # Update max power
-                                max_power = max(
-                                    max_power, layer_data.get("power_reading", 0)
-                                )
-
-                                # Sum energies
-                                total_energy += layer_data.get("processing_energy", 0)
-                                total_comm_energy += layer_data.get(
-                                    "communication_energy", 0
-                                )
-
-                                # Get memory utilization if available
-                                if layer_data.get("memory_utilization", 0) > 0:
-                                    metrics["memory_utilization"] = max(
-                                        metrics["memory_utilization"],
-                                        layer_data.get("memory_utilization", 0),
-                                    )
-
-                                layers_processed += 1
-
-                    # Only update metrics if we found valid data
-                    if layers_processed > 0:
-                        metrics["processing_energy"] = total_energy
-                        metrics["communication_energy"] = total_comm_energy
-                        metrics["power_reading"] = max_power
-                        metrics["total_energy"] = total_energy + total_comm_energy
-
-                        logger.info(
-                            f"Retrieved Windows CPU metrics: power={max_power:.2f}W, energy={total_energy:.6f}J"
-                        )
-                        return metrics
-
+        # Fallback: Try to access historical energy data directly
+        energy_data = getattr(self.model, "layer_energy_data", {})
+        if not energy_data:
             logger.warning("No energy data available for metrics aggregation")
             return metrics
 
         # Log all collected split points
         split_points = set()
         for layer_idx, measurements in energy_data.items():
+            # Only consider layers up to the split point
+            if layer_idx > split_idx:
+                continue
+
             for m in measurements:
                 if "split_point" in m:
                     split_points.add(m["split_point"])
@@ -357,6 +357,9 @@ class BaseExperiment(ExperimentInterface):
             if n_measurements == 0:
                 continue
 
+            # Get the layer index from the first measurement
+            layer_idx = layer_split_measurements[0].get("layer_idx", -1)
+
             # Calculate averages for this layer
             layer_avg = {
                 "processing_energy": sum(
@@ -364,11 +367,15 @@ class BaseExperiment(ExperimentInterface):
                     for m in layer_split_measurements
                 )
                 / n_measurements,
-                "communication_energy": sum(
-                    float(m.get("communication_energy", 0.0))
-                    for m in layer_split_measurements
-                )
-                / n_measurements,
+                "communication_energy": (
+                    sum(
+                        float(m.get("communication_energy", 0.0))
+                        for m in layer_split_measurements
+                    )
+                    / n_measurements
+                    if layer_idx == split_idx
+                    else 0.0
+                ),  # Only at split point
                 "power_reading": sum(
                     float(m.get("power_reading", 0.0)) for m in layer_split_measurements
                 )
@@ -394,7 +401,9 @@ class BaseExperiment(ExperimentInterface):
 
             # Sum energy metrics across layers
             metrics["processing_energy"] += layer_avg["processing_energy"]
-            metrics["communication_energy"] += layer_avg["communication_energy"]
+            # Only add communication energy at the split point
+            if layer_idx == split_idx:
+                metrics["communication_energy"] = layer_avg["communication_energy"]
 
             # Take max for utilization/power readings
             metrics["power_reading"] = max(
@@ -432,10 +441,16 @@ class BaseExperiment(ExperimentInterface):
             df["Host Time"] + df["Travel Time"] + df["Server Time"]
         )
 
-        # Process layer metrics even if some metrics are missing/zero
+        # Process layer metrics from all available sources - prioritize metrics_collector
         layer_metrics = []
-        energy_data = getattr(self.model, "layer_energy_data", {})
         all_layer_indices = sorted(self.model.forward_info.keys())
+
+        # Check if we can get metrics directly from the metrics collector
+        model_metrics = self.model.get_layer_metrics()
+        has_collector_metrics = bool(model_metrics)
+
+        if has_collector_metrics:
+            logger.info("Using metrics directly from metrics collector for all layers")
 
         for split_idx, _, _, _ in results:
             logger.debug(f"Processing metrics for split layer {split_idx}")
@@ -446,7 +461,10 @@ class BaseExperiment(ExperimentInterface):
                 f"Split {split_idx} aggregated energy metrics: {split_energy_metrics}"
             )
 
-            for layer_idx in all_layer_indices:
+            # Only include layers up to and including the split point
+            valid_layer_indices = [i for i in all_layer_indices if i <= split_idx]
+
+            for layer_idx in valid_layer_indices:
                 layer_info = self.model.forward_info.get(layer_idx, {})
 
                 # Safely convert values with defaults for None
@@ -471,99 +489,192 @@ class BaseExperiment(ExperimentInterface):
                     "Output Size (MB)": output_mb,
                 }
 
-                # Get layer-specific energy metrics from layer_energy_data
-                layer_energy_metrics = []
-                if energy_data and layer_idx in energy_data:
-                    layer_energy_metrics = [
-                        m
-                        for m in energy_data[layer_idx]
-                        if m.get("split_point", -1) == split_idx
-                    ]
+                # Priority 1: Get metrics from metrics collector if available
+                if has_collector_metrics and layer_idx in model_metrics:
+                    layer_data = model_metrics[layer_idx]
 
-                # If we have layer-specific energy data, use it
-                if layer_energy_metrics:
-                    try:
-                        # Calculate averages from all measurements for this layer
-                        n_metrics = len(layer_energy_metrics)
-                        avg_metrics = {
-                            "Processing Energy (J)": sum(
-                                float(m.get("processing_energy", 0.0))
-                                for m in layer_energy_metrics
-                            )
-                            / n_metrics,
-                            "Communication Energy (J)": sum(
-                                float(m.get("communication_energy", 0.0))
-                                for m in layer_energy_metrics
-                            )
-                            / n_metrics,
-                            "Power Reading (W)": sum(
-                                float(m.get("power_reading", 0.0))
-                                for m in layer_energy_metrics
-                            )
-                            / n_metrics,
-                            "GPU Utilization (%)": sum(
-                                float(m.get("gpu_utilization", 0.0))
-                                for m in layer_energy_metrics
-                            )
-                            / n_metrics,
-                            "Total Energy (J)": sum(
-                                float(m.get("total_energy", 0.0))
-                                for m in layer_energy_metrics
-                            )
-                            / n_metrics,
+                    # Convert inference time to milliseconds for Excel
+                    inference_time = layer_data.get("inference_time", 0.0)
+                    latency_ms = (
+                        float(inference_time) * 1000
+                        if inference_time is not None
+                        else 0.0
+                    )
+
+                    # Get GPU utilization directly from the metrics - ensure it's included even if zero
+                    gpu_utilization = layer_data.get("gpu_utilization", 0.0)
+
+                    # Use the metrics collector data directly
+                    metrics_entry.update(
+                        {
+                            "Layer Latency (ms)": latency_ms,
+                            "Processing Energy (J)": layer_data.get(
+                                "processing_energy", 0.0
+                            ),
+                            "Communication Energy (J)": (
+                                layer_data.get("communication_energy", 0.0)
+                                if layer_idx == split_idx
+                                else 0.0
+                            ),
+                            "Power Reading (W)": layer_data.get("power_reading", 0.0),
+                            "GPU Utilization (%)": gpu_utilization,  # Make sure GPU utilization is included
+                            "Total Energy (J)": layer_data.get("processing_energy", 0.0)
+                            + (
+                                layer_data.get("communication_energy", 0.0)
+                                if layer_idx == split_idx
+                                else 0.0
+                            ),
                         }
+                    )
 
-                        # Add Memory Utilization if available
-                        if any("memory_utilization" in m for m in layer_energy_metrics):
-                            memory_values = [
-                                float(m.get("memory_utilization", 0.0))
-                                for m in layer_energy_metrics
-                                if "memory_utilization" in m
-                            ]
-                            if memory_values:
-                                avg_metrics["Memory Utilization (%)"] = sum(
-                                    memory_values
-                                ) / len(memory_values)
-                    except (TypeError, ValueError, ZeroDivisionError) as e:
-                        logger.warning(
-                            f"Error calculating energy metrics for layer {layer_idx}: {e}"
-                        )
+                    # Add Memory Utilization if available
+                    if "memory_utilization" in layer_data:
+                        metrics_entry["Memory Utilization (%)"] = layer_data[
+                            "memory_utilization"
+                        ]
+
+                    logger.debug(f"Added metrics from collector for layer {layer_idx}")
+
+                # Priority 2: Fall back to layer_energy_data if metrics collector data is not available
+                else:
+                    # Get layer-specific energy metrics from layer_energy_data
+                    energy_data = getattr(self.model, "layer_energy_data", {})
+                    layer_energy_metrics = []
+                    if energy_data and layer_idx in energy_data:
+                        layer_energy_metrics = [
+                            m
+                            for m in energy_data[layer_idx]
+                            if m.get("split_point", -1) == split_idx
+                        ]
+
+                    # If we have layer-specific energy data, use it
+                    if layer_energy_metrics:
+                        try:
+                            # Calculate averages from all measurements for this layer
+                            n_metrics = len(layer_energy_metrics)
+                            avg_metrics = {
+                                "Processing Energy (J)": sum(
+                                    float(m.get("processing_energy", 0.0))
+                                    for m in layer_energy_metrics
+                                )
+                                / n_metrics,
+                                "Communication Energy (J)": (
+                                    sum(
+                                        float(m.get("communication_energy", 0.0))
+                                        for m in layer_energy_metrics
+                                    )
+                                    / n_metrics
+                                    if layer_idx == split_idx
+                                    else 0.0
+                                ),
+                                "Power Reading (W)": sum(
+                                    float(m.get("power_reading", 0.0))
+                                    for m in layer_energy_metrics
+                                )
+                                / n_metrics,
+                                "GPU Utilization (%)": sum(
+                                    float(m.get("gpu_utilization", 0.0))
+                                    for m in layer_energy_metrics
+                                )
+                                / n_metrics,
+                                "Total Energy (J)": (
+                                    sum(
+                                        float(m.get("processing_energy", 0.0))
+                                        for m in layer_energy_metrics
+                                    )
+                                    / n_metrics
+                                    + (
+                                        sum(
+                                            float(m.get("communication_energy", 0.0))
+                                            for m in layer_energy_metrics
+                                        )
+                                        / n_metrics
+                                        if layer_idx == split_idx
+                                        else 0.0
+                                    )
+                                ),
+                            }
+
+                            # Add Memory Utilization if available
+                            if any(
+                                "memory_utilization" in m for m in layer_energy_metrics
+                            ):
+                                memory_values = [
+                                    float(m.get("memory_utilization", 0.0))
+                                    for m in layer_energy_metrics
+                                    if "memory_utilization" in m
+                                ]
+                                if memory_values:
+                                    avg_metrics["Memory Utilization (%)"] = sum(
+                                        memory_values
+                                    ) / len(memory_values)
+
+                            metrics_entry.update(avg_metrics)
+                            logger.debug(
+                                f"Added metrics from layer_energy_data for layer {layer_idx}"
+                            )
+                        except (TypeError, ValueError, ZeroDivisionError) as e:
+                            logger.warning(
+                                f"Error calculating energy metrics for layer {layer_idx}: {e}"
+                            )
+                            avg_metrics = {
+                                "Processing Energy (J)": layer_info.get(
+                                    "processing_energy", 0.0
+                                ),
+                                "Communication Energy (J)": (
+                                    layer_info.get("communication_energy", 0.0)
+                                    if layer_idx == split_idx
+                                    else 0.0
+                                ),
+                                "Power Reading (W)": layer_info.get(
+                                    "power_reading", 0.0
+                                ),
+                                "GPU Utilization (%)": layer_info.get(
+                                    "gpu_utilization", 0.0
+                                ),
+                                "Total Energy (J)": (
+                                    layer_info.get("processing_energy", 0.0)
+                                    + (
+                                        layer_info.get("communication_energy", 0.0)
+                                        if layer_idx == split_idx
+                                        else 0.0
+                                    )
+                                ),
+                            }
+                            if "memory_utilization" in layer_info:
+                                avg_metrics["Memory Utilization (%)"] = layer_info[
+                                    "memory_utilization"
+                                ]
+                            metrics_entry.update(avg_metrics)
+                    else:
+                        # Fall back to metrics from forward_info if no specific measurements
                         avg_metrics = {
                             "Processing Energy (J)": layer_info.get(
                                 "processing_energy", 0.0
                             ),
-                            "Communication Energy (J)": layer_info.get(
-                                "communication_energy", 0.0
+                            "Communication Energy (J)": (
+                                layer_info.get("communication_energy", 0.0)
+                                if layer_idx == split_idx
+                                else 0.0
                             ),
                             "Power Reading (W)": layer_info.get("power_reading", 0.0),
                             "GPU Utilization (%)": layer_info.get(
                                 "gpu_utilization", 0.0
                             ),
-                            "Total Energy (J)": layer_info.get("total_energy", 0.0),
+                            "Total Energy (J)": (
+                                layer_info.get("processing_energy", 0.0)
+                                + (
+                                    layer_info.get("communication_energy", 0.0)
+                                    if layer_idx == split_idx
+                                    else 0.0
+                                )
+                            ),
                         }
                         if "memory_utilization" in layer_info:
                             avg_metrics["Memory Utilization (%)"] = layer_info[
                                 "memory_utilization"
                             ]
-                else:
-                    # Fall back to metrics from forward_info if no specific measurements
-                    avg_metrics = {
-                        "Processing Energy (J)": layer_info.get(
-                            "processing_energy", 0.0
-                        ),
-                        "Communication Energy (J)": layer_info.get(
-                            "communication_energy", 0.0
-                        ),
-                        "Power Reading (W)": layer_info.get("power_reading", 0.0),
-                        "GPU Utilization (%)": layer_info.get("gpu_utilization", 0.0),
-                        "Total Energy (J)": layer_info.get("total_energy", 0.0),
-                    }
-                    if "memory_utilization" in layer_info:
-                        avg_metrics["Memory Utilization (%)"] = layer_info[
-                            "memory_utilization"
-                        ]
-
-                metrics_entry.update(avg_metrics)
+                        metrics_entry.update(avg_metrics)
 
                 # Add battery metrics if available (with safe conversion)
                 try:
@@ -573,85 +684,6 @@ class BaseExperiment(ExperimentInterface):
                     )
                 except (TypeError, ValueError):
                     metrics_entry["Host Battery Energy (mWh)"] = 0.0
-
-                # Special handling for Windows CPU - get missing metrics directly
-                is_windows_cpu = False
-                if hasattr(self.model, "is_windows_cpu"):
-                    is_windows_cpu = self.model.is_windows_cpu
-
-                if is_windows_cpu and (
-                    avg_metrics["Power Reading (W)"] == 0
-                    or avg_metrics["Processing Energy (J)"] == 0
-                ):
-                    # If we have zero values, try to get directly from the layer metrics using get_layer_metrics
-                    try:
-                        direct_metrics = self.model.get_layer_metrics().get(
-                            layer_idx, {}
-                        )
-                        if direct_metrics:
-                            # Update with non-zero values from direct metrics
-                            if direct_metrics.get("power_reading", 0) > 0:
-                                avg_metrics["Power Reading (W)"] = direct_metrics[
-                                    "power_reading"
-                                ]
-                                metrics_entry["Power Reading (W)"] = direct_metrics[
-                                    "power_reading"
-                                ]
-
-                            if direct_metrics.get("processing_energy", 0) > 0:
-                                avg_metrics["Processing Energy (J)"] = direct_metrics[
-                                    "processing_energy"
-                                ]
-                                metrics_entry["Processing Energy (J)"] = direct_metrics[
-                                    "processing_energy"
-                                ]
-
-                                # Update total energy
-                                comm_energy = avg_metrics["Communication Energy (J)"]
-                                avg_metrics["Total Energy (J)"] = (
-                                    direct_metrics["processing_energy"] + comm_energy
-                                )
-                                metrics_entry["Total Energy (J)"] = (
-                                    direct_metrics["processing_energy"] + comm_energy
-                                )
-
-                                # Memory utilization if available
-                                if (
-                                    "memory_utilization" in direct_metrics
-                                    and direct_metrics["memory_utilization"] > 0
-                                ):
-                                    avg_metrics["Memory Utilization (%)"] = (
-                                        direct_metrics["memory_utilization"]
-                                    )
-                                    metrics_entry["Memory Utilization (%)"] = (
-                                        direct_metrics["memory_utilization"]
-                                    )
-
-                                # Host Battery Energy if available
-                                if "Host Battery Energy (mWh)" in direct_metrics.keys():
-                                    battery_values = direct_metrics[
-                                        "Host Battery Energy (mWh)"
-                                    ].dropna()
-                                    if not battery_values.empty:
-                                        # Use the first non-zero value
-                                        non_zero_values = battery_values[
-                                            battery_values > 0
-                                        ]
-                                        if not non_zero_values.empty:
-                                            metrics_entry[
-                                                "Host Battery Energy (mWh)"
-                                            ] = non_zero_values.iloc[0]
-                                            logger.info(
-                                                f"Updated Host Battery Energy for layer {layer_idx}: {non_zero_values.iloc[0]:.2f} mWh"
-                                            )
-
-                            logger.debug(
-                                f"Updated Windows CPU metrics for layer {layer_idx} from direct metrics"
-                            )
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to get direct Windows CPU metrics for layer {layer_idx}: {e}"
-                        )
 
                 layer_metrics.append(metrics_entry)
 
@@ -713,7 +745,7 @@ class BaseExperiment(ExperimentInterface):
                                     updated_metrics["processing_energy"] + comm_energy
                                 )
 
-                            # Memory/CPU utilization if available
+                            # Memory utilization if available
                             if (
                                 "memory_utilization" in updated_metrics
                                 and updated_metrics["memory_utilization"] > 0
@@ -753,26 +785,16 @@ class BaseExperiment(ExperimentInterface):
             df.to_excel(writer, sheet_name="Overall Performance", index=False)
 
             if not layer_metrics_df.empty:
+                # Add explicit GPU utilization logging before writing to Excel
+                for idx, row in layer_metrics_df.iterrows():
+                    gpu_util = row.get("GPU Utilization (%)", 0.0)
+                    logger.debug(
+                        f"Excel row {idx}: Layer {row.get('Layer ID', -1)} GPU utilization = {gpu_util}%"
+                    )
+
                 layer_metrics_df.to_excel(
                     writer, sheet_name="Layer Metrics", index=False
                 )
-
-                # Define energy columns including our new metrics
-                energy_columns = [
-                    "Split Layer",
-                    "Processing Energy (J)",
-                    "Communication Energy (J)",
-                    "Total Energy (J)",
-                    "Power Reading (W)",
-                    "GPU Utilization (%)",
-                ]
-
-                # Add Memory Utilization if it exists
-                if "Memory Utilization (%)" in layer_metrics_df.columns:
-                    energy_columns.append("Memory Utilization (%)")
-
-                if "Host Battery Energy (mWh)" in layer_metrics_df.columns:
-                    energy_columns.append("Host Battery Energy (mWh)")
 
                 # Create energy summary with aggregated metrics
                 energy_agg_dict = {
@@ -780,7 +802,7 @@ class BaseExperiment(ExperimentInterface):
                     "Communication Energy (J)": "sum",
                     "Total Energy (J)": "sum",
                     "Power Reading (W)": "mean",
-                    "GPU Utilization (%)": "mean",
+                    "GPU Utilization (%)": "mean",  # Make sure to include GPU utilization
                     "Host Battery Energy (mWh)": "first",
                 }
 
@@ -788,6 +810,7 @@ class BaseExperiment(ExperimentInterface):
                 if "Memory Utilization (%)" in layer_metrics_df.columns:
                     energy_agg_dict["Memory Utilization (%)"] = "mean"
 
+                # Group by Split Layer and create summary
                 energy_summary = (
                     layer_metrics_df.groupby("Split Layer")
                     .agg(energy_agg_dict)
@@ -799,7 +822,10 @@ class BaseExperiment(ExperimentInterface):
                 for split_layer in energy_summary["Split Layer"].unique():
                     # Get metrics for this split layer
                     split_metrics = layer_metrics_df[
-                        layer_metrics_df["Split Layer"] == split_layer
+                        (layer_metrics_df["Split Layer"] == split_layer)
+                        & (
+                            layer_metrics_df["Layer ID"] <= split_layer
+                        )  # Only include layers up to split_layer
                     ]
 
                     # Filter to only include layers with non-zero power readings
@@ -814,6 +840,7 @@ class BaseExperiment(ExperimentInterface):
                             "Power Reading (W)",
                         ] = active_layers["Power Reading (W)"].mean()
 
+                        # Always include GPU utilization, even if it's all zeros
                         energy_summary.loc[
                             energy_summary["Split Layer"] == split_layer,
                             "GPU Utilization (%)",
@@ -839,116 +866,6 @@ class BaseExperiment(ExperimentInterface):
                 energy_summary.to_excel(
                     writer, sheet_name="Energy Analysis", index=False
                 )
-
-                # Special handling for Windows CPU metrics in summary
-                if is_windows_cpu:
-                    # Make sure the energy summary has valid non-zero values
-                    for idx, row in energy_summary.iterrows():
-                        split_layer = row["Split Layer"]
-
-                        # If we have zero power reading or processing energy, get them directly
-                        if (
-                            row["Power Reading (W)"] == 0
-                            or row["Processing Energy (J)"] == 0
-                        ):
-                            # Get layer-specific metrics for this split
-                            split_metrics = layer_metrics_df[
-                                layer_metrics_df["Split Layer"] == split_layer
-                            ]
-
-                            # Check if we have any valid metrics for this split
-                            valid_metrics = split_metrics[
-                                (split_metrics["Power Reading (W)"] > 0)
-                                | (split_metrics["Host Battery Energy (mWh)"] > 0)
-                            ]
-                            if not valid_metrics.empty:
-                                # Use the non-zero metrics to update the summary
-                                energy_summary.loc[idx, "Power Reading (W)"] = (
-                                    valid_metrics["Power Reading (W)"].mean()
-                                )
-                                energy_summary.loc[idx, "Processing Energy (J)"] = (
-                                    valid_metrics["Processing Energy (J)"].sum()
-                                )
-                                energy_summary.loc[idx, "Total Energy (J)"] = (
-                                    valid_metrics["Processing Energy (J)"].sum()
-                                    + valid_metrics["Communication Energy (J)"].sum()
-                                )
-
-                                # Memory utilization if available
-                                if "Memory Utilization (%)" in valid_metrics.columns:
-                                    mem_values = valid_metrics[
-                                        "Memory Utilization (%)"
-                                    ].dropna()
-                                    if not mem_values.empty:
-                                        energy_summary.loc[
-                                            idx, "Memory Utilization (%)"
-                                        ] = mem_values.mean()
-
-                                # Host Battery Energy if available
-                                if "Host Battery Energy (mWh)" in valid_metrics.columns:
-                                    battery_values = valid_metrics[
-                                        "Host Battery Energy (mWh)"
-                                    ].dropna()
-                                    if not battery_values.empty:
-                                        # Use the first non-zero value
-                                        non_zero_values = battery_values[
-                                            battery_values > 0
-                                        ]
-                                        if not non_zero_values.empty:
-                                            energy_summary.loc[
-                                                idx, "Host Battery Energy (mWh)"
-                                            ] = non_zero_values.iloc[0]
-                                            logger.info(
-                                                f"Updated Host Battery Energy for split {split_layer}: {non_zero_values.iloc[0]:.2f} mWh"
-                                            )
-
-                                logger.info(
-                                    f"Updated Energy Analysis summary for split {split_layer}"
-                                )
-
-                    # Write updated summary to Excel
-                    energy_summary.to_excel(
-                        writer, sheet_name="Energy Analysis", index=False
-                    )
-                    logger.info("Updated Energy Analysis sheet for Windows CPU")
-
-                    # Extra check to ensure battery energy is included
-                    # Always update battery energy values in summary from layer metrics
-                    if (
-                        "Host Battery Energy (mWh)" in layer_metrics_df.columns
-                        and "Host Battery Energy (mWh)" in energy_summary.columns
-                    ):
-                        for idx, row in energy_summary.iterrows():
-                            split_layer = row["Split Layer"]
-                            # Get all metrics for this split layer
-                            split_metrics = layer_metrics_df[
-                                layer_metrics_df["Split Layer"] == split_layer
-                            ]
-                            # Filter to non-zero battery values
-                            battery_metrics = split_metrics[
-                                split_metrics["Host Battery Energy (mWh)"] > 0
-                            ]
-
-                            if not battery_metrics.empty:
-                                # Use the first non-zero battery value
-                                battery_value = battery_metrics[
-                                    "Host Battery Energy (mWh)"
-                                ].iloc[0]
-                                # Update summary
-                                energy_summary.loc[idx, "Host Battery Energy (mWh)"] = (
-                                    battery_value
-                                )
-                                logger.info(
-                                    f"Ensured Host Battery Energy in summary for split {split_layer}: {battery_value:.2f} mWh"
-                                )
-
-                        # Write updated summary again with all battery values
-                        energy_summary.to_excel(
-                            writer, sheet_name="Energy Analysis", index=False
-                        )
-                        logger.info(
-                            "Final update to Energy Analysis with battery values for Windows CPU"
-                        )
 
         logger.info(f"Results saved to {output_file}")
 
@@ -1084,6 +1001,14 @@ class NetworkedExperiment(BaseExperiment):
                     )
             except Exception as e:
                 logger.warning(f"Error starting split measurement: {e}")
+
+        # Set the split point in the metrics collector if available
+        if hasattr(self.model, "metrics_collector") and self.model.metrics_collector:
+            try:
+                self.model.metrics_collector.set_split_point(split_layer)
+                logger.info(f"Set split point {split_layer} in metrics collector")
+            except Exception as e:
+                logger.warning(f"Error setting split point in metrics collector: {e}")
 
         if split_layer not in self.layer_timing_data:
             self.layer_timing_data[split_layer] = {}
@@ -1437,6 +1362,13 @@ class ExperimentManager:
 
                 # Save layer metrics if available
                 if layer_metrics_df is not None and not layer_metrics_df.empty:
+                    # Add explicit GPU utilization logging before writing to Excel
+                    for idx, row in layer_metrics_df.iterrows():
+                        gpu_util = row.get("GPU Utilization (%)", 0.0)
+                        logger.debug(
+                            f"Excel row {idx}: Layer {row.get('Layer ID', -1)} GPU utilization = {gpu_util}%"
+                        )
+
                     layer_metrics_df.to_excel(
                         writer, sheet_name="Layer Metrics", index=False
                     )
@@ -1539,6 +1471,13 @@ class ExperimentManager:
 
                 # Save layer metrics if available
                 if layer_metrics_df is not None and not layer_metrics_df.empty:
+                    # Add explicit GPU utilization logging before writing to Excel
+                    for idx, row in layer_metrics_df.iterrows():
+                        gpu_util = row.get("GPU Utilization (%)", 0.0)
+                        logger.debug(
+                            f"Excel row {idx}: Layer {row.get('Layer ID', -1)} GPU utilization = {gpu_util}%"
+                        )
+
                     layer_metrics_df.to_excel(
                         writer, sheet_name="Layer Metrics", index=False
                     )
