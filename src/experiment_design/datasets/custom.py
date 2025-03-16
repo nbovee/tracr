@@ -37,10 +37,15 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import torch
 import torchvision.transforms as T
 
-from .core.base import BaseDataset
-from .core.transforms import TransformFactory, NormalizationParams
-from .core.collate_fns import CollateRegistry
-from .core.exceptions import DatasetPathError, DatasetProcessingError
+from .core import (
+    BaseDataset,
+    DatasetRegistry,
+    TransformFactory,
+    NormalizationParams,
+    CollateRegistry,
+    DatasetPathError,
+    DatasetProcessingError,
+)
 
 logger = logging.getLogger("split_computing_logger")
 
