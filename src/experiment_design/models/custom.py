@@ -1,4 +1,4 @@
-# src/experiment_design/models/custom.py
+"""Custom model implementation with configurable architecture."""
 
 import logging
 from typing import Any, Dict, List, Tuple, ClassVar
@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import torch.nn as nn
 from torch import Tensor
 
-from .registry import ModelRegistry
+from .core.registry import ModelRegistry
 
 logger = logging.getLogger("split_computing_logger")
 
