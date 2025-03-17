@@ -142,6 +142,6 @@ class LocalExperiment(BaseExperiment):
                 )
                 self._log_performance_summary(avg_host, 0.0, 0.0)
 
-            return split_layer, avg_host, 0.0, 0.0
+            return split_layer, total_host, 0.0, 0.0
 
         return split_layer, 0.0, 0.0, 0.0
