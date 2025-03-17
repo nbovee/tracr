@@ -1,4 +1,4 @@
-"""Utility functions for model management."""
+"""Utility functions for model management"""
 
 import logging
 from pathlib import Path

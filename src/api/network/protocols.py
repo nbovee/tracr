@@ -10,12 +10,6 @@ from typing import Final
 
 
 # ============================================================================
-# Protocol Version Information
-# ============================================================================
-PROTOCOL_VERSION: Final[str] = "1.0.0"  # Protocol version for compatibility checking
-
-
-# ============================================================================
 # Socket and Network Constants
 # ============================================================================
 # Number of bytes for message length header used in all communications

@@ -1,4 +1,4 @@
-"""Base dataset module defining abstract interfaces for dataset implementations."""
+"""Base dataset module defining abstract interfaces for dataset implementations"""
 
 from abc import ABC, abstractmethod
 import logging
@@ -22,15 +22,11 @@ logger = logging.getLogger("split_computing_logger")
 
 
 class BaseDataset(ABC):
-    """Abstract base class for datasets requiring item access and length implementations.
+    """Abstract base class for datasets with standardized access patterns.
 
-    This class defines the interface that all dataset implementations must follow,
-    providing common functionality like data source directory management and
-    requiring subclasses to implement core dataset operations.
-
-    Attributes:
-        length: The total number of items in the dataset
-        _data_source_dir: Default directory for dataset source files
+    Defines a consistent interface for dataset implementations with automatic
+    resource management and data source handling. Subclasses must implement
+    the core dataset access methods.
     """
 
     # Common image extensions supported by dataset implementations
@@ -54,7 +50,7 @@ class BaseDataset(ABC):
 
     @staticmethod
     def get_default_data_dir() -> Path:
-        """Get the default data directory, with fallback to local data directory."""
+        """Resolve the default data directory using a multi-stage fallback strategy."""
         try:
             # First check the repository root for the data directory
             repo_root = get_repo_root()
@@ -90,16 +86,7 @@ class BaseDataset(ABC):
         target_transform: Optional[Callable] = None,
         max_samples: int = -1,
     ) -> None:
-        """Initialize dataset and verify data source directory.
-
-        Args:
-            root: Root directory containing dataset files
-            transform: Callable to transform images
-            target_transform: Callable to transform labels
-            max_samples: Maximum number of samples to load (-1 for all)
-
-        Logs a warning if the default data source directory doesn't exist.
-        """
+        """Initialize dataset with resource location and processing transforms."""
         # Set the data source directory to the default if not already initialized
         if self.__class__._data_source_dir == Path("data"):
             try:
@@ -123,23 +110,12 @@ class BaseDataset(ABC):
 
     @property
     def data_source_dir(self) -> Path:
-        """Return the data source directory path.
-
-        Returns:
-            Path object pointing to the data source directory
-        """
+        """Return the data source directory path."""
         return self._data_source_dir
 
     @data_source_dir.setter
     def data_source_dir(self, path: Union[str, Path]) -> None:
-        """Set a custom data source directory.
-
-        Args:
-            path: The new data source directory path
-
-        Raises:
-            DatasetError: If the path doesn't exist or isn't a directory
-        """
+        """Set a custom data source directory with validation."""
         path_obj = Path(path)
         if not path_obj.exists():
             logger.error(f"Data source directory doesn't exist: {path_obj}")
@@ -153,14 +129,7 @@ class BaseDataset(ABC):
 
     @classmethod
     def set_default_data_dir(cls, path: Union[str, Path]) -> None:
-        """Set the default data source directory for all dataset instances.
-
-        Args:
-            path: The new default data source directory path
-
-        Raises:
-            DatasetError: If the path doesn't exist or isn't a directory
-        """
+        """Set the default data source directory for all dataset instances."""
         path_obj = Path(path)
         if not path_obj.exists():
             logger.error(f"Default data directory doesn't exist: {path_obj}")
@@ -173,14 +142,7 @@ class BaseDataset(ABC):
         cls._data_source_dir = path_obj
 
     def _validate_root_directory(self, root: Optional[Union[str, Path]]) -> None:
-        """Validate root directory exists.
-
-        Args:
-            root: Root directory path
-
-        Raises:
-            DatasetPathError: If root directory is not provided or doesn't exist
-        """
+        """Verify existence of root directory with appropriate error handling."""
         if not root:
             logger.error("Root directory is required")
             raise DatasetPathError("Root directory is required")
@@ -193,14 +155,7 @@ class BaseDataset(ABC):
     def _validate_img_directory(
         self, img_directory: Optional[Union[str, Path]]
     ) -> None:
-        """Validate image directory exists.
-
-        Args:
-            img_directory: Directory containing images
-
-        Raises:
-            DatasetPathError: If image directory is not provided or doesn't exist
-        """
+        """Verify existence of image directory with appropriate error handling."""
         if not img_directory:
             logger.error("Image directory is required")
             raise DatasetPathError("Image directory is required")
@@ -211,14 +166,7 @@ class BaseDataset(ABC):
             raise DatasetPathError("Image directory not found", path=str(self.img_dir))
 
     def _load_image_files(self) -> List[Path]:
-        """Load and return list of valid image file paths.
-
-        Returns:
-            List of image file paths
-
-        Raises:
-            DatasetProcessingError: If image files can't be loaded
-        """
+        """Identify and load valid image file paths with extensions filtering."""
         if not self.img_dir:
             return []
 
@@ -239,17 +187,7 @@ class BaseDataset(ABC):
             raise DatasetProcessingError(f"Failed to load image files: {str(e)}")
 
     def _load_and_transform_image(self, img_path: Path) -> torch.Tensor:
-        """Load and apply transformations to image.
-
-        Args:
-            img_path: Path to the image file
-
-        Returns:
-            Transformed image tensor
-
-        Raises:
-            DatasetTransformError: If transformation fails
-        """
+        """Load image and apply transformation with comprehensive error handling."""
         try:
             image = Image.open(img_path).convert("RGB")
             return ImageTransformer.apply_transform(image, self.transform)
@@ -261,14 +199,7 @@ class BaseDataset(ABC):
             )
 
     def get_original_image(self, image_file: str) -> Optional[Image.Image]:
-        """Load and return original image without transformations.
-
-        Args:
-            image_file: Filename of the image to load
-
-        Returns:
-            PIL Image object or None if not found
-        """
+        """Load original untransformed image by filename."""
         if not self.img_dir:
             return None
 
@@ -284,14 +215,7 @@ class BaseDataset(ABC):
             return None
 
     def _validate_index(self, index: int) -> None:
-        """Validate that the index is within bounds.
-
-        Args:
-            index: Index to validate
-
-        Raises:
-            DatasetIndexError: If index is out of bounds
-        """
+        """Verify index is within valid range for the dataset."""
         if not 0 <= index < self.length:
             logger.error(
                 f"Index {index} out of range for dataset of size {self.length}"
@@ -300,28 +224,11 @@ class BaseDataset(ABC):
 
     @abstractmethod
     def __getitem__(self, index: int) -> Any:
-        """Retrieve item at specified index.
-
-        Args:
-            index: The index of the item to retrieve
-
-        Returns:
-            The dataset item at the specified index
-
-        Raises:
-            NotImplementedError: If not implemented by subclass
-        """
+        """Retrieve item at specified index. Must be implemented by subclasses."""
         raise NotImplementedError("Subclasses must implement __getitem__")
 
     def __len__(self) -> int:
-        """Return total number of items in dataset.
-
-        Returns:
-            The length of the dataset
-
-        Raises:
-            NotImplementedError: If length is not set and not overridden
-        """
+        """Return total number of items in dataset."""
         try:
             return self.length
         except AttributeError:

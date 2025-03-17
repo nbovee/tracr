@@ -1,4 +1,4 @@
-"""Utility functions for the datasets package."""
+"""Utility functions for the datasets package"""
 
 from typing import List, Optional
 from pathlib import Path
@@ -9,15 +9,11 @@ def get_repo_root(
     max_depth: int = 15,
     current_dir: Optional[Path] = None,
 ) -> Path:
-    """Get the root directory of the repository.
+    """Locate repository root directory using marker-based discovery.
 
-    Args:
-        MARKERS: List of files or directories that indicate the repository root
-        max_depth: Maximum directory levels to search upward
-        current_dir: Starting directory for the search
-
-    Returns:
-        Path object pointing to the repository root
+    Implements a robust path resolution algorithm that works across different
+    environments by searching parent directories for repository markers.
+    If no markers are found within max_depth levels, returns the original directory.
     """
     if current_dir is None:
         # Use absolute path to avoid issues with symbolic links or WSL paths

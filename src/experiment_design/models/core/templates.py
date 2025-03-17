@@ -1,4 +1,4 @@
-"""Model and layer templates for split computing experiments."""
+"""Model and layer templates for split computing experiments"""
 
 from typing import Dict, List, Any, Optional
 

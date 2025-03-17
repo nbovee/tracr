@@ -1,4 +1,4 @@
-"""Core components for dataset handling and processing."""
+"""Core components for dataset handling and processing"""
 
 from .base import BaseDataset
 from .transforms import (

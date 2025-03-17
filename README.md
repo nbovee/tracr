@@ -1,241 +1,221 @@
 # SplitTracr: An Experimental Test-bed for Cooperative Inference using Split Computing
 
-An experimental framework for distributed AI experiments, enabling split inference between **server** and **host** devices. `tracr` allows you to distribute deep learning model computations across multiple devices, optimizing resource utilization and enabling edge computing scenarios. It has the flexibility to allow you to perform cooperative inference using different deep learning models on different type of devices, with automatic network management and experiment coordination.
+**SplitTracr** is a framework for distributed neural network inference that enables controlled partitioning of deep learning models across multiple devices. It provides per-layer performance metrics collection and network communication primitives for split computing research and experimentation.
 
 > [!Warning]
 > `tracr` is currently an experimental framework intended to explore distributed AI inference patterns. While functional, it is primarily for research and educational purposes.
 
-## Quick Start: Run AlexNet Split Inference
+## Quick Start Workflow
 
-> [!Caution]
-> ### 🔑 Required Prerequisites
-> You **MUST** have:
-> - ✅ Two devices (server and edge) on the same network
-> - ✅ SSH access between devices
-> - ✅ Python 3.10+ on both devices
-> - ✅ CUDA support on server (optional but recommended)
-
-#### 1️⃣ **Clone and Install** 
-```bash
-# On both devices (REQUIRED)
-git clone https://github.com/nbovee/tracr.git
-cd tracr
-python3 -m venv venv
-source venv/bin/activate  # Linux/Mac/WSL
-pip install -r requirements.txt
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│                          SETUP PHASE                                  │
+├─────────────────┬───────────────────────────────┬─────────────────────┤
+│ 1. Repository   │ 2. Configuration              │ 3. SSH Setup        │
+│                 │                               │                     │
+│ git clone       │ cp devices_template.yaml      │ ssh-keygen          │
+│ cd tracr        │    devices_config.yaml        │ ssh-copy-id         │
+│ python -m venv  │                               │ chmod 600 keys      │
+│ pip install     │ Edit IP/user settings         │                     │
+└─────────────────┴───────────────────────────────┴─────────────────────┘
+                                    │
+                                    ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│                        EXECUTION PHASE                                │
+├─────────────────┬───────────────────────────────┬─────────────────────┤
+│ 4. Server       │ 5. Host Execution             │ 6. Analysis         │
+│                 │                               │                     │
+│ python server.py│ python host.py                │ Review metrics in   │
+│                 │   --config config/NAME.yaml   │ results directory   │
+│                 │                               │                     │
+└─────────────────┴───────────────────────────────┴─────────────────────┘
 ```
 
-#### 2️⃣ **Configure Devices** (REQUIRED)
-```bash
-# In the config/ directory (MANDATORY)
-cp devices_template.yaml devices_config.yaml
-```
-Edit `devices_config.yaml` (**MUST** configure correctly):
-```yaml
-devices:
-  - device_type: SERVER           # REQUIRED
-    connection_params:
-      - host: 192.0.0.123         # ⚠️ Your server's IP (REQUIRED)
-        user: user1               # ⚠️ Your username (REQUIRED)
-        pkey_fp: server.rsa       # ⚠️ Will create this key next (REQUIRED)
-        port: 12345               # ⚠️ Communication port (REQUIRED)
-        default: true
+### Required Components
 
-  - device_type: PARTICIPANT     # REQUIRED
-    connection_params:
-      - host: 192.0.0.124        # ⚠️ Your edge device's IP (REQUIRED)
-        user: user2              # ⚠️ Your username (REQUIRED)
-        pkey_fp: edge.rsa        # ⚠️ Will create this key next (REQUIRED)
-        port: 12345              # ⚠️ Must match server's port (REQUIRED)
-        default: true
-```
+- **Two networked devices**: Server (higher compute capability) and Host/Edge device
+- **SSH access between devices**: For secure communication and file transfer
+- **Python 3.10+**: With required dependencies on both devices
+- **CUDA support**: Recommended on server device for accelerated processing
 
-#### 3️⃣ **Set Up SSH Keys** (REQUIRED)
-```bash
-# Create keys directory (MANDATORY)
-mkdir -p config/pkeys/
+### Essential Setup Steps
 
-# On Server (192.0.0.124) (REQUIRED)
-ssh-keygen -t rsa -b 4096 -f ~/.ssh/server_key
-ssh-copy-id -i ~/.ssh/server_key.pub user2@192.0.0.123
-cp ~/.ssh/server_key config/pkeys/server.rsa
+1. **Clone and install dependencies** on both devices
+   ```bash
+   git clone https://github.com/nbovee/tracr.git && cd tracr
+   python3 -m venv venv && source venv/bin/activate
+   pip install -r requirements.txt
+   ```
 
-# On Edge Device (192.0.0.123) (REQUIRED)
-ssh-keygen -t rsa -b 4096 -f ~/.ssh/edge_key
-ssh-copy-id -i ~/.ssh/edge_key.pub user1@192.0.0.124
-cp ~/.ssh/edge_key config/pkeys/edge.rsa
+2. **Configure devices** by copying and editing the template
+   ```bash
+   cp config/devices_template.yaml config/devices_config.yaml
+   # Edit devices_config.yaml with proper IP addresses and credentials
+   ```
 
-# Set permissions on both devices (CRITICAL)
-chmod 600 config/pkeys/*.rsa
-```
+3. **Setup SSH keys** for secure communication
+   ```bash
+   mkdir -p config/pkeys/
+   
+   # Generate and deploy keys on both devices
+   ssh-keygen -t rsa -b 4096 -f ~/.ssh/device_key
+   ssh-copy-id -i ~/.ssh/device_key.pub user@other_device_ip
+   cp ~/.ssh/device_key config/pkeys/keyname.rsa
+   chmod 600 config/pkeys/*.rsa
+   ```
 
-#### 4️⃣ **Prepare Data Directory** (REQUIRED)
-```bash
-# Create data structure (MANDATORY)
-
-# For the alexnetsplit.yaml, the images should be in:
-mkdir -p data/imagenet/sample_images
-
-# Copy your test images (REQUIRED - any JPEG images)
-cp /path/to/your/images/* data/imagenet/sample_images/
-
-# Download ImageNet class names (REQUIRED)
-wget -O data/imagenet/imagenet_classes.txt https://raw.githubusercontent.com/pytorch/pytorch/master/torch/hub/imagenet_classes.txt
-```
-
-#### 5️⃣ **Run the Experiment**
-```bash
-# On Server (192.0.0.124) - MUST START FIRST
-python server.py
-
-# On Edge Device (192.0.0.123) - START AFTER SERVER
-python host.py --config config/alexnetsplit.yaml
-```
-
-That's it! You should now see the split inference running between your devices. For detailed setup instructions, troubleshooting, and advanced configurations, continue reading below.
+4. **Execute the experiment**
+   ```bash
+   # On Server - must start first
+   python server.py
+   
+   # On Host/Edge device
+   python host.py --config config/alexnetsplit.yaml
+   ```
 
 ## Table of Contents
-- [Key Features](#key-features)
-- [Install](#install)
+- [Architecture Overview](#architecture-overview)
+- [Technical Components](#technical-components)
 - [Prerequisites](#prerequisites)
-  - [System Requirements](#system-requirements)
-  - [Software Installation](#software-installation)
-    - [For Linux/Ubuntu](#for-linuxubuntu)
-    - [For Windows](#for-windows)
-- [Quick Start Guide](#quick-start-guide)
-  - [Basic Setup](#1-basic-setup)
-  - [Pre-configured Experiments](#2-pre-configured-experiments)
-- [Detailed Setup Guide](#detailed-setup-guide)
-  - [Project Structure](#1-project-structure)
-  - [Device Configuration](#2-device-configuration)
-  - [Windows WSL Setup](#windows-wsl-setup)
-- [Extending `tracr`](#extending-tracr)
-  - [Adding Custom Models](#adding-custom-models)
-  - [Adding Custom Datasets](#adding-custom-datasets)
-  - [Configuration Files](#configuration-files)
+- [Detailed Setup](#detailed-setup-guide)
+- [Running Experiments](#running-experiments)
+- [Extending SplitTracr](#extending-splitracr)
+- [Performance Optimization](#performance-optimization)
 - [Troubleshooting](#troubleshooting)
-- [License](#license)
-- [Acknowledgements](#acknowledgements)
-- [Citation](#citation)
+- [License and Citation](#license)
 
-## Key Features
+## Architecture Overview
 
-- **Split Inference**: Distribute model computations between server and edge devices
-- **Adaptive Partitioning**: Automatically determine optimal split points based on device capabilities
-- **Multiple Model Support**: Pre-configured support for torchvision models and ultralytics YOLO models
-- **Custom Extensions**: Easy integration of custom models and datasets
+SplitTracr implements a distributed neural network execution architecture with a host-server paradigm:
 
-## Install
-
-Requires Python 3.10+
-
-```bash
-# Clone repository
-git clone https://github.com/nbovee/tracr.git
-cd tracr
-
-# Create and activate virtual environment
-python3 -m venv venv
-source venv/bin/activate  # Linux/Mac/WSL
-
-# Install dependencies
-pip install -r requirements.txt
 ```
+┌──────────────────┐                               ┌──────────────────┐
+│                  │                               │                  │
+│   Host (Edge)    │                               │  Server (Cloud)  │
+│                  │                               │                  │
+└──────┬───────────┘                               └──────┬───────────┘
+       │                                                  │
+       │  1. Load configuration                           │  1. Listen for connections
+       │  2. Initialize model                             │  2. Initialize matching model
+       │  3. Process input to split layer                 │  3. Wait for tensor data
+       │                                                  │
+       │          Intermediate Tensor                     │
+       │ ─────────────────────────────────────────────►   │
+       │                                                  │
+       │                                                  │  4. Process from split layer
+       │                                                  │  5. Generate results
+       │                                                  │
+       │          Results Tensor                          │
+       │ ◄─────────────────────────────────────────────   │
+       │                                                  │
+       │  7. Post-process output                          │
+       │  8. Generate visualization                       │
+       │                                                  │
+```
+
+The framework comprises three core technical components:
+
+1. **Model Hooking System**: Fine-grained instrumentation of neural network execution
+2. **Tensor Sharing Pipeline**: Efficient transmission of intermediate model outputs
+3. **Metrics Collection Framework**: Comprehensive performance data acquisition
+
+## Technical Components
+
+### 1. Model Hooking System
+
+The hooking system instruments neural networks at the layer level, providing:
+
+- **Layer-specific interception**: Pre-hooks and post-hooks at each layer boundary
+- **Dual execution modes**: Edge mode (start→split) and Server mode (split→end)
+- **Early termination mechanism**: Controlled execution cessation via hook exceptions
+- **Granular metrics**: Timing, energy, and memory data captured per layer
+
+### 2. Tensor Sharing Pipeline
+
+The tensor sharing pipeline implements a robust protocol for intermediate tensor transmission:
+
+```
+┌───────────────────┐                              ┌───────────────────┐
+│   Edge Device     │                              │      Server       │
+└────────┬──────────┘                              └────────┬──────────┘
+         │                                                  │
+         │ 1. Prepare tensor with metadata                  │
+         │                                                  │
+         │ 2. Compress tensor                               │
+         │    - Serialization                               │
+         │    - Blosc compression                           │
+         │                                                  │
+         │ 3. Encrypt compressed tensor (optional)          │
+         │    - AES-GCM with nonce                          │
+         │                                                  │
+         │                4. Send tensor                    │
+         │ ─────────────────────────────────────────────►   │
+         │                                                  │
+         │                                                  │ 5. Decrypt received tensor
+         │                                                  │
+         │                                                  │ 6. Decompress tensor
+         │                                                  │    - Blosc decompression
+         │                                                  │    - Deserialization
+         │                                                  │
+         │                                                  │ 7. Process tensor from
+         │                                                  │    split layer to output
+         │                                                  │
+         │               8. Return result                   │
+         │ ◄─────────────────────────────────────────────── │
+         │                                                  │
+         │ 9. Decrypt/decompress result                     │
+         │                                                  │
+         │ 10. Final processing                             │
+         │                                                  │
+```
+
+Key features include:
+- **Length-prefixed framing**: Robust message boundary handling
+- **Configurable compression**: ZSTD, LZ4, or BLOSCLZ with tensor-optimized filters
+- **Secure transmission (future work)**: Optional AES-GCM encryption
+- **Large tensor management**: Chunked transfer for tensors exceeding buffer limits
+
+### 3. Metrics Collection Framework
+
+The metrics framework captures comprehensive performance data:
+
+| Metric Type | Measurements |
+|-------------|-------------|
+| Timing | Per-layer latency, network transfer time, end-to-end latency |
+| Energy | Power consumption, energy efficiency, communication energy cost |
+| Memory | Peak utilization, tensor dimensions, bandwidth requirements |
+| Network | Data volume, compression efficacy, throughput metrics |
+| Hardware | Processor utilization, thermal characteristics, clock frequency |
 
 ## Prerequisites
 
 ### System Requirements
-- Python 3.10 or higher
-- SSH client and server (`openssh-client` and `openssh-server`)
-- CUDA toolkit (for GPU support)
+- Python 3.10+
+- SSH client/server (`openssh-client`/`openssh-server`)
+- CUDA toolkit (recommended for server)
 
 ### Software Installation
 
-#### For Linux/Ubuntu:
+#### Linux/Ubuntu:
 ```bash
-# Update package list
-sudo apt update
-
-# Install SSH client and server
-sudo apt install openssh-server openssh-client
-
-# Install CUDA toolkit (if using GPU)
-# Visit https://developer.nvidia.com/cuda-downloads for latest instructions
+sudo apt update && sudo apt install -y openssh-server openssh-client
+# CUDA: https://developer.nvidia.com/cuda-downloads
 ```
 
-#### For Windows:
-1. Install OpenSSH:
-   - Open `Settings > Apps > Optional Features`
-   - Add `OpenSSH Client` and `OpenSSH Server`
-   - Or follow [Microsoft's OpenSSH guide](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=gui)
+#### Windows:
+```powershell
+# Enable OpenSSH in Settings > Optional Features
+# OR
+Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 
-2. Install WSL2 (if needed):
-   ```powershell
-   wsl --install
-   ```
-
-## Quick Start Guide
-
-### 1. Basic Setup
-
-`tracr` can be run in two modes: distributed (server-host) or local.
-
-#### Option A: Distributed Mode (Server-Host)
-Run the experiment across two devices:
-
-1. On the server machine:
-```bash
-python server.py
+# WSL2 if needed
+wsl --install
 ```
-
-2. On the host machine:
-```bash
-python host.py --config config/alexnetsplit.yaml
-```
-
-#### Option B: Local Mode
-Run the entire experiment on a single device:
-```bash
-python server.py --local --config config/alexnetsplit.yaml
-```
-
-### 2. Pre-configured Experiments
-
-We provide ready-to-use configurations for common scenarios:
-
-#### Classification Models
-```bash
-# Run AlexNet split inference
-python host.py --config config/alexnetsplit.yaml
-
-# Run ResNet split inference
-python host.py --config config/resnetsplit.yaml
-
-# Run VGG split inference
-python host.py --config config/vggsplit.yaml
-
-# Run EfficientNet split inference
-python host.py --config config/efficientnet_split.yaml
-
-# Run MobileNet split inference
-python host.py --config config/mobilenetsplit.yaml
-```
-
-#### Object Detection Models
-```bash
-# Run YOLOv8 split inference
-python host.py --config config/yolov8split.yaml
-
-# Run YOLOv5 split inference
-python host.py --config config/yolov5split.yaml
-```
-
-> [!Note]
-> Each configuration file contains optimized settings for the specific model and dataset combination. You can use these as templates for creating your own configurations.
 
 ## Detailed Setup Guide
 
-### 1. Project Structure
+### Project Structure
 ```
 tracr/
 ├── config/                # Configuration files
@@ -246,318 +226,153 @@ tracr/
 ├── src/                   # Source code
 │   ├── api/               # Core API components
 │   ├── experiment_design/ # Experiment implementations
-│   ├── interface/         # API bridges
 │   └── utils/             # Utility functions
-├── tests/                 # Test suite
 ├── host.py                # Host device entry point
 └── server.py              # Server entry point
 ```
 
-### 2. Device Configuration
+## Running Experiments
 
-#### A. SSH Key Setup
-Generate and exchange SSH keys between devices:
+### Distributed Execution
 
+1. Initialize server:
 ```bash
-# On Server Device
-ssh-keygen -t rsa -b 4096 -f ~/.ssh/server_key
-# Enter passphrase (optional)
-ssh-copy-id -i ~/.ssh/server_key.pub user@participant_ip
-
-# On Participant Device
-ssh-keygen -t rsa -b 4096 -f ~/.ssh/participant_key
-ssh-copy-id -i ~/.ssh/participant_key.pub user@server_ip
+python server.py
 ```
 
-#### B. Key Installation
+2. Execute on host:
 ```bash
-# Create keys directory
-mkdir -p config/pkeys/
-
-# Copy private keys
-cp ~/.ssh/server_key config/pkeys/server_to_participant.rsa
-cp ~/.ssh/participant_key config/pkeys/participant_to_server.rsa
-
-# Set proper permissions
-chmod 600 config/pkeys/*.rsa
+python host.py -c config/alexnetsplit.yaml
 ```
 
-#### C. Device Configuration
-Create `config/devices_config.yaml`:
-```yaml
-devices:
-  - device_type: SERVER
-    connection_params:
-      - host: <server_ip>        # e.g., 192.168.1.100
-        user: <username>         # your SSH username
-        pkey_fp: server_key.rsa
-        default: true
+### Local Execution
 
-  - device_type: PARTICIPANT
-    connection_params:
-      - host: <participant_ip>   # e.g., 192.168.1.101
-        user: <username>
-        pkey_fp: participant_key.rsa
-        default: true
-```
-
-### Windows WSL Setup
-
-> [!Note]
-> Required only for Windows users running tracr through WSL.
-
-<details>
-<summary>Click to expand WSL setup instructions</summary>
-
-#### 1. WSL Network Configuration
-Check your WSL network mount:
+For single-device testing:
 ```bash
-mount | grep '^C:'
+python server.py -l -c config/alexnetsplit.yaml
 ```
 
-Configure WSL in `/etc/wsl.conf`:
-```bash
-[automount]
-enabled = true
-options = "metadata,umask=22,fmask=11"
-```
+### Pre-configured Models
 
-#### 2. Port Forwarding Setup
-Run in PowerShell as Administrator:
-```powershell
-# Get WSL IP address
-wsl hostname -I
+SplitTracr includes optimized configurations for:
 
-# Set up port forwarding
-netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=22 connectaddress=<wsl_ip> connectport=22
-netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=12345 connectaddress=<wsl_ip> connectport=12345
+**Classification:**
+- AlexNet (`alexnetsplit.yaml`)
+- ResNet (`resnetsplit.yaml`)
+- VGG (`vggsplit.yaml`)
+- EfficientNet (`efficientnet_split.yaml`)
+- MobileNet (`mobilenetsplit.yaml`)
 
-# Configure firewall
-New-NetFirewallRule -DisplayName "WSL SSH Port 22" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 22
-New-NetFirewallRule -DisplayName "WSL SSH Port 12345" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 12345
-```
+**Object Detection:**
+- YOLOv8 (`yolov8split.yaml`)
+- YOLOv5 (`yolov5split.yaml`)
 
-#### 3. SSH Service
-```bash
-sudo service ssh restart
-```
-</details>
+## Extending SplitTracr
 
-## Extending `tracr`
+### Custom Model Integration
 
-### Adding Custom Models
-
-There are several ways to add custom models to `tracr`:
-
-#### 1. Using the Model Registry Decorator
-
-The simplest way is to use the `@ModelRegistry.register` decorator:
+Register custom models using the decorator pattern:
 
 ```python
-from torch import nn, Tensor
-from typing import Dict, Any
 from experiment_design.models.registry import ModelRegistry
 
 @ModelRegistry.register("my_custom_model")
 class MyCustomModel(nn.Module):
     def __init__(self, model_config: Dict[str, Any], **kwargs) -> None:
         super().__init__()
-        # Your model initialization
         self.model = nn.Sequential(
-            # Your model layers
+            # Model architecture
         )
 
     def forward(self, x: Tensor) -> Tensor:
         return self.model(x)
 ```
 
-#### 2. Adding Custom Post-Processing
+### Custom Dataset Implementation
 
-You can either use pre-defined processors or create custom ones in `src/api/inference_utils.py`:
-
-```python
-from src.api.inference_utils import ModelProcessor, ModelProcessorFactory
-
-# Option 1: Use pre-defined processors
-# For classification models (ImageNet-style):
-"model_name": "my_classification_model"  # Will use ImageNetProcessor
-
-# For detection models (YOLO-style):
-"model_name": "my_detection_model"  # Will use YOLOProcessor
-
-# Option 2: Create custom processor
-class MyCustomProcessor(ModelProcessor):
-    def __init__(self, class_names: List[str], vis_config: VisualizationConfig):
-        self.class_names = class_names
-        self.vis_config = vis_config
-
-    def process_output(self, output: torch.Tensor, original_size: Tuple[int, int]) -> Any:
-        # Your custom processing logic
-        return processed_result
-
-    def visualize_result(self, image: Image.Image, result: Any) -> Image.Image:
-        # Your custom visualization logic
-        return annotated_image
-
-# Register your processor
-ModelProcessorFactory._PROCESSORS.update({
-    "my_model": MyCustomProcessor
-})
-```
-
-#### 3. Adding Pre-trained Model Support
-
-To add support for pre-trained weights and dataset-specific configurations, update the mappings in `src/experiment_design/models/templates.py`:
+Create dataset classes in the appropriate module:
 
 ```python
-# Add dataset-specific weights
-DATASET_WEIGHTS_MAP.update({
-    "my_dataset": "MY_DATASET_WEIGHTS_V1"
-})
-
-# Add model-specific weights for different datasets
-MODEL_WEIGHTS_MAP.update({
-    "my_custom_model": {
-        "my_dataset": "MY_DATASET_WEIGHTS_V1",
-        "imagenet": "IMAGENET1K_V1"
-    }
-})
-
-# Add head type mapping if your model has a custom classification head
-MODEL_HEAD_TYPES.update({
-    "my_head_attr": ["my_custom_model"]
-})
-```
-
-#### 4. Configuration File
-
-Create a configuration file for your model in `config/`:
-
-```yaml
-# config/my_custom_split.yaml
-model:
-  model_name: my_custom_model
-  pretrained: true
-  weight_path: path/to/weights.pt  # Optional
-  input_size: [3, 224, 224]
-  split_layer: 5
-  num_classes: 10  # Will automatically adjust the model head
-
-dataset:
-  module: my_dataset
-  class: MyDataset
-  args:
-    root: data/my_dataset
-```
-
-#### 5. Using External Model Libraries
-
-For models from popular libraries (torchvision, ultralytics, etc.), you can use them directly by specifying the model name in the config:
-
-```yaml
-model:
-  model_name: resnet50  # or yolov8s, vit_b_16, etc.
-  pretrained: true
-  num_classes: 10  # Will automatically adjust the model architecture
-```
-
-The framework will:
-- Load the appropriate pre-trained weights
-- Adjust the model architecture for your dataset
-- Handle different PyTorch versions
-- Provide proper logging
-- Use appropriate post-processing based on model type
-
-> [!Note]
-> - Custom models should inherit from `nn.Module`
-> - The `model_config` parameter in `__init__` is required
-> - The registry supports automatic head adjustment for different numbers of classes
-> - Pre-trained weight handling is automatic if configured in `templates.py`
-> - Post-processing is handled automatically for common model types (classification, detection)
-> - Custom post-processing can be added by extending `ModelProcessor` class
-
-### Adding Custom Datasets
-
-1. Create dataset class in `src/experiment_design/datasets/<dataset_name>.py`:
-```python
-from .base import BaseDataset
+from experiment_design.datasets.base import BaseDataset
 
 class MyDataset(BaseDataset):
     def __init__(self, root):
         super().__init__(root)
-        # Your dataset initialization
+        # Dataset initialization
 ```
 
-### Configuration Files
+## Performance Optimization
 
-Create new model configurations in `config/`:
+### Compression Configuration
+
+Optimize tensor transmission with compression parameters:
+
 ```yaml
-model:
-  name: my_custom_model
-  split_layer: 5
-  batch_size: 32
-
-dataset:
-  module: my_dataset
-  class: MyDataset
-  args:
-    root: data/my_dataset
+compression:
+  clevel: 3                # Compression level (1-9)
+  filter: "SHUFFLE"        # Filter optimized for tensors
+  codec: "ZSTD"            # Compression algorithm
 ```
+
+### Split Point Selection
+
+Select optimal split points based on:
+1. **Computational equilibrium**: Balance processing loads between devices
+2. **Tensor dimensionality**: Minimize intermediate tensor size
+3. **Layer characteristics**: Avoid splitting recursive or residual blocks
 
 ## Troubleshooting
 
 <details>
 <summary>Connection Issues</summary>
 
-- **SSH Key Problems**:
-  - Verify key permissions: `ls -l config/pkeys/*.rsa`
-  - Test manual SSH: `ssh -i config/pkeys/server_key.rsa user@host`
-  - Check SSH service: `sudo systemctl status ssh`
+- **SSH Key Configuration**:
+  - Verify permissions: `ls -l config/pkeys/*.rsa`
+  - Test connectivity: `ssh -i config/pkeys/key.rsa user@host`
+  - Check SSH daemon: `systemctl status sshd`
 
-- **Network Issues**:
-  - Confirm devices are on same network
-  - Check firewall settings
-  - Verify ports are not blocked
+- **Network Configuration**:
+  - Verify network connectivity between devices
+  - Ensure ports are open in firewall settings
+  - Check for IP address conflicts
 </details>
 
 <details>
-<summary>Model Issues</summary>
+<summary>Model Execution Problems</summary>
 
-- **Split Layer Problems**:
-  - Ensure `split_layer` is less than total layers
-  - Verify layer compatibility
-  - Check memory requirements
+- **Split Layer Configuration**:
+  - Ensure split_layer < model depth
+  - Verify layer compatibility for splitting
+  - Check memory requirements for selected split
 
-- **Dataset Issues**:
-  - Confirm correct paths in config
-  - Verify dataset format
-  - Check file permissions
+- **Dataset Configuration**:
+  - Confirm path accuracy in configuration
+  - Verify data format compatibility
+  - Check permissions on data directories
 </details>
 
 <details>
-<summary>Performance Issues</summary>
+<summary>Performance Optimization</summary>
 
-- **Resource Usage**:
-  - Monitor GPU memory: `nvidia-smi`
-  - Check CPU usage: `top`
-  - Verify network bandwidth
+- **Resource Monitoring**:
+  - GPU monitoring: `nvidia-smi -l 1`
+  - CPU utilization: `top` or `htop`
+  - Network throughput: `iftop`
   
-- **Optimization Tips**:
-  - Adjust batch size
-  - Modify worker count
-  - Consider split point optimization
+- **Optimization Strategies**:
+  - Adjust batch size for memory constraints
+  - Modify worker thread count
+  - Experiment with different split points
 </details>
 
 ## License
 
 This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
 
-## Acknowledgements
-
 ## Citation
 
 ```bibtex
-@software{tracr2024,
+@software{tracr2025,
   author = {Nick Bovee, Izhar Ali, Suraj Bitla, Gopi Patapanchala, Shen-Shyang Ho},
   title = {SplitTracr: An Experimental Test-bed for Cooperative Inference using Split Computing},
   year = {2024},

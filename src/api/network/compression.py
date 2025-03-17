@@ -1,8 +1,8 @@
 """
-Data compression utilities for network transmission of tensors.
+Tensor compression utilities for network transmission in split computing.
 
-This module provides utilities for compressing and decompressing data (primarily tensors)
-for efficient network transmission in split computing scenarios.
+This module provides specialized compression tools for neural network tensors
+to optimize network transmission in distributed computation environments.
 """
 
 from dataclasses import dataclass
@@ -12,70 +12,79 @@ import blosc2  # type: ignore
 import logging
 import pickle
 import socket
-import zlib
 
-from ..core import NetworkError
 from .protocols import (
     LENGTH_PREFIX_SIZE,
     CHUNK_SIZE,
     HIGHEST_PROTOCOL,
 )
+from ..core import NetworkError
 
 logger = logging.getLogger("split_computing_logger")
 
 
 @dataclass(frozen=True)
 class CompressionConfig:
-    """Configuration settings for Blosc2 compression."""
+    """Configuration settings for tensor compression optimization."""
 
-    clevel: int  # Compression level (0-9)
-    filter: str  # Filter to be used during compression (e.g., "NOSHUFFLE")
-    codec: str  # Codec to be used for compression (e.g., "ZSTD")
+    clevel: int  # Compression level (0=fast/low, 9=slow/high)
+    filter: str  # Data preparation filter (e.g., "NOSHUFFLE", "SHUFFLE", "BITSHUFFLE")
+    codec: str  # Compression algorithm (e.g., "ZSTD", "LZ4", "BLOSCLZ")
 
     def __post_init__(self) -> None:
-        """Validate compression configuration parameters."""
-        # Validate compression level is between 0 and 9.
+        """Validate compression configuration parameters for tensor optimization."""
         if not 0 <= self.clevel <= 9:
             raise ValueError("Compression level must be between 0 and 9")
-        # Check if the provided filter is a valid member of blosc2.Filter.
+
         if self.filter not in blosc2.Filter.__members__:
             raise ValueError(f"Invalid filter: {self.filter}")
-        # Check if the provided codec is a valid member of blosc2.Codec.
+
         if self.codec not in blosc2.Codec.__members__:
             raise ValueError(f"Invalid codec: {self.codec}")
 
 
 class CompressionError(Exception):
-    """Base exception for compression-related errors."""
+    """Base exception for tensor compression-related errors."""
 
     pass
 
 
 class DecompressionError(CompressionError):
-    """Exception raised when decompression fails."""
+    """Exception raised when tensor decompression fails."""
 
     pass
 
 
 class DataCompression:
-    """Handles network data compression and communication."""
+    """Handles advanced tensor compression for distributed neural network computation."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
-        """Initialize compression handler with configuration."""
+        """Initialize tensor compression engine with optimal configuration."""
         self.config = CompressionConfig(
             clevel=config.get("clevel", 3),
             filter=config.get("filter", "NOSHUFFLE"),
             codec=config.get("codec", "ZSTD"),
         )
-        # Resolve the actual enum values from the blosc2 library.
+        # Map string parameters to actual blosc2 enum values for direct API use
         self._filter = blosc2.Filter[self.config.filter]
         self._codec = blosc2.Codec[self.config.codec]
 
     def compress_data(self, data: Any) -> Tuple[bytes, int]:
-        """Compress pickle-serializable data using Blosc2 with configured parameters.
-        Returns a tuple of the compressed data and its length."""
+        """
+        Compress tensor data for network transmission using Blosc2.
+
+        === TENSOR SHARING - COMPRESSION PHASE ===
+        Optimizes neural network tensors for network transmission by:
+        1. Serializing the tensor data structure with pickle
+        2. Applying compression with tuned parameters for tensor data patterns
+
+        Returns a tuple of (compressed_bytes, compressed_length)
+        """
         try:
+            # Serialize tensor to bytes using highest available pickle protocol
             serialized_data = pickle.dumps(data, protocol=HIGHEST_PROTOCOL)
+
+            # Apply Blosc2 compression with configured parameters optimized for tensors
             compressed_data = blosc2.compress(
                 serialized_data,
                 clevel=self.config.clevel,
@@ -84,84 +93,127 @@ class DataCompression:
             )
             return compressed_data, len(compressed_data)
         except Exception as e:
-            logger.error(f"Compression failed: {e}")
-            raise CompressionError(f"Failed to compress data: {e}")
+            logger.error(f"Tensor compression failed: {e}")
+            raise CompressionError(f"Failed to compress tensor data: {e}")
 
     def decompress_data(self, compressed_data: bytes) -> Any:
-        """Decompress Blosc2-compressed data and unpickle it to return the original object."""
+        """
+        Decompress tensor data received over network.
+
+        === TENSOR SHARING - DECOMPRESSION PHASE ===
+        Recovers the original tensor structure from compressed network data by:
+        1. Applying Blosc2 decompression to restore serialized bytes
+        2. Deserializing the data back to its original tensor structure
+        """
         try:
+            # Decompress the bytes using Blosc2
             decompressed = blosc2.decompress(compressed_data)
+
+            # Deserialize back to original tensor data structure
             return pickle.loads(decompressed)
         except Exception as e:
-            logger.error(f"Decompression failed: {e}")
-            raise DecompressionError(f"Failed to decompress data: {e}")
+            logger.error(f"Tensor decompression failed: {e}")
+            raise DecompressionError(f"Failed to decompress tensor data: {e}")
 
     @staticmethod
     def _receive_chunk(conn: socket.socket, size: int) -> bytes:
-        """Receive a specific amount of data from a socket.
-        If no data is received, it indicates the connection is broken."""
+        """
+        Receive a specific sized chunk of tensor data from a socket.
+
+        This internal method provides reliable data reception by checking for
+        socket disconnections during tensor transfer.
+        """
         chunk = conn.recv(size)
         if not chunk:
-            # If recv returns an empty bytes object, the connection is closed.
-            raise NetworkError("Socket connection broken")
+            # Empty response indicates closed connection
+            raise NetworkError("Socket connection broken during tensor transmission")
         return chunk
 
     def receive_full_message(self, conn: socket.socket, expected_length: int) -> bytes:
-        """Receive a complete message of specified length from a socket.
-        If the message size is larger than a single chunk, receive it in pieces."""
+        """
+        Receive complete tensor data of specified length from network connection.
+
+        === TENSOR SHARING - RECEPTION PHASE ===
+        Handles large tensor reception by:
+        1. Determining if the tensor fits in a single network packet
+        2. For larger tensors, receiving and assembling multiple chunks
+        3. Ensuring all bytes are received completely before processing
+
+        This method is critical for reliable tensor transmission as deep learning
+        tensors can easily exceed single packet sizes.
+        """
         if expected_length <= CHUNK_SIZE:
-            # If the expected message size fits in one chunk, receive it directly.
+            # Small tensor can be received in one operation
             return self._receive_chunk(conn, expected_length)
 
-        # Prepare a mutable byte array to hold the complete message.
+        # Allocate space for the complete tensor data
         data_chunks = bytearray(expected_length)
         bytes_received = 0
 
-        # Loop until the entire message is received.
+        # Receive tensor in chunks until complete
         while bytes_received < expected_length:
             remaining = expected_length - bytes_received
-            # Determine the size of the next chunk.
             chunk_size = min(remaining, CHUNK_SIZE)
 
             try:
-                # Receive the next chunk from the socket.
+                # Get next chunk of tensor data
                 chunk = self._receive_chunk(conn, chunk_size)
-                # Insert the chunk into the correct position in the bytearray.
+
+                # Insert chunk at the correct position in the buffer
                 data_chunks[bytes_received : bytes_received + len(chunk)] = chunk
                 bytes_received += len(chunk)
             except Exception as e:
-                raise NetworkError(f"Failed to receive message: {e}")
+                raise NetworkError(f"Failed to receive tensor data: {e}")
 
-        # Convert the bytearray back to immutable bytes and return.
+        # Convert to immutable bytes before returning
         return bytes(data_chunks)
 
     def receive_data(self, conn: socket.socket) -> Optional[Dict[str, Any]]:
-        """Receive and decompress length-prefixed data from a socket.
-        First, the length is read (using a fixed-size prefix), then the complete compressed message.
+        """
+        Receive and decompress tensor data with length-prefixed framing.
+
+        === TENSOR SHARING - COMPLETE RECEPTION SEQUENCE ===
+        Implements a reliable tensor reception protocol:
+        1. Reads the length prefix to determine tensor size
+        2. Receives the complete tensor using chunked transfers if needed
+        3. Decompresses and deserializes the tensor data
+
+        Returns the reconstructed tensor data structure or None if reception fails.
         """
         try:
-            # Receive the length prefix to know how many bytes to expect.
+            # First read the length prefix to determine tensor size
             length_data = self._receive_chunk(conn, LENGTH_PREFIX_SIZE)
             expected_length = int.from_bytes(length_data, "big")
-            # Receive the full compressed message based on the expected length.
+
+            # Receive the complete compressed tensor
             compressed_data = self.receive_full_message(conn, expected_length)
-            # Decompress the data and return the original object.
+
+            # Decompress and return the tensor data
             return cast(Dict[str, Any], self.decompress_data(compressed_data))
         except Exception as e:
-            logger.error(f"Error receiving data: {e}")
-            # In case of any error, return None.
+            logger.error(f"Error receiving tensor data: {e}")
             return None
 
     def send_result(self, conn: socket.socket, result: Any) -> None:
-        """Compress and send pickle-serializable data as length-prefixed bytes over a socket.
-        The length prefix ensures the receiver knows how many bytes to expect."""
+        """
+        Compress and send tensor result data over network connection.
+
+        === TENSOR SHARING - TRANSMISSION PHASE ===
+        Implements reliable tensor transmission protocol:
+        1. Compresses the tensor result
+        2. Sends the tensor size as a length prefix (for proper framing)
+        3. Sends the compressed tensor data
+
+        This method is used for transmitting processed tensor results back to clients.
+        """
         try:
-            # Compress the result and get the size of the compressed data.
+            # Compress the tensor result
             compressed, size = self.compress_data(result)
-            # Send the length prefix as a big-endian integer.
+
+            # Send length prefix first for proper framing
             conn.sendall(size.to_bytes(LENGTH_PREFIX_SIZE, "big"))
-            # Send the actual compressed data.
+
+            # Send the compressed tensor data
             conn.sendall(compressed)
         except Exception as e:
-            # Raise a NetworkError if sending fails.
-            raise NetworkError(f"Failed to send result: {e}")
+            raise NetworkError(f"Failed to send tensor result: {e}")

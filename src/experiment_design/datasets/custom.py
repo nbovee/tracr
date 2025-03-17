@@ -39,7 +39,6 @@ import torchvision.transforms as T
 
 from .core import (
     BaseDataset,
-    DatasetRegistry,
     TransformFactory,
     NormalizationParams,
     CollateRegistry,
@@ -55,15 +54,6 @@ class CustomDataset(BaseDataset):
 
     This class demonstrates how to implement a custom dataset by inheriting
     from BaseDataset and implementing the required methods.
-
-    Attributes:
-        root: Root directory for the dataset
-        img_dir: Directory containing the images
-        transform: Transforms to apply to images
-        classes: List of class names
-        class_to_idx: Mapping from class names to indices
-        img_files: List of image file paths
-        labels: List of labels corresponding to the image files
     """
 
     def __init__(
@@ -77,21 +67,7 @@ class CustomDataset(BaseDataset):
         create_dirs: bool = False,
         **kwargs,
     ) -> None:
-        """Initialize the custom dataset.
-
-        Args:
-            root: Root directory for the dataset
-            img_directory: Directory containing the images
-            transform: Transforms to apply to images
-            target_transform: Transforms to apply to labels
-            max_samples: Maximum number of samples to load (-1 for all)
-            class_names: Path to file with class names or list of class names
-            create_dirs: Whether to create directories if they don't exist
-            **kwargs: Additional arguments for custom initialization
-
-        Raises:
-            DatasetPathError: If required paths don't exist and create_dirs is False
-        """
+        """Initialize the custom dataset."""
         super().__init__(
             root=root,
             transform=transform,
@@ -124,15 +100,7 @@ class CustomDataset(BaseDataset):
     def _initialize_paths(
         self, root: Union[str, Path], img_directory: Union[str, Path]
     ) -> None:
-        """Initialize and validate paths.
-
-        Args:
-            root: Root directory for the dataset
-            img_directory: Directory containing the images
-
-        Raises:
-            DatasetPathError: If required paths don't exist
-        """
+        """Initialize and validate paths."""
         # Validate root directory
         self._validate_root_directory(root)
 
@@ -145,8 +113,10 @@ class CustomDataset(BaseDataset):
     def _load_classes(self, class_names: Optional[Union[str, Path, List[str]]]) -> None:
         """Load class names and create mapping.
 
-        Args:
-            class_names: Path to file with class names or list of class names
+        Supports three sources of class information:
+        1. Explicit list of class names
+        2. File containing class names (one per line)
+        3. Subdirectory names within the image directory
         """
         # Option 1: Classes from provided list
         if isinstance(class_names, list):
@@ -174,7 +144,9 @@ class CustomDataset(BaseDataset):
     def _load_data(self) -> None:
         """Load image files and labels.
 
-        This method should be customized for your dataset structure.
+        Handles two directory structures:
+        1. Class-based subdirectories (ImageFolder style)
+        2. Flat directory with all images
         """
         # If the dataset is organized in class subdirectories (ImageFolder style)
         if all(
@@ -204,20 +176,7 @@ class CustomDataset(BaseDataset):
             self.labels = [0] * len(self.img_files)
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, int, str]:
-        """Get item at the specified index.
-
-        Args:
-            index: Index of the item to get
-
-        Returns:
-            Tuple containing:
-            - Transformed image tensor
-            - Class label (integer)
-            - Image filename
-
-        Raises:
-            DatasetIndexError: If index is out of bounds
-        """
+        """Get item at the specified index."""
         # Validate index
         self._validate_index(index)
 
@@ -242,32 +201,19 @@ class CustomDataset(BaseDataset):
             )
 
     def get_class_name(self, class_idx: int) -> str:
-        """Get class name for a given class index.
-
-        Args:
-            class_idx: Index of the class
-
-        Returns:
-            Class name as string
-        """
+        """Get class name for a given class index."""
         if 0 <= class_idx < len(self.classes):
             return self.classes[class_idx]
         return "unknown"
 
 
-# Example of a custom transform for your dataset
 def create_custom_transform(
     img_size: int = 224, normalization: Optional[NormalizationParams] = None, **kwargs
 ) -> Callable:
     """Create a custom transform for your dataset.
 
-    Args:
-        img_size: Size to resize images to
-        normalization: Normalization parameters (mean, std)
-        **kwargs: Additional arguments for custom transforms
-
-    Returns:
-        Transform composition
+    Builds a transform pipeline with configurable resizing and normalization
+    parameters. Uses ImageNet normalization by default if none specified.
     """
     # Default normalization if not provided
     if normalization is None:
@@ -295,15 +241,11 @@ def create_custom_transform(
     return transform
 
 
-# Example of a custom collate function
 def custom_collate(batch: List[Tuple]) -> Dict[str, Any]:
     """Custom collate function for your dataset.
 
-    Args:
-        batch: Batch of samples from the dataset
-
-    Returns:
-        Dictionary with batched data
+    Collates individual samples into a dictionary-based batch
+    with separate keys for images, labels, and metadata.
     """
     images, labels, filenames = zip(*batch)
 
@@ -328,22 +270,7 @@ def load_custom_dataset(
     class_names: Optional[Union[str, Path, List[str]]] = None,
     **kwargs,
 ) -> CustomDataset:
-    """Factory function to create a CustomDataset.
-
-    Args:
-        root: Root directory for the dataset
-        img_directory: Directory containing the images
-        transform: Transform to apply to images
-        max_samples: Maximum number of samples to load (-1 for all)
-        class_names: Path to file with class names or list of class names
-        **kwargs: Additional arguments to pass to the dataset constructor
-
-    Returns:
-        CustomDataset instance
-
-    Raises:
-        DatasetPathError: If required paths don't exist
-    """
+    """Factory function to create a CustomDataset."""
     logger.info(f"Loading CustomDataset from {root}/{img_directory}")
 
     # Configure transform if not provided
@@ -361,17 +288,12 @@ def load_custom_dataset(
     )
 
 
-# Register with the dataset registry (calling this without args will register the standard way)
-# from .core import DatasetRegistry
-# DatasetRegistry.register_dataset("custom")
-
-
-# Example of how to register a custom dataset with the registry manually
 def register_custom_dataset() -> None:
     """Register the custom dataset with the dataset registry.
 
-    This demonstrates the manual registration process. In most cases,
-    you can simply call DatasetRegistry.register_dataset("dataset_name").
+    Demonstrates both simple and advanced registration methods:
+    1. Simple: Just specify the dataset name to use conventions
+    2. Advanced: Full manual registration with metadata
     """
     from .core import DatasetRegistry
 

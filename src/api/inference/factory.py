@@ -1,4 +1,4 @@
-"""Factory for creating model-specific processors."""
+"""Factory for creating model-specific processors"""
 
 import logging
 from typing import Any, Dict, List, Type
@@ -10,13 +10,15 @@ logger = logging.getLogger("split_computing_logger")
 
 
 class ModelProcessorFactory:
-    """Factory for creating model-specific processors based on model configuration.
+    """Factory for creating model-specific tensor processors.
 
-    This class provides methods to instantiate the appropriate ModelProcessor
-    for a given model type, handling configuration and initialization details.
+    This class dynamically instantiates the appropriate processors for handling
+    model-specific tensor operations in split computing scenarios. Each processor
+    is responsible for a specific tensor transformation pipeline tailored to its
+    corresponding model architecture.
     """
 
-    # Mapping of keywords to processor classes
+    # Processor mapping for tensor transformation selection
     _PROCESSORS: Dict[str, Type[ModelProcessor]] = {
         "alexnet": ImageNetProcessor,
         "yolo": YOLOProcessor,
@@ -31,26 +33,23 @@ class ModelProcessorFactory:
     def create_processor(
         cls, model_config: Dict[str, Any], class_names: List[str]
     ) -> ModelProcessor:
-        """Create and return the appropriate model processor.
+        """Create and return the appropriate tensor processing pipeline.
 
-        This method examines the model name to determine the processor type,
-        then instantiates and configures the processor with the appropriate
-        settings.
+        === TENSOR PROCESSING SELECTION ===
+        This method selects the appropriate tensor transformation pipeline based on
+        the model architecture. Different models produce tensors with distinct
+        characteristics that require specialized processing approaches:
 
-        Args:
-            model_config: Dictionary containing model configuration.
-                Expected keys include 'model_name', and potentially
-                'input_size', 'conf_threshold', 'iou_threshold', 'font_size'.
-            class_names: List of class names for the model.
+        - Classification models (ResNet, VGG, etc.): Transform logit tensors to class predictions
+        - Detection models (YOLO): Transform anchor and bounding box tensors to object detections
 
-        Returns:
-            An initialized ModelProcessor instance appropriate for the model.
-            Defaults to ImageNetProcessor if no specific match is found.
+        The factory ensures that tensor outputs are processed correctly according to
+        their expected format and semantics within the split computing architecture.
         """
         model_name = model_config["model_name"].lower()
         processor_class = None
 
-        # Iterate through mappings to find a matching processor
+        # Select the appropriate tensor processor based on model architecture
         for key, processor in cls._PROCESSORS.items():
             if key in model_name:
                 processor_class = processor
@@ -62,19 +61,21 @@ class ModelProcessorFactory:
             )
             processor_class = ImageNetProcessor
 
-        # Build visualization configuration
+        # Configure visualization parameters for tensor output rendering
         vis_config = VisualizationConfig(
             font_size=model_config.get("font_size", 10),
         )
 
-        # If the processor is YOLO, also create a detection configuration
+        # For detection models, configure tensor transformation parameters
         if processor_class == YOLOProcessor:
             det_config = DetectionConfig(
+                # Configure tensor dimensions (height, width)
                 input_size=tuple(model_config["input_size"][1:]),
+                # Configure tensor filtering thresholds
                 conf_threshold=model_config.get("conf_threshold", 0.25),
                 iou_threshold=model_config.get("iou_threshold", 0.45),
             )
             return processor_class(class_names, det_config, vis_config)
 
-        # Otherwise, create the processor using only the visualization configuration
+        # For classification models, only visualization config is needed
         return processor_class(class_names, vis_config)

@@ -1,4 +1,4 @@
-"""ImageNet dataset implementation."""
+"""ImageNet dataset implementation"""
 
 import json
 import logging
@@ -34,20 +34,7 @@ class ImageNetDataset(BaseDataset):
         class_names: Optional[str] = None,
         img_directory: Optional[str] = None,
     ) -> None:
-        """Initialize ImageNet dataset with specified parameters.
-
-        Args:
-            root: Root directory containing dataset files
-            transform: Callable to transform images
-            target_transform: Callable to transform labels
-            max_samples: Maximum number of samples to load (-1 for all)
-            create_dirs: Whether to create directories if they don't exist
-            class_names: Path to file containing class names (one per line)
-            img_directory: Directory containing image files
-
-        Raises:
-            DatasetPathError: If required directories don't exist
-        """
+        """Initialize ImageNet dataset with specified parameters."""
         super().__init__(root, transform, target_transform, max_samples)
         self._initialize_paths(root, class_names, img_directory, create_dirs)
         if not self.transform:
@@ -61,17 +48,7 @@ class ImageNetDataset(BaseDataset):
         img_directory: Optional[str],
         create_dirs: bool,
     ) -> None:
-        """Set up dataset paths and verify existence.
-
-        Args:
-            root: Root directory path
-            class_names: Path to class names file
-            img_directory: Directory containing images
-            create_dirs: Whether to create missing directories
-
-        Raises:
-            DatasetPathError: If required paths don't exist and create_dirs is False
-        """
+        """Set up dataset paths and verify existence."""
         # Handle root directory
         self.root = Path(root) if root else None
         if self.root is None:
@@ -99,11 +76,7 @@ class ImageNetDataset(BaseDataset):
             raise DatasetPathError("Image directory not found", path=str(self.img_dir))
 
     def _initialize_dataset(self, max_samples: int) -> None:
-        """Initialize dataset state and load necessary data.
-
-        Args:
-            max_samples: Maximum number of samples to load
-        """
+        """Initialize dataset state and load necessary data."""
         self.max_samples = max_samples
         self.imagenet_class_mapping: Dict[str, int] = {}
         self.class_id_to_name: Dict[str, str] = {}
@@ -115,11 +88,7 @@ class ImageNetDataset(BaseDataset):
         self.length = len(self.img_files)
 
     def _load_classes(self) -> List[str]:
-        """Load and return class names from file.
-
-        Returns:
-            List of class names
-        """
+        """Load class names from file."""
         if self.class_file and self.class_file.exists():
             try:
                 with self.class_file.open("r") as f:
@@ -130,7 +99,11 @@ class ImageNetDataset(BaseDataset):
         return []
 
     def _build_class_mapping(self) -> None:
-        """Build mapping between ImageNet IDs and class names."""
+        """Build mapping between ImageNet IDs and class names.
+
+        Examines image filenames to extract synset IDs and creates bidirectional
+        mappings between synset IDs, class indices, and human-readable class names.
+        """
         if not self.img_dir:
             return
 
@@ -168,17 +141,7 @@ class ImageNetDataset(BaseDataset):
                     logger.warning(f"Error processing {img_path.name}: {e}")
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, int, str]:
-        """Get image, label, and filename for given index.
-
-        Args:
-            index: Index of the sample to retrieve
-
-        Returns:
-            Tuple containing (image_tensor, class_index, filename)
-
-        Raises:
-            DatasetIndexError: If index is out of bounds
-        """
+        """Get image, label, and filename for given index."""
         self._validate_index(index)
 
         img_path = self.img_files[index]
@@ -208,7 +171,12 @@ class ImageNetDataset(BaseDataset):
             )
 
     def _load_imagenet_mapping(self) -> None:
-        """Load mapping between ImageNet IDs and class indices."""
+        """Load mapping between ImageNet IDs and class indices.
+
+        Builds a bidirectional mapping between synset IDs found in image filenames
+        and class indices. This handles both "n01440764_tench" style filenames
+        (with underscore) and plain synset ID filenames.
+        """
         if not self.class_file or not self.class_file.exists():
             logger.error(f"Class names file not found: {self.class_file}")
             # Try a fallback name without the .txt extension
@@ -270,16 +238,11 @@ class ImageNetDataset(BaseDataset):
         num_classes: int,
         subset_name: str,
     ) -> "ImageNetDataset":
-        """Create and return a new ImageNet subset.
+        """Create a new ImageNet subset with randomly selected classes.
 
-        Args:
-            root: Root directory for the original dataset
-            transform: Transform to apply to images
-            num_classes: Number of classes to include in subset
-            subset_name: Name for the subset directory
-
-        Returns:
-            ImageNetDataset instance for the created subset
+        Creates a new dataset containing a subset of the original ImageNet classes.
+        This is useful for creating smaller training or evaluation datasets while
+        maintaining the ImageNet structure and transformations.
         """
         logger.info(
             f"Creating ImageNet subset '{subset_name}' with {num_classes} classes"
@@ -333,14 +296,7 @@ class ImageNetDataset(BaseDataset):
 
     @staticmethod
     def _group_images_by_class(dataset: "ImageNetDataset") -> Dict[str, List[Path]]:
-        """Group dataset images by their class ID.
-
-        Args:
-            dataset: ImageNetDataset instance
-
-        Returns:
-            Dictionary mapping class IDs to lists of image paths
-        """
+        """Group dataset images by their class ID."""
         class_images: Dict[str, List[Path]] = {}
         for img in dataset.img_files:
             class_id = img.stem.split("_")[0]
@@ -356,17 +312,7 @@ class ImageNetDataset(BaseDataset):
         num_classes: int,
         subset_name: str,
     ) -> "ImageNetDataset":
-        """Create new dataset instance for subset.
-
-        Args:
-            original_dataset: Source dataset instance
-            class_images: Dictionary mapping class IDs to image paths
-            num_classes: Number of classes to include
-            subset_name: Name for the subset
-
-        Returns:
-            ImageNetDataset instance for the subset
-        """
+        """Create new dataset instance for subset."""
         available_classes = [cls for cls, imgs in class_images.items() if imgs]
         selected_classes = random.sample(
             available_classes, min(num_classes, len(available_classes))
@@ -396,18 +342,7 @@ class ImageNetDataset(BaseDataset):
         selected_classes: List[str],
         subset_name: str,
     ) -> "ImageNetDataset":
-        """Initialize and return new subset dataset instance.
-
-        Args:
-            original_dataset: Source dataset instance
-            subset_dir: Root directory for the subset
-            subset_img_dir: Directory containing subset images
-            selected_classes: List of class IDs included in the subset
-            subset_name: Name of the subset
-
-        Returns:
-            ImageNetDataset instance for the subset
-        """
+        """Initialize and return new subset dataset instance."""
         # Make sure the directories exist
         subset_dir.mkdir(parents=True, exist_ok=True)
         subset_img_dir.mkdir(parents=True, exist_ok=True)
@@ -442,12 +377,7 @@ class ImageNetDataset(BaseDataset):
         )
 
     def save_subset_info(self, subset_name: str, selected_classes: List[str]) -> None:
-        """Save subset metadata to JSON file.
-
-        Args:
-            subset_name: Name of the subset
-            selected_classes: List of class names in the subset
-        """
+        """Save subset metadata to JSON file."""
         subset_info = {
             "name": subset_name,
             "classes": selected_classes,
@@ -478,18 +408,9 @@ def load_imagenet_dataset(
 ) -> ImageNetDataset:
     """Factory function to create an ImageNetDataset.
 
-    Args:
-        root: Root directory for the dataset
-        transform: Transform to apply to images
-        max_samples: Maximum number of samples to load (-1 for all)
-        dataset_type: Type of dataset to load ("full", "subset", etc.)
-        **kwargs: Additional arguments to pass to the dataset constructor
-
-    Returns:
-        ImageNetDataset instance
-
-    Raises:
-        DatasetPathError: If required paths don't exist
+    Creates either a full ImageNet dataset or a subset based on the dataset_type
+    parameter. For subsets, automatically selects random classes and creates
+    a new dataset containing only those classes.
     """
     logger.info(f"Loading ImageNet dataset from {root} (type: {dataset_type})")
 

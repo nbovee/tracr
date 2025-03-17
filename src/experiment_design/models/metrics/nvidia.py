@@ -1,4 +1,4 @@
-"""NVIDIA GPU power and energy monitoring using NVML."""
+"""NVIDIA GPU power and energy monitoring using NVML"""
 
 import logging
 from typing import Dict, Any
@@ -10,23 +10,14 @@ logger = logging.getLogger("split_computing_logger")
 
 
 class NvidiaGPUMonitor(PowerMonitor):
-    """NVIDIA GPU power and energy monitoring using NVML.
+    """NVIDIA GPU power and energy monitoring using NVIDIA Management Library.
 
-    This class uses the NVIDIA Management Library (NVML) through the pynvml
-    Python bindings to monitor power consumption and GPU utilization.
-
-    Attributes:
-        device_type: Always "nvidia"
-        _nvml_initialized: Whether NVML has been initialized
-        _nvml_handle: Handle to the GPU device
+    Uses NVML through pynvml Python bindings to access GPU-specific hardware
+    sensors, providing accurate power consumption and utilization metrics.
     """
 
     def __init__(self) -> None:
-        """Initialize the NVIDIA GPU monitor.
-
-        Raises:
-            MonitoringInitError: If NVML initialization fails
-        """
+        """Initialize NVIDIA GPU monitoring with NVML."""
         super().__init__("nvidia")
         self._nvml_initialized = False
         self._nvml_handle = None
@@ -51,14 +42,7 @@ class NvidiaGPUMonitor(PowerMonitor):
             )
 
     def get_current_power(self) -> float:
-        """Get current GPU power consumption in watts using NVML.
-
-        Returns:
-            Current power consumption in watts
-
-        Raises:
-            MeasurementError: If power measurement fails
-        """
+        """Get current GPU power consumption in watts using hardware sensors."""
         if not self._nvml_initialized or not self._nvml_handle:
             raise MeasurementError("NVIDIA monitoring not initialized")
 
@@ -73,14 +57,7 @@ class NvidiaGPUMonitor(PowerMonitor):
             raise MeasurementError(f"Failed to read NVIDIA power: {str(e)}")
 
     def get_system_metrics(self) -> Dict[str, Any]:
-        """Get NVIDIA GPU metrics including power and utilization.
-
-        Returns:
-            Dictionary with power and GPU utilization metrics
-
-        Raises:
-            MeasurementError: If metrics collection fails
-        """
+        """Get comprehensive GPU metrics including power, compute and memory utilization."""
         try:
             if not self._nvml_initialized or not self._nvml_handle:
                 raise MeasurementError("NVIDIA monitoring not initialized")
@@ -115,7 +92,7 @@ class NvidiaGPUMonitor(PowerMonitor):
             }
 
     def cleanup(self) -> None:
-        """Clean up NVML resources."""
+        """Release NVML library resources."""
         if self._nvml_initialized:
             try:
                 import pynvml

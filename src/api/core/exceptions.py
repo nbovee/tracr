@@ -1,4 +1,4 @@
-"""Core exceptions for the application."""
+"""Core exceptions for the api module"""
 
 from typing import Optional
 

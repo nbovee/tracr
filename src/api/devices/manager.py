@@ -1,4 +1,4 @@
-"""Manage devices and their SSH connections."""
+"""Manage devices and their SSH connections"""
 
 import logging
 import os
@@ -10,7 +10,6 @@ from typing import Dict, List, Optional, Union, Tuple, Any
 from ..core import (
     SSHError,
     DeviceError,
-    DeviceNotFoundError,
     DeviceNotReachableError,
     ValidationError,
     KeyPermissionError,
@@ -24,14 +23,9 @@ logger = logging.getLogger("split_computing_logger")
 
 
 class SSHConnectionParams:
-    """Encapsulates SSH connection parameters for a remote host.
-
-    This class manages the parameters needed to establish an SSH connection
-    to a remote host, including host address, username, port, and SSH key.
-    """
+    """Encapsulates SSH connection parameters for a remote host."""
 
     REQUIRED_FIELDS = {"host", "user", "pkey_fp"}
-    SSH_PORT: int = SSH_PORT  # Default SSH port
     TIMEOUT: float = SSH_CONNECTIVITY_TIMEOUT  # Timeout for connectivity checks
 
     def __init__(
@@ -43,20 +37,7 @@ class SSHConnectionParams:
         ssh_port: Optional[int] = None,
         is_default: bool = True,
     ) -> None:
-        """Initialize SSH connection parameters.
-
-        Args:
-            host: Remote host address.
-            username: SSH username.
-            rsa_key_path: Path to RSA private key.
-            port: Port for experiment communication.
-            ssh_port: Port for SSH connection (defaults to 22).
-            is_default: Whether this is the default connection.
-
-        Raises:
-            ValidationError: If required parameters are missing or invalid.
-            KeyPermissionError: If SSH key permissions are incorrect.
-        """
+        """Initialize SSH connection parameters."""
         self.host = host
         self._set_username(username)
         self._set_rsa_key(rsa_key_path)
@@ -67,40 +48,19 @@ class SSHConnectionParams:
 
     @property
     def host(self) -> str:
-        """Get the host address.
-
-        Returns:
-            str: The host address.
-        """
+        """Get the host address."""
         return self._host
 
     @host.setter
     def host(self, value: str) -> None:
-        """Set the host address.
-
-        Args:
-            value: The host address.
-
-        Raises:
-            ValidationError: If the host address is invalid.
-        """
+        """Set the host address with validation."""
         if not value or not isinstance(value, str):
             raise ValidationError("Host address must be a non-empty string")
         self._host = value
 
     @classmethod
     def from_dict(cls, source: Dict[str, Any]) -> "SSHConnectionParams":
-        """Create SSHConnectionParams from a dictionary configuration.
-
-        Args:
-            source: Dictionary containing connection parameters.
-
-        Returns:
-            SSHConnectionParams: A new instance with the specified parameters.
-
-        Raises:
-            ValidationError: If required fields are missing.
-        """
+        """Create SSHConnectionParams instance from a configuration dictionary."""
         # Validate required fields
         missing_fields = cls.REQUIRED_FIELDS - set(source.keys())
         if missing_fields:
@@ -116,14 +76,7 @@ class SSHConnectionParams:
         )
 
     def _set_username(self, username: str) -> None:
-        """Set the username after validation.
-
-        Args:
-            username: The SSH username.
-
-        Raises:
-            ValidationError: If the username is invalid.
-        """
+        """Validate and set the SSH username."""
         clean_username = username.strip()
         if 0 < len(clean_username) < 32:
             self.username = clean_username
@@ -133,17 +86,9 @@ class SSHConnectionParams:
             raise ValidationError(error_msg)
 
     def _set_rsa_key(self, rsa_key_path: Union[Path, str]) -> None:
-        """Set the RSA key path and validate it.
+        """Set and validate the RSA key path, resolving relative paths against project root.
 
-        If the key file is not absolute, resolves it relative to the project root.
-        Attempts to load and detect the key type.
-
-        Args:
-            rsa_key_path: Path to the RSA key file.
-
-        Raises:
-            ValidationError: If the key file is invalid.
-            KeyPermissionError: If the key file has incorrect permissions.
+        Also verifies key permissions and detects key type.
         """
         try:
             # Get project root path
@@ -190,19 +135,11 @@ class SSHConnectionParams:
             raise ValidationError(error_msg) from e
 
     def is_host_reachable(self) -> bool:
-        """Check if the host is reachable.
-
-        Returns:
-            bool: True if the host is reachable, False otherwise.
-        """
+        """Check if the host is reachable on the configured SSH port."""
         return LAN.is_host_reachable(self.host, self.ssh_port, self.TIMEOUT)
 
     def get_ssh_config(self) -> SSHConfig:
-        """Get SSH configuration for establishing connections.
-
-        Returns:
-            SSHConfig: Configuration for SSH connections.
-        """
+        """Return an SSHConfig object with this connection's parameters."""
         return SSHConfig(
             host=self.host,
             user=self.username,
@@ -212,11 +149,7 @@ class SSHConnectionParams:
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize connection parameters to a dictionary.
-
-        Returns:
-            Dict[str, Any]: Dictionary representation of the connection parameters.
-        """
+        """Serialize connection parameters to a dictionary."""
         return {
             "host": self.host,
             "user": self.username,
@@ -227,31 +160,18 @@ class SSHConnectionParams:
         }
 
     def is_default(self) -> bool:
-        """Return whether this connection is the default one.
-
-        Returns:
-            bool: True if this is the default connection, False otherwise.
-        """
+        """Return whether this connection is the default one."""
         return self._is_default
 
 
 class Device:
-    """Represents a network device with multiple SSH connection parameters.
-
-    This class manages a device and its connection parameters, and provides
-    methods for interacting with the device via SSH.
-    """
+    """Represents a network device with SSH connection capabilities."""
 
     def __init__(self, device_record: Dict[str, Any]) -> None:
-        """Initialize the Device using its configuration record.
+        """Initialize the Device, validating and testing all connection options.
 
-        Args:
-            device_record: Dictionary containing device configuration.
-
-        Raises:
-            ValidationError: If required configuration fields are missing.
-            SSHError: If private key permissions are incorrect or key is invalid.
-            DeviceError: If no valid connections are available.
+        Stores multiple connection parameters and attempts to establish a working
+        connection from the options, prioritizing the default connection.
         """
         if "device_type" not in device_record:
             raise ValidationError("Device record missing 'device_type' field")
@@ -314,89 +234,42 @@ class Device:
             )
 
     def get_host(self) -> str:
-        """Return the host address of the working connection.
-
-        Returns:
-            str: The host address.
-
-        Raises:
-            DeviceNotReachableError: If no working connection is available.
-        """
+        """Return the host address of the working connection."""
         if not self.working_cparams:
             raise DeviceNotReachableError(f"Device {self.device_type} is not reachable")
         return self.working_cparams.host
 
     def get_port(self) -> Optional[int]:
-        """Return the port of the working connection.
-
-        Returns:
-            int: The port number or DEFAULT_PORT if not specified.
-
-        Raises:
-            DeviceNotReachableError: If no working connection is available.
-        """
+        """Return the experiment port or DEFAULT_PORT if not specified."""
         if not self.working_cparams:
             raise DeviceNotReachableError(f"Device {self.device_type} is not reachable")
         # Return the configured port if it exists, otherwise DEFAULT_PORT
         return self.working_cparams.experiment_port or DEFAULT_PORT
 
     def get_username(self) -> str:
-        """Return the username for the working connection.
-
-        Returns:
-            str: The username.
-
-        Raises:
-            DeviceNotReachableError: If no working connection is available.
-        """
+        """Return the username for the working connection."""
         if not self.working_cparams:
             raise DeviceNotReachableError(f"Device {self.device_type} is not reachable")
         return self.working_cparams.username
 
     def get_private_key_path(self) -> Path:
-        """Return the private key path for the working connection.
-
-        Returns:
-            Path: The private key path.
-
-        Raises:
-            DeviceNotReachableError: If no working connection is available.
-        """
+        """Return the private key path for the working connection."""
         if not self.working_cparams:
             raise DeviceNotReachableError(f"Device {self.device_type} is not reachable")
         return self.working_cparams.private_key_path
 
     def is_reachable(self) -> bool:
-        """Return True if the device has at least one reachable connection.
-
-        Returns:
-            bool: True if the device is reachable, False otherwise.
-        """
+        """Check if the device has a reachable connection."""
         return self.working_cparams is not None
 
     def serialize(self) -> Tuple[str, Dict[str, Any]]:
-        """Serialize the device to a tuple containing its type and connection parameters.
-
-        This can be used for saving or transmitting device configuration.
-
-        Returns:
-            Tuple[str, Dict[str, Any]]: A tuple of (device_type, connection_params).
-        """
+        """Serialize the device to a (device_type, connection_params) tuple."""
         return self.device_type, {
             "connection_params": [cp.to_dict() for cp in self.connection_params],
         }
 
     def get_attribute(self, attribute: str) -> Optional[str]:
-        """Retrieve a specific attribute of the active connection.
-
-        Attribute matching is done in a case-insensitive way.
-
-        Args:
-            attribute: The attribute to retrieve (e.g., "host", "username").
-
-        Returns:
-            Optional[str]: The attribute value, or None if not found or no working connection.
-        """
+        """Retrieve a specific attribute of the active connection using case-insensitive matching."""
         if self.working_cparams:
             attr_clean = attribute.lower().strip()
             if attr_clean in {"host", "hostname", "host name"}:
@@ -410,14 +283,7 @@ class Device:
         return None
 
     def create_ssh_client(self):
-        """Create an SSH client for this device.
-
-        Returns:
-            An SSH client for this device.
-
-        Raises:
-            DeviceNotReachableError: If no working connection is available.
-        """
+        """Create an SSH client for this device."""
         if not self.is_reachable():
             raise DeviceNotReachableError(f"Device {self.device_type} is not reachable")
 
@@ -429,18 +295,7 @@ class Device:
         )
 
     def execute_remote_command(self, command: str) -> Dict[str, Any]:
-        """Execute a command on the remote device via SSH.
-
-        Args:
-            command: The command to execute.
-
-        Returns:
-            Dict[str, Any]: The result of the command execution.
-
-        Raises:
-            DeviceNotReachableError: If the device is not reachable.
-            SSHError: If there's an error during SSH command execution.
-        """
+        """Execute a command on the remote device via SSH."""
         if not self.is_reachable():
             raise DeviceNotReachableError(f"Device {self.device_type} is not reachable")
 
@@ -451,19 +306,7 @@ class Device:
             return client.execute_command(command)
 
     def transfer_files(self, source: Path, destination: Path) -> None:
-        """Transfer files to the remote device.
-
-        If the source is a directory, transfers the entire directory;
-        otherwise, transfers a single file.
-
-        Args:
-            source: The source path on the local machine.
-            destination: The destination path on the remote machine.
-
-        Raises:
-            DeviceNotReachableError: If the device is not reachable.
-            SSHError: If there's an error during file transfer.
-        """
+        """Transfer files or directories to the remote device."""
         if not self.is_reachable():
             raise DeviceNotReachableError(f"Device {self.device_type} is not reachable")
 
@@ -475,27 +318,14 @@ class Device:
 
 
 class DeviceManager:
-    """Manages a collection of network devices using a YAML configuration file.
-
-    This class provides methods to load devices from a configuration file,
-    filter them based on various criteria, and execute commands on them.
-    """
+    """Manages a collection of network devices using a YAML configuration file."""
 
     # Define default paths for device configuration and private keys
     DEFAULT_DATAFILE: Path = get_repo_root() / "config" / "devices_config.yaml"
     DEFAULT_PKEYS_DIR: Path = get_repo_root() / "config" / "pkeys"
 
     def __init__(self, datafile_path: Optional[Path] = None) -> None:
-        """Initialize the DeviceManager with a specified datafile path or use the default.
-
-        Args:
-            datafile_path: Optional path to the device configuration file.
-
-        Raises:
-            FileNotFoundError: If config file or pkeys directory doesn't exist.
-            KeyPermissionError: If private key permissions are incorrect.
-            DeviceError: If no devices could be loaded.
-        """
+        """Initialize the DeviceManager, loading and validating all device configurations."""
         self.datafile_path = datafile_path or self.DEFAULT_DATAFILE
 
         # Ensure config file exists
@@ -532,13 +362,7 @@ class DeviceManager:
             logger.debug(f"DeviceManager initialized with {len(self.devices)} devices")
 
     def _load_devices(self) -> None:
-        """Load devices from the YAML configuration file.
-
-        Also adjusts the private key file paths to be absolute paths.
-
-        Raises:
-            DeviceError: If there's an error loading the device configuration.
-        """
+        """Load devices from the YAML config file, resolving key paths to absolute paths."""
         logger.debug(f"Loading devices from {self.datafile_path}")
         try:
             with open(self.datafile_path) as file:
@@ -580,15 +404,7 @@ class DeviceManager:
     def get_devices(
         self, available_only: bool = False, device_type: Optional[str] = None
     ) -> List[Device]:
-        """Retrieve devices based on their availability and (optionally) device type.
-
-        Args:
-            available_only: If True, only return devices that are currently reachable.
-            device_type: If provided, only return devices of this type.
-
-        Returns:
-            List[Device]: List of devices matching the criteria.
-        """
+        """Retrieve devices filtered by availability and/or device type."""
         filtered_devices = [
             device
             for device in self.devices
@@ -602,14 +418,7 @@ class DeviceManager:
         return filtered_devices
 
     def get_device_by_type(self, device_type: str) -> Optional[Device]:
-        """Retrieve the first device that matches the given device type.
-
-        Args:
-            device_type: The type of device to retrieve (e.g., SERVER or PARTICIPANT).
-
-        Returns:
-            Optional[Device]: The first matching device, or None if no match is found.
-        """
+        """Retrieve the first device matching the specified device type."""
         device = next(
             (device for device in self.devices if device.device_type == device_type),
             None,
@@ -621,14 +430,7 @@ class DeviceManager:
         return device
 
     def get_device_by_host(self, host: str) -> Optional[Device]:
-        """Retrieve a device by its host address.
-
-        Args:
-            host: The host address of the device.
-
-        Returns:
-            Optional[Device]: The matching device, or None if no match is found.
-        """
+        """Retrieve a device by its host address."""
         device = next(
             (
                 device
@@ -644,20 +446,7 @@ class DeviceManager:
         return device
 
     def create_server_socket(self, host: str, port: int) -> socket.socket:
-        """Create a server socket bound to the specified host and port.
-
-        If binding to the host fails, falls back to binding to all interfaces.
-
-        Args:
-            host: The host address to bind to.
-            port: The port to bind to.
-
-        Returns:
-            socket.socket: The server socket.
-
-        Raises:
-            NetworkError: If there's an error creating the socket.
-        """
+        """Create a server socket, falling back to all interfaces if specific binding fails."""
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             # Try binding to the specified host
@@ -672,11 +461,7 @@ class DeviceManager:
         return sock
 
     def save_devices(self) -> None:
-        """Save the current device configurations back to the YAML configuration file.
-
-        Raises:
-            DeviceError: If there's an error saving the device configuration.
-        """
+        """Save the current device configurations back to the YAML file."""
         try:
             logger.info(f"Saving devices to {self.datafile_path}")
             data = {
@@ -698,15 +483,7 @@ class DeviceManager:
     def execute_command_on_devices(
         self, command: str, device_type: Optional[str] = None
     ) -> Dict[str, Dict[str, Any]]:
-        """Execute a command on all matching devices.
-
-        Args:
-            command: The command to execute.
-            device_type: If provided, only execute on devices of this type.
-
-        Returns:
-            Dict[str, Dict[str, Any]]: A dictionary mapping each device's host to the command's output or error.
-        """
+        """Execute a command on all matching devices, collecting results by host address."""
         results = {}
         # Get only the devices that are available (reachable) and match the device type (if provided)
         devices = self.get_devices(available_only=True, device_type=device_type)
@@ -729,16 +506,7 @@ class DeviceManager:
     def transfer_to_devices(
         self, source: Path, destination: Path, device_type: Optional[str] = None
     ) -> Dict[str, bool]:
-        """Transfer files to all matching devices.
-
-        Args:
-            source: The source path on the local machine.
-            destination: The destination path on the remote machines.
-            device_type: If provided, only transfer to devices of this type.
-
-        Returns:
-            Dict[str, bool]: A dictionary mapping each device's host to a boolean indicating success.
-        """
+        """Transfer files to multiple devices with optional filtering by device type."""
         results = {}
         # Get only the available devices that match the given type
         devices = self.get_devices(available_only=True, device_type=device_type)

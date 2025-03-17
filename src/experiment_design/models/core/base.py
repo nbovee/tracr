@@ -1,4 +1,4 @@
-"""Base model classes for split computing experiments."""
+"""Base model classes for split computing experiments"""
 
 import logging
 from abc import abstractmethod
@@ -21,17 +21,8 @@ logger = logging.getLogger("split_computing_logger")
 class BaseModel(nn.Module):
     """Base model class implementing core model functionality and configuration.
 
-    This abstract class provides the foundation for all models in the system,
-    handling configuration loading, device setup, and common model operations.
-
-    Attributes:
-        config (Dict[str, Any]): Complete configuration dictionary
-        device (str): Computing device (cpu or cuda)
-        model (nn.Module): The underlying PyTorch model
-        model_name (str): Name of the model architecture
-        input_size (Tuple[int, ...]): Tuple of (channels, height, width)
-        dataset_name (str): Name of the dataset to use
-        dataset_args (Dict[str, Any]): Arguments for dataset initialization
+    Provides the foundation for all models in the system, handling configuration
+    loading, device setup, and common model operations.
     """
 
     DEFAULT_CONFIG_PATH: ClassVar[Path] = (
@@ -40,15 +31,7 @@ class BaseModel(nn.Module):
     VALID_MODES: ClassVar[set] = {"train", "eval"}
 
     def __init__(self, config: Dict[str, Any]) -> None:
-        """Initialize model with configuration settings.
-
-        Args:
-            config: Configuration dictionary or path to config file
-
-        Raises:
-            ModelConfigError: If required configuration is missing
-            ModelLoadError: If model fails to load
-        """
+        """Initialize model with configuration settings."""
         super().__init__()
         try:
             self.config = self._load_config(config)
@@ -66,15 +49,8 @@ class BaseModel(nn.Module):
     def _load_config(self, config: Union[Dict[str, Any], str, Path]) -> Dict[str, Any]:
         """Load and validate configuration from file or dictionary.
 
-        Args:
-            config: Configuration dictionary, string path, or Path object
-
-        Returns:
-            Complete configuration dictionary
-
-        Raises:
-            ModelConfigError: If configuration cannot be loaded
-            FileNotFoundError: If config file does not exist
+        Supports dictionary, string path, or Path object inputs, with fallback to
+        default configuration path if none provided.
         """
         try:
             if config:
@@ -95,14 +71,7 @@ class BaseModel(nn.Module):
             raise ModelConfigError(f"Failed to load configuration: {str(e)}")
 
     def _setup_default_configs(self) -> None:
-        """Set up default configuration parameters.
-
-        This method extracts and validates the default configuration settings
-        from the loaded configuration dictionary.
-
-        Raises:
-            ModelConfigError: If required default settings are missing
-        """
+        """Extract and validate default configuration settings."""
         try:
             self.default_configs = self.config.get("default", {})
             # Use the device that was validated upstream in server.py/host.py
@@ -113,14 +82,7 @@ class BaseModel(nn.Module):
             raise ModelConfigError(f"Failed to set up default configs: {str(e)}")
 
     def _setup_model_configs(self) -> None:
-        """Set up model-specific configuration parameters.
-
-        This method extracts and validates model-specific settings from the
-        loaded configuration dictionary.
-
-        Raises:
-            ModelConfigError: If required model settings are missing
-        """
+        """Extract and validate model-specific configuration parameters."""
         try:
             self.model_config = self.config.get("model", {})
 
@@ -154,14 +116,7 @@ class BaseModel(nn.Module):
             raise ModelConfigError(f"Failed to set up model configs: {str(e)}")
 
     def _setup_dataset_configs(self) -> None:
-        """Set up dataset-specific configuration parameters.
-
-        This method extracts and validates dataset-specific settings from the
-        loaded configuration dictionary.
-
-        Raises:
-            ModelConfigError: If required dataset settings are missing
-        """
+        """Extract and validate dataset-specific configuration parameters."""
         try:
             self.dataset_config = self.config.get("dataset")
             if not self.dataset_config:
@@ -191,14 +146,7 @@ class BaseModel(nn.Module):
             raise ModelConfigError(f"Failed to set up dataset configs: {str(e)}")
 
     def _setup_dataloader_configs(self) -> None:
-        """Set up dataloader-specific configuration parameters.
-
-        This method extracts and validates dataloader-specific settings from the
-        loaded configuration dictionary.
-
-        Raises:
-            ModelConfigError: If required dataloader settings are missing
-        """
+        """Extract and validate dataloader-specific configuration parameters."""
         try:
             self.dataloader_config = self.config.get("dataloader", {})
             self.batch_size = self.dataloader_config.get("batch_size", 1)
@@ -213,14 +161,7 @@ class BaseModel(nn.Module):
             raise ModelConfigError(f"Failed to set up dataloader configs: {str(e)}")
 
     def _initialize_model(self) -> None:
-        """Set up model components and configurations.
-
-        This method loads the model from the registry and configures it
-        according to the specified settings.
-
-        Raises:
-            ModelLoadError: If model fails to load or initialize
-        """
+        """Load the model from registry and configure according to settings."""
         try:
             self.model = self._load_model()
             self.model.to(self.device)
@@ -231,17 +172,7 @@ class BaseModel(nn.Module):
             raise ModelLoadError(f"Failed to initialize model components: {str(e)}")
 
     def _load_model(self) -> nn.Module:
-        """Load and return model instance using registry.
-
-        This method calls the model registry to get the appropriate model
-        implementation and initializes it with the provided configuration.
-
-        Returns:
-            Initialized PyTorch model
-
-        Raises:
-            ModelLoadError: If model cannot be loaded from registry
-        """
+        """Load and return model instance using registry."""
         try:
             # Import here to avoid circular imports
             from .registry import ModelRegistry
@@ -256,14 +187,7 @@ class BaseModel(nn.Module):
             raise ModelLoadError(f"Failed to load model '{self.model_name}': {str(e)}")
 
     def set_mode(self, mode: str) -> None:
-        """Set model to training or evaluation mode.
-
-        Args:
-            mode: Either 'train' or 'eval'
-
-        Raises:
-            ValueError: If mode is not one of the valid modes
-        """
+        """Set model to training or evaluation mode."""
         if not mode or mode.lower() not in self.VALID_MODES:
             raise ValueError(f"Mode must be one of {self.VALID_MODES}")
 
@@ -272,24 +196,14 @@ class BaseModel(nn.Module):
         logger.debug(f"Model set to {self.mode} mode")
 
     def get_mode(self) -> str:
-        """Return current model mode.
-
-        Returns:
-            Current model mode ('train' or 'eval')
-        """
+        """Return current model mode."""
         return self.mode
 
     def parse_input(self, input_data: Union[Image.Image, np.ndarray, Tensor]) -> Tensor:
         """Convert input to tensor and move to device.
 
-        Args:
-            input_data: Input data in various formats
-
-        Returns:
-            Input data as tensor on the correct device
-
-        Raises:
-            TypeError: If input type is not supported
+        Handles multiple input formats (PIL Image, NumPy array, or PyTorch Tensor)
+        and ensures the result is on the correct device.
         """
         if isinstance(input_data, Image.Image):
             return self._process_pil_image(input_data)
@@ -301,26 +215,16 @@ class BaseModel(nn.Module):
         raise TypeError(f"Unsupported input type: {type(input_data).__name__}")
 
     def _process_pil_image(self, image: Image.Image) -> Tensor:
-        """Process PIL image to tensor.
-
-        Args:
-            image: PIL image to process
-
-        Returns:
-            Image as tensor on the correct device
-        """
+        """Process PIL image to tensor with appropriate resizing."""
         if image.size != self.input_size[1:]:
             image = image.resize(self.input_size[1:])
         return ToTensor()(image).unsqueeze(0).to(self.device)
 
     def warmup(self, iterations: Optional[int] = None) -> None:
-        """Perform model warmup iterations.
+        """Perform model warmup iterations with dummy data.
 
-        This method runs forward passes with dummy data to warm up the model,
-        which can help stabilize performance metrics.
-
-        Args:
-            iterations: Number of warmup iterations (defaults to self.warmup_iterations)
+        Runs forward passes with dummy inputs to stabilize performance metrics,
+        which is especially important for latency-sensitive applications.
         """
         logger.info(
             f"Performing {iterations or self.warmup_iterations} warmup iterations"
@@ -342,16 +246,5 @@ class BaseModel(nn.Module):
 
     @abstractmethod
     def forward(self, x: Tensor, **kwargs) -> Tensor:
-        """Implement forward pass in derived classes.
-
-        Args:
-            x: Input tensor
-            **kwargs: Additional arguments for the forward pass
-
-        Returns:
-            Output tensor
-
-        Raises:
-            NotImplementedError: This method must be implemented by subclasses
-        """
+        """Implement forward pass in derived classes."""
         raise NotImplementedError("Forward method must be implemented in subclass")

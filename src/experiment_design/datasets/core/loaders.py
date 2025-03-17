@@ -1,4 +1,4 @@
-"""Data management module for dataset loading and processing."""
+"""Data management module for dataset loading and processing"""
 
 import logging
 import os
@@ -17,7 +17,11 @@ logger = logging.getLogger("split_computing_logger")
 
 
 class DatasetRegistry:
-    """Registry of available dataset loaders and their metadata."""
+    """Registry of available dataset loaders with dynamic import capabilities.
+
+    Manages registration, discovery, and instantiation of dataset implementations
+    through both static registration and dynamic module imports.
+    """
 
     _registry: Dict[str, Dict[str, Any]] = {}
     _datasets_registered = False
@@ -49,15 +53,7 @@ class DatasetRegistry:
         description: str = "",
         requires_config: List[str] = None,
     ) -> None:
-        """Register a dataset loader function.
-
-        Args:
-            name: Unique name for the dataset loader
-            loader_func: Function that creates and returns a dataset
-            dataset_type: Type of dataset (e.g., 'image', 'text')
-            description: Human-readable description of the dataset
-            requires_config: List of required configuration parameters
-        """
+        """Register a dataset loader function."""
         cls._registry[name] = {
             "loader": loader_func,
             "type": dataset_type,
@@ -68,17 +64,7 @@ class DatasetRegistry:
 
     @classmethod
     def get_loader(cls, name: str) -> Callable:
-        """Get a dataset loader function by name.
-
-        Args:
-            name: Name of the registered loader
-
-        Returns:
-            The loader function
-
-        Raises:
-            DatasetConfigError: If the loader is not registered
-        """
+        """Retrieve a dataset loader function with on-demand registration."""
         # Lazy registration of built-in datasets if needed
         if name in cls.DATASET_METADATA and name not in cls._registry:
             cls.register_dataset(name)
@@ -93,11 +79,7 @@ class DatasetRegistry:
 
     @classmethod
     def list_available(cls) -> List[Dict[str, Any]]:
-        """List all available dataset loaders with their metadata.
-
-        Returns:
-            List of dictionaries containing loader metadata
-        """
+        """List all available dataset loaders including unregistered ones."""
         # Return registered datasets plus available but not registered ones
         result = [
             {"name": name, **metadata} for name, metadata in cls._registry.items()
@@ -120,14 +102,7 @@ class DatasetRegistry:
 
     @classmethod
     def get_metadata(cls, name: str) -> Optional[Dict[str, Any]]:
-        """Get metadata for a specific dataset loader.
-
-        Args:
-            name: Name of the registered loader
-
-        Returns:
-            Dictionary containing loader metadata or None if not registered
-        """
+        """Retrieve metadata for a dataset with on-demand registration."""
         # Lazy registration of built-in datasets if needed
         if name in cls.DATASET_METADATA and name not in cls._registry:
             try:
@@ -144,14 +119,7 @@ class DatasetRegistry:
 
     @classmethod
     def register_dataset(cls, name: str) -> None:
-        """Register a specific built-in dataset by name using dynamic import.
-
-        Args:
-            name: Name of the dataset to register
-
-        Raises:
-            DatasetConfigError: If the dataset name is not recognized or import fails
-        """
+        """Dynamically import and register a built-in dataset implementation."""
         if name not in cls.DATASET_METADATA:
             available = list(cls.DATASET_METADATA.keys())
             logger.error(f"Unknown dataset: {name}. Available: {available}")
@@ -188,10 +156,7 @@ class DatasetRegistry:
 
     @classmethod
     def register_all_datasets(cls) -> None:
-        """Register all built-in datasets that are available.
-
-        This is optional and only needed if you want to pre-register all datasets.
-        """
+        """Pre-register all known datasets, useful for auto-discovery scenarios."""
         if cls._datasets_registered:
             return
 
@@ -213,19 +178,7 @@ class DatasetRegistry:
         description: str = "",
         requires_config: List[str] = None,
     ) -> None:
-        """Register a custom dataset implementation.
-
-        Args:
-            name: Unique name for the dataset
-            module_path: Import path to the module
-            loader_function: Name of the loader function in the module
-            dataset_type: Type of dataset (e.g., 'image', 'text')
-            description: Human-readable description
-            requires_config: Configuration parameters required
-
-        Raises:
-            DatasetConfigError: If registration fails
-        """
+        """Register external dataset implementation for dynamic loading."""
         # Add metadata for future dynamic loading
         cls.DATASET_METADATA[name] = {
             "module_path": module_path,
@@ -246,19 +199,7 @@ class DatasetRegistry:
 
     @classmethod
     def load(cls, config: Dict[str, Any]) -> Dataset:
-        """Load a dataset using the registry based on configuration.
-
-        This is a convenience method that delegates to DatasetFactory.create_dataset.
-
-        Args:
-            config: Dataset configuration dictionary with 'name' key
-
-        Returns:
-            Dataset instance
-
-        Raises:
-            DatasetConfigError: If configuration is invalid or dataset loading fails
-        """
+        """Load dataset from configuration with appropriate error handling."""
         logger.debug(f"Loading dataset with config: {config}")
 
         try:
@@ -284,24 +225,14 @@ class DatasetRegistry:
 
 
 class DatasetFactory:
-    """Factory class for creating Dataset instances from configuration."""
+    """Factory for creating Dataset instances with validation and path management."""
 
     REQUIRED_KEYS = frozenset(["name"])
     PATH_KEYS = frozenset(["root", "class_names", "img_directory"])
 
     @classmethod
     def create_dataset(cls, config: Dict[str, Any]) -> Dataset:
-        """Create and return a Dataset instance based on configuration.
-
-        Args:
-            config: Dataset configuration dictionary with 'name' key
-
-        Returns:
-            Dataset instance
-
-        Raises:
-            DatasetConfigError: If configuration is invalid
-        """
+        """Create dataset instance with parameter validation and error handling."""
         try:
             logger.debug(f"Creating dataset with config: {config}")
 
@@ -344,14 +275,7 @@ class DatasetFactory:
 
     @classmethod
     def _validate_config(cls, config: Dict[str, Any]) -> None:
-        """Validate configuration has required keys.
-
-        Args:
-            config: Configuration dictionary to validate
-
-        Raises:
-            DatasetConfigError: If required keys are missing
-        """
+        """Validate configuration contains all required keys."""
         missing_keys = cls.REQUIRED_KEYS - config.keys()
         if missing_keys:
             logger.error(f"Missing required keys in dataset config: {missing_keys}")
@@ -362,11 +286,7 @@ class DatasetFactory:
 
     @classmethod
     def _ensure_paths(cls, config: Dict[str, Any]) -> None:
-        """Ensure paths exist and create directories if necessary.
-
-        Args:
-            config: Configuration dictionary containing paths
-        """
+        """Create missing directories for path-based parameters."""
         for key in cls.PATH_KEYS:
             if key not in config:
                 continue
@@ -390,22 +310,11 @@ class DatasetFactory:
 
 
 class DataLoaderFactory:
-    """Factory class for creating DataLoader instances."""
+    """Factory for creating optimized DataLoader instances."""
 
     @staticmethod
     def create_dataloader(dataset: Dataset, config: Dict[str, Any]) -> DataLoader:
-        """Create and return a DataLoader instance based on configuration.
-
-        Args:
-            dataset: Dataset instance to load data from
-            config: DataLoader configuration dictionary
-
-        Returns:
-            DataLoader instance
-
-        Raises:
-            DatasetConfigError: If configuration is invalid
-        """
+        """Create DataLoader with device-specific optimizations."""
         logger.debug(f"Creating DataLoader with config: {config}")
         try:
             # Create a copy of the config so we don't modify the original
@@ -441,21 +350,11 @@ class DataLoaderFactory:
 
 
 class DataManager:
-    """Manages the creation of datasets and dataloaders."""
+    """High-level interface for dataset and dataloader creation."""
 
     @staticmethod
     def get_data(config: Dict[str, Any]) -> DataLoader:
-        """Create a DataLoader based on the provided configuration.
-
-        Args:
-            config: Configuration dictionary with 'dataset' and 'dataloader' keys
-
-        Returns:
-            DataLoader instance
-
-        Raises:
-            DatasetConfigError: If configuration is invalid
-        """
+        """Create complete data pipeline from configuration."""
         logger.debug("Initializing data pipeline")
 
         try:
@@ -485,17 +384,7 @@ class DataManager:
 
     @staticmethod
     def get_dataset(config: Dict[str, Any]) -> Dataset:
-        """Create a Dataset instance from the provided configuration.
-
-        Args:
-            config: Configuration dictionary with 'dataset' key
-
-        Returns:
-            Dataset instance
-
-        Raises:
-            DatasetConfigError: If configuration is invalid
-        """
+        """Create dataset from configuration without dataloader."""
         dataset_config = config.get("dataset", {})
         if "name" not in dataset_config:
             logger.error("Dataset config must include 'name' key")
@@ -505,27 +394,16 @@ class DataManager:
 
 
 class DataLoaderIterator:
-    """Iterator for DataLoader with automatic reset capability."""
+    """Iterator wrapper that automatically resets exhausted DataLoader iterators."""
 
     def __init__(self, dataloader: DataLoader) -> None:
-        """Initialize iterator with a DataLoader instance.
-
-        Args:
-            dataloader: DataLoader to iterate through
-        """
+        """Initialize with dataloader instance."""
         self.dataloader = dataloader
         self.iterator = iter(dataloader)
         logger.debug(f"DataLoaderIterator initialized with {len(dataloader)} batches")
 
     def __next__(self) -> Any:
-        """Get next batch from DataLoader, reset if iteration complete.
-
-        Returns:
-            Next batch from the dataloader
-
-        Raises:
-            StopIteration: When iteration is complete (after reset)
-        """
+        """Get next batch with automatic StopIteration handling."""
         try:
             batch = next(self.iterator)
             return batch
@@ -538,19 +416,11 @@ class DataLoaderIterator:
             raise
 
     def __len__(self) -> int:
-        """Return number of batches in DataLoader.
-
-        Returns:
-            Number of batches
-        """
+        """Return number of batches in DataLoader."""
         return len(self.dataloader)
 
     def __iter__(self) -> "DataLoaderIterator":
-        """Return self as iterator.
-
-        Returns:
-            Self
-        """
+        """Return self as iterator."""
         return self
 
     def reset(self) -> None:
@@ -560,22 +430,11 @@ class DataLoaderIterator:
 
 
 class FileSystemDatasetLoader:
-    """Utility functions for loading datasets from the file system."""
+    """Utility for safely loading datasets from filesystem with error handling."""
 
     @staticmethod
     def validate_path(path: Union[str, Path], create_if_missing: bool = False) -> Path:
-        """Validate a filesystem path exists or create it if specified.
-
-        Args:
-            path: Path to validate
-            create_if_missing: Whether to create the directory if it doesn't exist
-
-        Returns:
-            Path object of the validated path
-
-        Raises:
-            DatasetPathError: If path doesn't exist and create_if_missing is False
-        """
+        """Validate path exists or create it if specified."""
         path_obj = Path(path)
 
         if not path_obj.exists():
@@ -601,20 +460,7 @@ class FileSystemDatasetLoader:
         recursive: bool = False,
         max_files: int = -1,
     ) -> List[Path]:
-        """Get a list of files in a directory with optional filtering.
-
-        Args:
-            directory: Directory to scan
-            extensions: List of file extensions to include (lowercase, with dot)
-            recursive: Whether to scan subdirectories recursively
-            max_files: Maximum number of files to return (-1 for all)
-
-        Returns:
-            List of file paths
-
-        Raises:
-            DatasetPathError: If directory doesn't exist
-        """
+        """Retrieve filtered list of files with extension matching and limits."""
         directory_path = FileSystemDatasetLoader.validate_path(directory)
 
         if extensions:

@@ -1,4 +1,4 @@
-"""Metrics collector for split computing experiments."""
+"""Metrics collector for split computing experiments"""
 
 import time
 import platform
@@ -10,20 +10,18 @@ logger = logging.getLogger("split_computing_logger")
 
 
 class MetricsCollector:
-    """Collects and manages layer-wise performance metrics.
+    """Layer-wise performance and energy metrics collection system.
 
-    This class abstracts the metrics collection functionality from hooks,
-    providing a clean interface for gathering, storing, and retrieving
-    layer-specific metrics including timing, energy usage, and tensor metadata.
+    Provides infrastructure for gathering, storing, and analyzing metrics
+    at each layer boundary during model execution, focusing on:
+    - Inference timing at layer granularity
+    - Energy consumption using hardware-specific monitors
+    - Tensor metadata for network transmission analysis
+    - Split point metrics for distributed computing optimization
     """
 
     def __init__(self, energy_monitor=None, device_type=None):
-        """Initialize metrics collector with optional energy monitor.
-
-        Args:
-            energy_monitor: PowerMonitor instance or None
-            device_type: Optional device type string (cpu, cuda, etc.)
-        """
+        """Initialize metrics collector with optional energy monitoring."""
         self.energy_monitor = energy_monitor
         self.device_type = device_type or (
             energy_monitor.device_type if energy_monitor else "cpu"
@@ -44,7 +42,12 @@ class MetricsCollector:
         logger.debug(f"Initialized metrics collector for {self.device_type} device")
 
     def start_global_measurement(self):
-        """Start energy monitoring for the entire forward pass."""
+        """Start energy monitoring for the entire forward pass.
+
+        Optimizes collection strategy based on platform:
+        - Windows CPU: Uses cumulative measurement to reduce overhead
+        - Other platforms: Uses standard per-layer energy monitoring
+        """
         if not self.energy_monitor:
             return
 
@@ -63,11 +66,11 @@ class MetricsCollector:
             logger.warning(f"Error starting global energy monitoring: {e}")
 
     def set_split_point(self, split_point):
-        """Set the current split point layer index."""
+        """Set the current split point layer index for distributed computation."""
         self.current_split_point = split_point
 
     def start_layer_measurement(self, layer_idx):
-        """Start metrics collection for a specific layer."""
+        """Begin metrics collection for a specific network layer."""
         # Record start time
         self.layer_start_times[layer_idx] = time.perf_counter()
 
@@ -86,7 +89,14 @@ class MetricsCollector:
                 )
 
     def end_layer_measurement(self, layer_idx, tensor_output=None):
-        """End metrics collection for a specific layer."""
+        """Complete metrics collection for a layer, processing timing and energy data.
+
+        Performs several key operations:
+        1. Calculates layer execution time
+        2. Extracts energy metrics if available
+        3. Analyzes tensor output size for communication costs
+        4. Records special metrics at split points
+        """
         # Calculate elapsed time
         if layer_idx not in self.layer_start_times:
             logger.warning(
@@ -193,7 +203,16 @@ class MetricsCollector:
     def _collect_layer_energy_metrics(
         self, layer_idx, layer_data, tensor_output=None, is_split_point=False
     ):
-        """Collect energy metrics for a non-Windows layer measurement."""
+        """Collect energy and utilization metrics for a specific layer.
+
+        Gathers hardware-specific performance data from the energy monitor:
+        - Power usage in watts
+        - GPU utilization percentage
+        - Memory utilization
+        - Processing time
+
+        Additionally calculates communication energy for split points.
+        """
         try:
             # Get current metrics for this layer
             current_metrics = self.energy_monitor.get_system_metrics()
@@ -287,7 +306,7 @@ class MetricsCollector:
             logger.error(f"Error collecting energy metrics for layer {layer_idx}: {e}")
 
     def _collect_windows_cpu_cumulative_metrics(self, layer_idx, layer_data):
-        """Collect Windows CPU metrics using cumulative measurement approach."""
+        """Process cumulative metrics for Windows CPU platform at split point."""
         try:
             # Get cumulative metrics collected during the run
             cumulative_metrics = self.energy_monitor.get_cumulative_metrics()
@@ -343,7 +362,13 @@ class MetricsCollector:
             logger.error(f"Error collecting Windows CPU metrics: {e}")
 
     def _calculate_communication_energy(self, layer_idx, tensor_size_bytes):
-        """Calculate communication energy for tensor transmission."""
+        """Calculate energy cost for sending tensor data over wireless network.
+
+        Uses an energy-per-bit model based on research literature:
+        Energy (J) = Energy per bit (J/bit) x Size (bits)
+
+        For WiFi: ~7.5 nJ/bit based on mobile communication research.
+        """
         # Convert to MB for logging clarity
         output_mb = tensor_size_bytes / (1024 * 1024)
 
@@ -364,7 +389,7 @@ class MetricsCollector:
         return comm_energy
 
     def _ensure_energy_data_stored(self, layer_idx, layer_data, is_split_point):
-        """Store energy metrics in historical data structure for experiment_mgmt.py."""
+        """Store energy metrics in historical data structure for experiment analysis."""
         if not hasattr(self, "layer_energy_data"):
             self.layer_energy_data = {}
 
@@ -405,11 +430,11 @@ class MetricsCollector:
         return self.layer_energy_data
 
     def get_all_layer_metrics(self) -> Dict[int, Dict[str, Any]]:
-        """Get all layer metrics collected during inference."""
+        """Retrieve complete layer-wise metrics dictionary."""
         return self.layer_metrics
 
     def get_energy_data(self) -> Dict[int, List[Dict[str, Any]]]:
-        """Get historical energy data for all layers."""
+        """Get historical energy data records for all measured layers."""
         return self.layer_energy_data
 
     def estimate_layer_energy(
@@ -420,17 +445,11 @@ class MetricsCollector:
         is_split_point=False,
         comm_energy=0.0,
     ):
-        """Estimate energy consumption for a layer based on power and time.
+        """Calculate energy consumption for a layer from power and time measurements.
 
-        Args:
-            layer_idx: Layer index
-            power_reading: Power reading in watts
-            inference_time: Layer inference time in seconds
-            is_split_point: Whether this is the split point
-            comm_energy: Communication energy in joules
-
-        Returns:
-            Tuple of (processing_energy, total_energy)
+        Returns a tuple of (processing energy, total energy) where:
+        - processing_energy = power (W) x time (s)
+        - total_energy includes communication energy at split points
         """
         # Energy = Power × Time
         if power_reading <= 0 or inference_time <= 0:

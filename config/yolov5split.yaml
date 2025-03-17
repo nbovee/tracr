@@ -37,10 +37,10 @@ model:
 # DATASET CONFIGURATIONS
 # ================================================================
 dataset:
-  name: onion
-  root: data/onion
+  name: "onion"
+  root: "data/onion"
   class_names: ["with_weeds", "without_weeds"]
-  img_directory: data/onion/testing
+  img_directory: "data/onion/testing"
   transform: null
   max_samples: -1
 

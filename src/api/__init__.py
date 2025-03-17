@@ -1,4 +1,4 @@
-"""API module for the Split Computing project."""
+"""API module"""
 
 from .core import *
 from .devices import *

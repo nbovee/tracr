@@ -1,4 +1,4 @@
-"""Exceptions module for the datasets package."""
+"""Exceptions module for the datasets package"""
 
 from typing import Optional, Any
 

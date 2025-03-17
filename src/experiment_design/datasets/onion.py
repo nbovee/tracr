@@ -1,4 +1,4 @@
-"""Onion dataset implementation."""
+"""Onion dataset implementation"""
 
 import logging
 from pathlib import Path
@@ -31,19 +31,7 @@ class OnionDataset(BaseDataset):
         class_names: Optional[Union[List[str], str]] = None,
         img_directory: Optional[Union[str, Path]] = None,
     ) -> None:
-        """Initialize OnionDataset with specified parameters.
-
-        Args:
-            root: Root directory containing dataset files
-            transform: Callable to transform images
-            target_transform: Callable to transform labels
-            max_samples: Maximum number of samples to load (-1 for all)
-            class_names: List of class names or path to file containing class names
-            img_directory: Directory containing image files
-
-        Raises:
-            DatasetPathError: If required directories don't exist
-        """
+        """Initialize OnionDataset."""
         super().__init__(root, transform, target_transform, max_samples)
         self._initialize_paths(root, img_directory)
         self._setup_classes(class_names)
@@ -56,27 +44,15 @@ class OnionDataset(BaseDataset):
         root: Optional[Union[str, Path]],
         img_directory: Optional[Union[str, Path]],
     ) -> None:
-        """Set up dataset paths and verify existence.
-
-        Args:
-            root: Root directory path
-            img_directory: Directory containing images
-
-        Raises:
-            DatasetPathError: If required paths don't exist
-        """
+        """Set up dataset paths and verify existence."""
         self._validate_root_directory(root)
         self._validate_img_directory(img_directory)
 
     def _setup_classes(self, class_names: Optional[Union[List[str], str]]) -> None:
         """Configure dataset classes from file or list.
 
-        Args:
-            class_names: List of class names or path to class names file
-
-        Raises:
-            DatasetPathError: If class file doesn't exist
-            DatasetProcessingError: If class names can't be loaded
+        Handles both direct class name lists and file paths containing class names.
+        Validates class files exist and can be read properly.
         """
         if isinstance(class_names, str):
             self.class_file = Path(class_names)
@@ -99,25 +75,14 @@ class OnionDataset(BaseDataset):
             logger.warning("No class names provided or loaded")
 
     def _initialize_dataset(self, max_samples: int) -> None:
-        """Initialize dataset state and load image files.
-
-        Args:
-            max_samples: Maximum number of samples to load
-        """
+        """Initialize dataset state and load image files."""
         self.max_samples = max_samples
         self.image_files = self._load_image_files()
         self.length = len(self.image_files)
         logger.info(f"Initialized OnionDataset with {self.length} images")
 
     def _load_classes(self) -> List[str]:
-        """Load and return class names from file.
-
-        Returns:
-            List of class names
-
-        Raises:
-            DatasetProcessingError: If class file can't be read
-        """
+        """Load class names from file."""
         try:
             with self.class_file.open("r") as file:
                 classes = [line.strip() for line in file if line.strip()]
@@ -128,18 +93,7 @@ class OnionDataset(BaseDataset):
             raise DatasetProcessingError(f"Failed to load classes: {str(e)}")
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, Image.Image, str]:
-        """Get processed image, original image, and filename for given index.
-
-        Args:
-            index: Index of the sample to retrieve
-
-        Returns:
-            Tuple containing (transformed_image, original_image, filename)
-
-        Raises:
-            DatasetIndexError: If index is out of bounds
-            DatasetProcessingError: If image processing fails
-        """
+        """Get processed image, original image, and filename for given index."""
         self._validate_index(index)
         return self._load_and_process_image(self.image_files[index])
 
@@ -148,15 +102,8 @@ class OnionDataset(BaseDataset):
     ) -> Tuple[torch.Tensor, Image.Image, str]:
         """Load and process image at given path.
 
-        Args:
-            img_path: Path to the image file
-
-        Returns:
-            Tuple containing (transformed_image, original_image, filename)
-
-        Raises:
-            DatasetProcessingError: If image can't be loaded
-            DatasetTransformError: If transformation fails
+        Returns both the transformed tensor and the original PIL image,
+        allowing for comparisons between original and processed versions.
         """
         try:
             # Load original image
@@ -182,22 +129,7 @@ def load_onion_dataset(
     class_names: Optional[Union[List[str], str]] = None,
     **kwargs,
 ) -> OnionDataset:
-    """Factory function to create an OnionDataset.
-
-    Args:
-        root: Root directory for the dataset
-        img_directory: Directory containing images
-        transform: Transform to apply to images
-        max_samples: Maximum number of samples to load (-1 for all)
-        class_names: List of class names or path to class names file
-        **kwargs: Additional arguments to pass to the dataset constructor
-
-    Returns:
-        OnionDataset instance
-
-    Raises:
-        DatasetPathError: If required paths don't exist
-    """
+    """Factory function to create an OnionDataset."""
     logger.info(f"Loading OnionDataset from {root} / {img_directory}")
 
     # Configure transform if not provided

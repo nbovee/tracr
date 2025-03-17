@@ -1,4 +1,4 @@
-"""Jetson power and energy monitoring using jtop."""
+"""Jetson power and energy monitoring using jtop"""
 
 import logging
 from typing import Dict, Any
@@ -10,27 +10,19 @@ logger = logging.getLogger("split_computing_logger")
 
 
 class JetsonMonitor(PowerMonitor):
-    """Jetson power and energy monitoring using jtop.
+    """NVIDIA Jetson power and energy monitoring using the jtop library.
 
-    This class uses the jtop package to monitor power consumption and
-    system metrics on NVIDIA Jetson devices.
-
-    Attributes:
-        device_type: Always "jetson"
-        _jtop: The jtop instance for monitoring
+    Implements specialized monitoring for Jetson edge computing devices
+    by accessing hardware-specific power sensors through the jetson-stats package.
     """
 
     def __init__(self) -> None:
-        """Initialize the Jetson monitor.
-
-        Raises:
-            MonitoringInitError: If jtop initialization fails
-        """
+        """Initialize Jetson monitoring through jtop library."""
         super().__init__("jetson")
         self._jtop = None
 
         try:
-            from jtop import jtop, JtopException
+            from jtop import jtop
 
             self._jtop = jtop()
             self._jtop.start()
@@ -47,13 +39,10 @@ class JetsonMonitor(PowerMonitor):
             )
 
     def get_current_power(self) -> float:
-        """Get current Jetson power consumption in watts.
+        """Get power consumption from Jetson-specific power sensors.
 
-        Returns:
-            Current power consumption in watts
-
-        Raises:
-            MeasurementError: If power measurement fails
+        Handles different sensor naming schemes across Jetson platforms
+        (Xavier, Nano, Orin) by trying multiple known power rail keys.
         """
         if not self._jtop or not self._jtop.is_alive():
             raise MeasurementError("Jetson monitoring not initialized")
@@ -103,14 +92,7 @@ class JetsonMonitor(PowerMonitor):
             return 0.0
 
     def get_system_metrics(self) -> Dict[str, Any]:
-        """Get Jetson system metrics including power, GPU and memory utilization.
-
-        Returns:
-            Dictionary with power, GPU utilization, and memory utilization metrics
-
-        Raises:
-            MeasurementError: If metrics collection fails
-        """
+        """Get comprehensive system metrics from Jetson hardware."""
         try:
             if not self._jtop or not self._jtop.is_alive():
                 raise MeasurementError("Jetson monitoring not initialized")
@@ -161,13 +143,13 @@ class JetsonMonitor(PowerMonitor):
             }
 
     def _get_memory_utilization(self, stats: Dict[str, Any]) -> float:
-        """Extract memory utilization from Jetson stats.
+        """Extract memory utilization using multiple fallback approaches.
 
-        Args:
-            stats: Jetson stats dictionary from jtop
-
-        Returns:
-            Memory utilization as a percentage
+        Implements a multi-layered approach to ensure memory data is available:
+        1. Standard RAM dictionary with used/total fields
+        2. RAM string parsing for formats like "1234M/5678M"
+        3. Search for alternative memory keys in stats
+        4. Use psutil as fallback for system memory
         """
         mem_util = 0.0
 
@@ -222,7 +204,7 @@ class JetsonMonitor(PowerMonitor):
         return mem_util
 
     def cleanup(self) -> None:
-        """Clean up jtop resources."""
+        """Stop jtop monitoring and release resources."""
         if hasattr(self, "_jtop") and self._jtop and self._jtop.is_alive():
             try:
                 self._jtop.close()

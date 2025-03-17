@@ -1,15 +1,16 @@
-"""Experiment management module."""
+"""Experiment management module"""
 
 from .base import BaseExperiment, ExperimentPaths, ProcessingTimes
 from .local import LocalExperiment
-from .networked import NetworkedExperiment
 from .manager import ExperimentManager
+from .networked import NetworkedExperiment
+
 
 __all__ = [
     "BaseExperiment",
     "ExperimentPaths",
     "ProcessingTimes",
     "LocalExperiment",
-    "NetworkedExperiment",
     "ExperimentManager",
+    "NetworkedExperiment",
 ]

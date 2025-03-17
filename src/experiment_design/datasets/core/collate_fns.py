@@ -1,4 +1,4 @@
-"""Collate functions for dataset batch processing."""
+"""Collate functions for dataset batch processing"""
 
 import logging
 from functools import wraps
@@ -22,13 +22,11 @@ CollateOutput = Any  # Result of collation
 def safe_collate(
     func: Callable[[BatchItems], CollateOutput]
 ) -> Callable[[BatchItems], CollateOutput]:
-    """Decorator to add standardized error handling to collate functions.
+    """Decorator that adds standardized error handling to collate functions.
 
-    Args:
-        func: Collate function to wrap
-
-    Returns:
-        Wrapped function with error handling
+    Wraps any collate function with consistent error logging and exception
+    handling, providing a uniform error reporting mechanism across different
+    collation strategies.
     """
 
     @wraps(func)
@@ -50,11 +48,8 @@ def imagenet_collate(
 ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[str, ...]]:
     """Collate function for ImageNet-style datasets.
 
-    Args:
-        batch: List of (image_tensor, label_int, filename_str) tuples
-
-    Returns:
-        Tuple of (image_batch, label_batch, filenames)
+    Processes a batch of (image_tensor, label_int, filename_str) tuples into
+    batched tensors suitable for model input and evaluation.
     """
     images, labels, image_files = zip(*batch)
     return torch.stack(images, 0), torch.tensor(labels), image_files
@@ -66,11 +61,8 @@ def onion_collate(
 ) -> Tuple[torch.Tensor, Tuple[Image.Image, ...], Tuple[str, ...]]:
     """Collate function for Onion datasets.
 
-    Args:
-        batch: List of (processed_image, original_image, filename) tuples
-
-    Returns:
-        Tuple of (processed_image_batch, original_images, filenames)
+    Processes a batch of (processed_image, original_image, filename) tuples,
+    batching the processed images while preserving the original images.
     """
     images, original_images, image_files = zip(*batch)
     return torch.stack(images, 0), original_images, image_files
@@ -78,19 +70,16 @@ def onion_collate(
 
 @safe_collate
 def default_collate(batch: BatchItems) -> Any:
-    """Wrapper for PyTorch's default collation.
-
-    Args:
-        batch: List of data items to collate
-
-    Returns:
-        Collated batch
-    """
+    """Wrapper for PyTorch's default collation with additional error handling."""
     return torch_default_collate(batch)
 
 
 class CollateRegistry:
-    """Registry for collate functions with name lookup."""
+    """Registry for collate functions with dynamic name-based lookup.
+
+    Provides a centralized registry for collate functions that can be accessed
+    by name, supporting both direct lookups and automatic suffix handling.
+    """
 
     _registry: Dict[str, Callable] = {
         "imagenet": imagenet_collate,
@@ -101,24 +90,16 @@ class CollateRegistry:
 
     @classmethod
     def register(cls, name: str, func: Callable) -> None:
-        """Register a collate function.
-
-        Args:
-            name: Name to register the function under
-            func: Collate function to register
-        """
+        """Register a collate function by name."""
         cls._registry[name] = func
         logger.debug(f"Registered collate function: {name}")
 
     @classmethod
     def get(cls, name: Optional[str]) -> Optional[Callable]:
-        """Get a collate function by name.
+        """Retrieve a collate function by name with flexible name matching.
 
-        Args:
-            name: Name of the collate function or None
-
-        Returns:
-            The collate function or None
+        Supports both direct name lookup and automatic "_collate" suffix
+        handling with fallback to default collation if not found.
         """
         # Handle both "name" and "name_collate" format
         if name is None:
@@ -138,11 +119,7 @@ class CollateRegistry:
 
     @classmethod
     def list_available(cls) -> List[str]:
-        """List all registered collate functions.
-
-        Returns:
-            List of registered function names
-        """
+        """List all registered collate function names."""
         return [name for name in cls._registry.keys() if name is not None]
 
 

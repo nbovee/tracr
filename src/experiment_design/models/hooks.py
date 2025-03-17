@@ -1,4 +1,4 @@
-"""Hooks for split computing experiments."""
+"""Hooks for split computing experiments"""
 
 import logging
 from typing import Any, Callable, Dict, Optional, Tuple, Union
@@ -13,17 +13,17 @@ logger = logging.getLogger("split_computing_logger")
 
 @dataclass
 class EarlyOutput:
-    """Wrapper class to bypass Ultralytics or other class based forward pass handling.
+    """Container for intermediate outputs from a partial model execution.
 
-    When the forward pass is terminated early (via a HookExitException), the
-    collected intermediate outputs (stored in a dictionary or as a tensor) are wrapped
-    in this EarlyOutput instance. This output is then used as the final output of the model.
+    Wraps tensors or dictionaries from an incomplete forward pass,
+    enabling model execution to be resumed at an arbitrary split point.
+    This facilitates distributed model inference across multiple devices.
     """
 
     inner_dict: Union[Dict[str, Any], Tensor]
 
     def __call__(self, *args: Any, **kwargs: Any) -> Union[Dict[str, Any], Tensor]:
-        """Return inner dictionary (or tensor) when called."""
+        """Return inner dictionary or tensor when called."""
         return self.inner_dict
 
     @property
@@ -33,12 +33,13 @@ class EarlyOutput:
 
 
 class HookExitException(Exception):
-    """Exception for controlled early exit during hook execution.
+    """Exception used to halt model execution at a designated layer.
 
-    This exception is raised by a post-hook when the model has produced enough intermediate output
-    (i.e. at the designated split point) so that further forward computation is unnecessary.
-    The contained result (typically the dictionary of banked intermediate outputs) will then be used
-    downstream - for example, transmitted from an Edge device to a Cloud device."""
+    Serves as a non-error control flow mechanism to terminate forward
+    pass execution at the specified split point. The exception carries
+    intermediate outputs (typically tensors) that will be used for
+    resuming computation in another context.
+    """
 
     def __init__(self, result: Any) -> None:
         """Initialize with result that triggered the exit."""
@@ -54,11 +55,17 @@ def create_forward_prehook(
     input_shape: Tuple[int, ...],
     device: str,
 ) -> Callable:
-    """Create pre-hook focused on tensor control flow and timing."""
+    """Create pre-hook for layer measurement and input modification.
+
+    The generated pre-hook handles:
+    1. Initialization of timing and metrics tracking
+    2. Tensor storage setup at the start of execution
+    3. Input substitution in cloud mode (when start_i > 0)
+    """
     logger.debug(f"Creating forward pre-hook for layer {layer_index} - {layer_name}")
 
     def pre_hook(module: torch.nn.Module, layer_input: tuple) -> Any:
-        """Execute pre-nn.Module hook operations."""
+        """Execute pre-module operations for timing and input processing."""
         logger.debug(f"Start prehook {layer_index} - {layer_name}")
         hook_output = layer_input
 
@@ -117,11 +124,18 @@ def create_forward_posthook(
     input_shape: Tuple[int, ...],
     device: str,
 ) -> Callable:
-    """Create post-hook focused on tensor control flow, output collection, and metrics."""
+    """Create post-hook for metrics collection and execution control.
+
+    The generated post-hook handles:
+    1. Recording performance metrics and energy consumption
+    2. Storing intermediate outputs at designated layers
+    3. Triggering early exit at the split point via HookExitException
+    4. Substituting outputs with stored tensors in cloud mode
+    """
     logger.debug(f"Creating forward post-hook for layer {layer_index} - {layer_name}")
 
     def post_hook(module: torch.nn.Module, layer_input: tuple, output: Any) -> Any:
-        """Execute post-nn.Module hook operations."""
+        """Execute post-module operations for metrics and execution control."""
         logger.debug(f"Start posthook {layer_index} - {layer_name}")
 
         # Collect metrics if logging is enabled and metrics collection is enabled

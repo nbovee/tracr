@@ -1,4 +1,4 @@
-"""Utility functions for the API."""
+"""Utility functions for the API"""
 
 import logging
 import yaml

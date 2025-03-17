@@ -1,4 +1,4 @@
-"""Transforms module for dataset preprocessing operations."""
+"""Transforms module for dataset preprocessing operations"""
 
 import logging
 from enum import Enum
@@ -24,7 +24,7 @@ class TransformType(Enum):
 
 
 class NormalizationParams:
-    """Standard normalization parameters for various datasets."""
+    """Standard normalization parameters for different dataset domains."""
 
     # ImageNet normalization values
     IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -38,14 +38,7 @@ class NormalizationParams:
     def get_params(
         cls, transform_type: Union[str, TransformType]
     ) -> Tuple[List[float], List[float]]:
-        """Get mean and std normalization parameters for a transform type.
-
-        Args:
-            transform_type: The type of transform to get parameters for
-
-        Returns:
-            Tuple containing mean and std normalization parameters
-        """
+        """Get mean and std normalization parameters for the specified domain."""
         if isinstance(transform_type, str):
             transform_type = TransformType(transform_type.lower())
 
@@ -56,7 +49,7 @@ class NormalizationParams:
 
 
 class TransformFactory:
-    """Factory class for creating transform pipelines."""
+    """Factory for creating standardized or custom transform pipelines."""
 
     DEFAULT_TRANSFORMS: Dict[TransformType, Callable] = {}
 
@@ -66,18 +59,7 @@ class TransformFactory:
         transform_type: Union[str, TransformType] = TransformType.IMAGENET,
         **kwargs: Any,
     ) -> Callable:
-        """Get a transform pipeline for the specified transform type.
-
-        Args:
-            transform_type: The type of transform to create
-            **kwargs: Additional arguments to customize the transform
-
-        Returns:
-            A callable transform pipeline
-
-        Raises:
-            DatasetTransformError: If the transform type is not supported
-        """
+        """Create a transform pipeline based on predefined or custom configurations."""
         try:
             if isinstance(transform_type, str):
                 transform_type = TransformType(transform_type.lower())
@@ -99,7 +81,7 @@ class TransformFactory:
 
     @classmethod
     def _initialize_default_transforms(cls) -> None:
-        """Initialize the dictionary of default transforms."""
+        """Initialize standard transform pipelines for common use cases."""
         # ImageNet standard preprocessing
         cls.DEFAULT_TRANSFORMS[TransformType.IMAGENET] = T.Compose(
             [
@@ -130,16 +112,13 @@ class TransformFactory:
 
     @classmethod
     def _create_custom_transform(cls, **kwargs: Any) -> Callable:
-        """Create a custom transform pipeline based on provided parameters.
+        """Build a custom transform pipeline from user-specified components.
 
-        Args:
-            **kwargs: Configuration parameters for the custom transform
-
-        Returns:
-            A custom transform pipeline
-
-        Raises:
-            DatasetTransformError: If required parameters are missing
+        Creates a configurable transform pipeline with options for:
+        - Resizing (with integer or tuple dimensions)
+        - Center cropping
+        - Data augmentation (horizontal flips and rotations)
+        - Normalization (with domain-specific parameters)
         """
         transforms_list = []
 
@@ -191,24 +170,13 @@ class TransformFactory:
 
 
 class ImageTransformer:
-    """Utility class for applying transformations to images."""
+    """Utility for consistently applying and managing image transformations."""
 
     @staticmethod
     def apply_transform(
         image: Image.Image, transform: Optional[Callable] = None
     ) -> torch.Tensor:
-        """Apply a transform to an image.
-
-        Args:
-            image: The PIL image to transform
-            transform: The transform to apply, or None to use minimal transform
-
-        Returns:
-            Transformed image as a torch.Tensor
-
-        Raises:
-            DatasetTransformError: If the transform fails
-        """
+        """Apply transformation to image with appropriate error handling."""
         if transform is None:
             transform = TransformFactory.get_transform(TransformType.MINIMAL)
 
@@ -223,17 +191,7 @@ class ImageTransformer:
 
     @staticmethod
     def tensor_to_pil(tensor: torch.Tensor) -> Image.Image:
-        """Convert a tensor back to a PIL image.
-
-        Args:
-            tensor: Image tensor to convert [C,H,W]
-
-        Returns:
-            PIL Image
-
-        Raises:
-            DatasetTransformError: If the conversion fails
-        """
+        """Convert image tensor back to PIL format with validation."""
         try:
             if tensor.ndim != 3:
                 raise ValueError(

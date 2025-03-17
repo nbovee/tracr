@@ -1,4 +1,4 @@
-"""Model registry module for managing model creation and initialization."""
+"""Model registry module for managing model creation and initialization"""
 
 import importlib
 import logging
@@ -21,16 +21,9 @@ logger = logging.getLogger("split_computing_logger")
 class ModelRegistry:
     """Registry for managing model creation and initialization.
 
-    This registry maps model names (as strings) to functions (or classes) that can create
-    instances of the corresponding PyTorch model. It supports:
-
-    - Custom model registration via the @register decorator
-    - YOLO model creation with appropriate weights
-    - Instantiation of torchvision models with pretrained weights
-    - Automatic head adjustment for classification tasks
-
-    Attributes:
-        _registry: Class-level dictionary mapping model names to constructor functions
+    Implements a registry pattern to dynamically instantiate models by name.
+    Supports custom models, YOLO models, and torchvision models with automatic
+    head adjustment for classification tasks.
     """
 
     # The registry dictionary is stored as a class variable
@@ -40,14 +33,8 @@ class ModelRegistry:
     def register(cls, model_name: str) -> Callable:
         """Register a model class with the given name.
 
-        This decorator registers a model class with the registry under
-        the specified name, allowing it to be instantiated via get_model.
-
-        Args:
-            model_name: The name to register the model under (case-insensitive)
-
-        Returns:
-            A decorator function that registers the decorated class
+        Used as a decorator to register model implementations with the registry,
+        making them available for dynamic instantiation.
 
         Example:
             @ModelRegistry.register("mymodel")
@@ -79,24 +66,10 @@ class ModelRegistry:
     ) -> nn.Module:
         """Create and return a model instance based on configuration.
 
-        The function follows this resolution order:
+        Implements a resolution strategy to find the appropriate model:
         1. Check internal registry for custom models
         2. Handle YOLO models if name contains 'yolo'
         3. Look for the model in torchvision.models
-        4. Raise an error if the model cannot be found
-
-        Args:
-            model_name: The name/identifier of the model
-            model_config: Configuration dictionary for the model
-            dataset_config: Configuration dictionary for the dataset (for weights)
-            *args, **kwargs: Additional arguments passed to the model constructor
-
-        Returns:
-            An initialized PyTorch model instance
-
-        Raises:
-            ModelRegistryError: If no model is found in the registry or supported frameworks
-            ModelLoadError: If the model fails to initialize
         """
         name_lower = model_name.lower()
         dataset_config = dataset_config or {}
@@ -142,20 +115,8 @@ class ModelRegistry:
     ) -> nn.Module:
         """Create a YOLO model instance with the specified configuration.
 
-        Uses the ultralytics YOLO package to load a model with appropriate weights.
-
-        Args:
-            name: The YOLO model name (e.g., 'yolov8s')
-            config: Model configuration dictionary
-            dataset_name: Dataset name for selecting appropriate weights
-            num_classes: Optional number of classes to adjust the model head
-
-        Returns:
-            Initialized YOLO model
-
-        Raises:
-            ImportError: If ultralytics package is not installed
-            ModelLoadError: If model fails to load
+        Instantiates an ultralytics YOLO model with appropriate weights and
+        optionally adjusts the classification head for a specific number of classes.
         """
         try:
             from ultralytics import YOLO
@@ -194,18 +155,8 @@ class ModelRegistry:
     ) -> nn.Module:
         """Create a torchvision model instance with the specified configuration.
 
-        Args:
-            name: The torchvision model name (e.g., 'resnet50')
-            config: Model configuration dictionary
-            dataset_name: Dataset name for selecting appropriate weights
-            num_classes: Optional number of classes to adjust the model head
-
-        Returns:
-            Initialized torchvision model
-
-        Raises:
-            ImportError: If torchvision is not installed
-            ModelLoadError: If model fails to load
+        Instantiates a model from torchvision with appropriate pretrained weights
+        and optionally adjusts the classification head for a specific number of classes.
         """
         try:
             logger.info(f"Creating torchvision model: {name}")
@@ -243,15 +194,7 @@ class ModelRegistry:
 
     @staticmethod
     def _get_yolo_weights(model_name: str, dataset_name: str) -> str:
-        """Get appropriate YOLO weights path based on dataset name and model name.
-
-        Args:
-            model_name: The YOLO model name
-            dataset_name: Dataset name for selecting appropriate weights
-
-        Returns:
-            Path to the weights file
-        """
+        """Get appropriate YOLO weights path based on dataset name and model name."""
         dataset_name = dataset_name.lower() if dataset_name else ""
         if dataset_name in YOLO_CONFIG["supported_datasets"]:
             return YOLO_CONFIG["default_weights"][dataset_name].format(
@@ -261,16 +204,10 @@ class ModelRegistry:
 
     @staticmethod
     def _initialize_model(model_fn: Callable, weights: Optional[str]) -> nn.Module:
-        """Initialize the model using the provided model function and weights.
+        """Initialize model handling differences in PyTorch's initialization API across versions.
 
-        Handles differences in PyTorch's model initialization API across versions.
-
-        Args:
-            model_fn: Function that creates the model
-            weights: Weights identifier string or None
-
-        Returns:
-            Initialized model
+        Accommodates both older PyTorch versions that use pretrained=True
+        and newer versions that use weights='IMAGENET1K_V1' style parameters.
         """
         torch_version = tuple(map(int, torch.__version__.split(".")[:2]))
         if torch_version <= (0, 11):
@@ -286,18 +223,10 @@ class ModelRegistry:
     ) -> Optional[str]:
         """Determine the appropriate pretrained weights for the model and dataset.
 
-        Resolution order:
-        1. Check model-specific dataset mapping
-        2. Check generic dataset mapping
-        3. Default to "IMAGENET1K_V1"
-
-        Args:
-            model_name: The model name
-            dataset_name: Dataset name
-            pretrained: Whether to use pretrained weights
-
-        Returns:
-            Weight identifier string or None if pretrained is False
+        Uses a priority-based resolution strategy:
+        1. Model-specific dataset weights
+        2. Generic dataset weights
+        3. Default ImageNet weights
         """
         if not pretrained:
             return None
@@ -320,16 +249,7 @@ class ModelRegistry:
     def _adjust_model_head(
         cls, model: nn.Module, model_name: str, num_classes: int
     ) -> None:
-        """Adjust the model's final classification layer to output the desired classes.
-
-        Args:
-            model: The model to adjust
-            model_name: Model name for determining head type
-            num_classes: Number of output classes
-
-        Raises:
-            Exception: If head modification fails
-        """
+        """Adjust the model's final classification layer to output the desired number of classes."""
         head_type = cls._get_head_type(model_name)
         if not head_type:
             logger.warning(f"Could not determine head type for model: {model_name}")
@@ -339,14 +259,7 @@ class ModelRegistry:
 
     @staticmethod
     def _get_head_type(model_name: str) -> Optional[str]:
-        """Determine the head type for the given model architecture.
-
-        Args:
-            model_name: The model name
-
-        Returns:
-            Head type string or None if not found
-        """
+        """Determine the head type for the given model architecture."""
         model_name_lower = model_name.lower()
         return next(
             (
@@ -361,13 +274,10 @@ class ModelRegistry:
     def _modify_head(model: nn.Module, head_type: str, num_classes: int) -> None:
         """Modify the model head based on the determined head type.
 
-        Args:
-            model: The model to modify
-            head_type: Type of head ('fc', 'classifier', etc.)
-            num_classes: Number of output classes
-
-        Raises:
-            Exception: If head modification fails
+        Supports different head architectures:
+        - fc: Used by ResNet, VGG, etc.
+        - classifier: Used by MobileNet, EfficientNet, etc.
+        - heads.head: Used by Vision Transformer models
         """
         try:
             if head_type == "fc" and hasattr(model, "fc"):
@@ -392,14 +302,7 @@ class ModelRegistry:
 
     @classmethod
     def _is_torchvision_model(cls, name: str) -> bool:
-        """Check if a model with the given name exists in torchvision.models.
-
-        Args:
-            name: The model name
-
-        Returns:
-            True if model exists in torchvision, False otherwise
-        """
+        """Check if a model with the given name exists in torchvision.models."""
         try:
             return hasattr(importlib.import_module("torchvision.models"), name)
         except ImportError:
@@ -407,21 +310,10 @@ class ModelRegistry:
 
     @classmethod
     def list_registered_models(cls) -> List[str]:
-        """List all models currently registered in the registry.
-
-        Returns:
-            List of registered model names
-        """
+        """List all models currently registered in the registry."""
         return list(cls._registry.keys())
 
     @classmethod
     def is_registered(cls, model_name: str) -> bool:
-        """Check if a model is registered with the given name.
-
-        Args:
-            model_name: The model name to check
-
-        Returns:
-            True if model is registered, False otherwise
-        """
+        """Check if a model is registered with the given name."""
         return model_name.lower() in cls._registry

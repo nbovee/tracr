@@ -1,4 +1,4 @@
-"""Core components for model management in split computing experiments."""
+"""Core components for model management in split computing experiments"""
 
 from .base import BaseModel
 from .registry import ModelRegistry
