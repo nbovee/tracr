@@ -25,6 +25,7 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
+# Import using the original paths
 from src.api import (
     DataCompression,
     DeviceManager,
@@ -32,8 +33,9 @@ from src.api import (
     DeviceType,
     start_logging_server,
     shutdown_logging_server,
+    DataCompression,
+    read_yaml_file,
 )
-from src.utils import read_yaml_file
 
 # Default configuration
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -328,15 +330,44 @@ class Server:
         Returns:
             The deserialized configuration dictionary
         """
-        config_length = int.from_bytes(conn.recv(LENGTH_PREFIX_SIZE), "big")
-        if not self.compress_data:
-            logger.error("Compression not initialized")
-            return {}
+        try:
+            # Read the length prefix (4 bytes)
+            config_length_bytes = conn.recv(LENGTH_PREFIX_SIZE)
+            if (
+                not config_length_bytes
+                or len(config_length_bytes) != LENGTH_PREFIX_SIZE
+            ):
+                logger.error("Failed to receive config length prefix")
+                return {}
 
-        config_data = self.compress_data.receive_full_message(
-            conn=conn, expected_length=config_length
-        )
-        return pickle.loads(config_data)
+            config_length = int.from_bytes(config_length_bytes, "big")
+            logger.debug(f"Expecting config data of length {config_length} bytes")
+
+            if not self.compress_data:
+                logger.error("Compression not initialized")
+                return {}
+
+            # Receive the raw config data (no compression for config)
+            config_data = self.compress_data.receive_full_message(
+                conn=conn, expected_length=config_length
+            )
+
+            if not config_data:
+                logger.error("Failed to receive config data")
+                return {}
+
+            # Deserialize using pickle
+            try:
+                config = pickle.loads(config_data)
+                logger.debug(f"Successfully received and parsed configuration")
+                return config
+            except Exception as e:
+                logger.error(f"Failed to deserialize config: {e}")
+                return {}
+
+        except Exception as e:
+            logger.error(f"Error receiving config: {e}")
+            return {}
 
     def _process_data(
         self,
@@ -386,63 +417,100 @@ class Server:
         with self._safe_connection(conn):
             # Receive configuration from the client
             config = self._receive_config(conn)
+            if not config:
+                logger.error("Failed to receive valid configuration from client")
+                return
+
+            # Update compression settings based on received config
             self._update_compression(config)
 
             # Initialize experiment based on received configuration
-            self.experiment_manager = ExperimentManager(config)
-            experiment = self.experiment_manager.setup_experiment()
-            experiment.model.eval()
+            try:
+                self.experiment_manager = ExperimentManager(config)
+                experiment = self.experiment_manager.setup_experiment()
+                experiment.model.eval()
+                logger.info("Experiment initialized successfully with received config")
+            except Exception as e:
+                logger.error(f"Failed to initialize experiment: {e}")
+                return
 
             # Cache torch.no_grad() context for inference
             no_grad_context = torch.no_grad()
 
-            # Send acknowledgment to the client
+            # Send acknowledgment to the client - must be exactly b"OK"
             conn.sendall(b"OK")
+            logger.debug("Sent 'OK' acknowledgment to client")
 
             # Process incoming data in a loop
             while True:
-                # Receive header
-                header = conn.recv(LENGTH_PREFIX_SIZE * 2)
-                if not header or len(header) != LENGTH_PREFIX_SIZE * 2:
-                    break
+                try:
+                    # Receive header - 8 bytes total (4 for split index, 4 for length)
+                    header = conn.recv(LENGTH_PREFIX_SIZE * 2)
+                    if not header or len(header) != LENGTH_PREFIX_SIZE * 2:
+                        logger.info("Client disconnected or sent invalid header")
+                        break
 
-                split_layer_index = int.from_bytes(header[:LENGTH_PREFIX_SIZE], "big")
-                expected_length = int.from_bytes(header[LENGTH_PREFIX_SIZE:], "big")
-
-                # Receive compressed data from client
-                if not self.compress_data:
-                    logger.error("Compression not initialized")
-                    break
-
-                compressed_data = self.compress_data.receive_full_message(
-                    conn=conn, expected_length=expected_length
-                )
-
-                # Process the data
-                with no_grad_context:
-                    # Decompress received data
-                    output, original_size = self.compress_data.decompress_data(
-                        compressed_data=compressed_data
+                    split_layer_index = int.from_bytes(
+                        header[:LENGTH_PREFIX_SIZE], "big"
+                    )
+                    expected_length = int.from_bytes(header[LENGTH_PREFIX_SIZE:], "big")
+                    logger.debug(
+                        f"Received header: split_layer={split_layer_index}, data_length={expected_length}"
                     )
 
-                    # Process data using the experiment's model
-                    processed_result, processing_time = self._process_data(
-                        experiment=experiment,
-                        output=output,
-                        original_size=original_size,
-                        split_layer_index=split_layer_index,
+                    # Receive compressed data from client
+                    if not self.compress_data:
+                        logger.error("Compression not initialized")
+                        break
+
+                    compressed_data = self.compress_data.receive_full_message(
+                        conn=conn, expected_length=expected_length
                     )
 
-                    # Update metrics
-                    self.metrics.update(processing_time)
+                    if not compressed_data:
+                        logger.warning("Failed to receive compressed data from client")
+                        break
 
-                # Compress the processed result to send back
-                compressed_result, result_size = self.compress_data.compress_data(
-                    processed_result
-                )
+                    logger.debug(
+                        f"Received {len(compressed_data)} bytes of compressed data"
+                    )
 
-                # Send result back to client
-                self._send_result(conn, result_size, processing_time, compressed_result)
+                    # Process the data
+                    with no_grad_context:
+                        # Decompress received data
+                        output, original_size = self.compress_data.decompress_data(
+                            compressed_data=compressed_data
+                        )
+
+                        # Process data using the experiment's model
+                        processed_result, processing_time = self._process_data(
+                            experiment=experiment,
+                            output=output,
+                            original_size=original_size,
+                            split_layer_index=split_layer_index,
+                        )
+
+                        # Update metrics
+                        self.metrics.update(processing_time)
+
+                    logger.debug(f"Processed data in {processing_time:.4f}s")
+
+                    # Compress the processed result to send back
+                    compressed_result, result_size = self.compress_data.compress_data(
+                        processed_result
+                    )
+
+                    # Send result back to client
+                    self._send_result(
+                        conn, result_size, processing_time, compressed_result
+                    )
+                    logger.debug(
+                        f"Sent result of size {result_size} bytes back to client"
+                    )
+
+                except Exception as e:
+                    logger.error(f"Error processing client data: {e}", exc_info=True)
+                    break
 
     def _send_result(
         self,
@@ -452,17 +520,23 @@ class Server:
         compressed_result: bytes,
     ) -> None:
         """Send the processed result back to the client."""
-        # Send result size as header
-        conn.sendall(result_size.to_bytes(LENGTH_PREFIX_SIZE, "big"))
+        try:
+            # Send result size as header (4 bytes)
+            size_bytes = result_size.to_bytes(LENGTH_PREFIX_SIZE, "big")
+            conn.sendall(size_bytes)
 
-        # Send processing time as fixed-length bytes
-        time_bytes = (
-            str(processing_time).ljust(LENGTH_PREFIX_SIZE).encode()[:LENGTH_PREFIX_SIZE]
-        )
-        conn.sendall(time_bytes)
+            # Send processing time as fixed-length bytes (4 bytes)
+            # Format as a string, pad/truncate to exactly 4 bytes
+            time_str = str(processing_time).ljust(LENGTH_PREFIX_SIZE)
+            time_bytes = time_str[:LENGTH_PREFIX_SIZE].encode()
+            conn.sendall(time_bytes)
 
-        # Send compressed result data
-        conn.sendall(compressed_result)
+            # Send compressed result data
+            conn.sendall(compressed_result)
+
+        except Exception as e:
+            logger.error(f"Error sending result: {e}")
+            raise
 
     def _update_compression(self, config: dict) -> None:
         """
@@ -472,7 +546,7 @@ class Server:
             config: Configuration dictionary that may contain compression settings
         """
         if "compression" in config:
-            logger.debug("Updating compression settings from received config")
+            logger.debug(f"Updating compression settings: {config['compression']}")
             self.compress_data = DataCompression(config["compression"])
         else:
             logger.warning(
@@ -506,11 +580,13 @@ def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Run server for split computing")
     parser.add_argument(
+        "-l",
         "--local",
         action="store_true",
         help="Run experiment locally instead of as a network server",
     )
     parser.add_argument(
+        "-c",
         "--config",
         type=str,
         help="Path to configuration file (required for local mode)",
