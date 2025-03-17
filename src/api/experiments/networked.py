@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
 
 import torch
-from PIL import Image
 from tqdm import tqdm
 
 from ..network import create_network_client, DataCompression
