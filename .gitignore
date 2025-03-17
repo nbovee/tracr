@@ -135,6 +135,7 @@ dmypy.json
 
 # data folder
 data/
+analysis/*
 
 # results folder
 *results*/
