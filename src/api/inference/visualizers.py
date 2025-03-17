@@ -1,6 +1,7 @@
 """Visualization utilities for inference results."""
 
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 from PIL import Image, ImageDraw, ImageFont
@@ -24,15 +25,46 @@ class PredictionVisualizer:
             vis_config: Configuration for visualization settings.
         """
         self.config = vis_config
-        self._init_font()
+        self.font = self._load_font(self.config.font_size)
 
-    def _init_font(self) -> None:
-        """Initialize the font for drawing text; fallback to default if loading fails."""
+    def _load_font(self, font_size: int) -> ImageFont.FreeTypeFont:
+        """Load a font with fallback mechanisms for different platforms.
+
+        Args:
+            font_size: Size of the font to load
+
+        Returns:
+            A usable font for drawing text
+        """
+        # Try to load the default font with size parameter
         try:
-            self.font = ImageFont.truetype(self.config.font_path, self.config.font_size)
-        except IOError:
-            logger.warning("Failed to load font. Using default font.")
-            self.font = ImageFont.load_default()
+            return ImageFont.load_default()
+        except (AttributeError, ValueError) as e:
+            logger.warning(f"Could not load default font with size: {e}")
+
+        # Look for common system fonts as fallback
+        system_fonts = [
+            # Linux/Jetson
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/ttf-dejavu/DejaVuSans.ttf",
+            # Windows
+            "C:\\Windows\\Fonts\\arial.ttf",
+            # MacOS
+            "/Library/Fonts/Arial.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+        ]
+
+        for system_font in system_fonts:
+            if os.path.exists(system_font):
+                try:
+                    return ImageFont.truetype(system_font, font_size)
+                except Exception as e:
+                    logger.debug(f"Could not load system font {system_font}: {e}")
+
+        # Final fallback: use the default font without size parameter
+        logger.warning("Using default font without size parameter as last resort")
+        return ImageFont.load_default()
 
     def draw_classification_result(
         self,
@@ -60,10 +92,21 @@ class PredictionVisualizer:
         if true_class:
             texts.append(f"True: {true_class}")
 
-        # Compute text dimensions for each text block
-        text_boxes = [draw.textbbox((0, 0), text, font=self.font) for text in texts]
-        text_widths = [box[2] - box[0] for box in text_boxes]
-        text_heights = [box[3] - box[1] for box in text_boxes]
+        # Compute text dimensions for each text block - handle different font capabilities
+        text_widths = []
+        text_heights = []
+
+        try:
+            # Try to use textbbox if available (requires TrueType font)
+            text_boxes = [draw.textbbox((0, 0), text, font=self.font) for text in texts]
+            text_widths = [box[2] - box[0] for box in text_boxes]
+            text_heights = [box[3] - box[1] for box in text_boxes]
+        except (ValueError, AttributeError):
+            # Fallback to older method for non-TrueType fonts
+            logger.warning("Using fallback font size approximation")
+            text_widths = [draw.textlength(text, font=self.font) for text in texts]
+            # Approximate text height - use a reasonable default
+            text_heights = [self.config.font_size + 4 for _ in texts]
 
         max_width = max(text_widths)
         total_height = sum(text_heights) + self.config.padding * (len(texts) - 1)
@@ -87,10 +130,10 @@ class PredictionVisualizer:
 
         # Draw each text line with appropriate padding
         current_y = y
-        for text in texts:
+        for i, text in enumerate(texts):
             draw.text((x, current_y), text, font=self.font, fill=self.config.text_color)
-            # Use the first text's height as a constant (could also iterate over text_heights)
-            current_y += text_heights[0] + self.config.padding
+            # Use the text height for this specific text
+            current_y += text_heights[i] + self.config.padding
 
         return image
 
@@ -111,15 +154,46 @@ class DetectionVisualizer:
         """
         self.class_names = class_names
         self.config = vis_config
-        self._init_font()
+        self.font = self._load_font(self.config.font_size)
 
-    def _init_font(self) -> None:
-        """Initialize the font for drawing detection labels."""
+    def _load_font(self, font_size: int) -> ImageFont.FreeTypeFont:
+        """Load a font with fallback mechanisms for different platforms.
+
+        Args:
+            font_size: Size of the font to load
+
+        Returns:
+            A usable font for drawing text
+        """
+        # Try to load the default font with size parameter
         try:
-            self.font = ImageFont.truetype(self.config.font_path, self.config.font_size)
-        except IOError:
-            logger.warning("Failed to load font. Using default font.")
-            self.font = ImageFont.load_default()
+            return ImageFont.load_default()
+        except (AttributeError, ValueError) as e:
+            logger.warning(f"Could not load default font with size: {e}")
+
+        # Look for common system fonts as fallback
+        system_fonts = [
+            # Linux/Jetson
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/ttf-dejavu/DejaVuSans.ttf",
+            # Windows
+            "C:\\Windows\\Fonts\\arial.ttf",
+            # MacOS
+            "/Library/Fonts/Arial.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+        ]
+
+        for system_font in system_fonts:
+            if os.path.exists(system_font):
+                try:
+                    return ImageFont.truetype(system_font, font_size)
+                except Exception as e:
+                    logger.debug(f"Could not load system font {system_font}: {e}")
+
+        # Final fallback: use the default font without size parameter
+        logger.warning("Using default font without size parameter as last resort")
+        return ImageFont.load_default()
 
     def draw_detections(
         self, image: Image.Image, detections: List[Dict[str, Any]]
@@ -153,9 +227,18 @@ class DetectionVisualizer:
 
                 # Prepare the label text with class name and confidence
                 label = f"{class_name}: {score:.2f}"
-                bbox = draw.textbbox((0, 0), label, font=self.font)
-                text_w = bbox[2] - bbox[0]
-                text_h = bbox[3] - bbox[1]
+
+                # Calculate text dimensions - handle different font capabilities
+                try:
+                    # Try to use textbbox if available (requires TrueType font)
+                    bbox = draw.textbbox((0, 0), label, font=self.font)
+                    text_w = bbox[2] - bbox[0]
+                    text_h = bbox[3] - bbox[1]
+                except (ValueError, AttributeError):
+                    # Fallback to older method for non-TrueType fonts
+                    text_w = draw.textlength(label, font=self.font)
+                    # Approximate text height - use a reasonable default
+                    text_h = self.config.font_size + 4
 
                 # Calculate label position with padding
                 label_x = max(x1 + self.config.padding, 0)

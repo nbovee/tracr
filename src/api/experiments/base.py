@@ -134,14 +134,10 @@ class BaseExperiment(ExperimentInterface):
             # Get class names from config or file
             class_names = self._load_class_names()
 
-            # Get font path from default config
-            font_path = self.config.get("default", {}).get("font_path", "")
-
             # Create the processor using the factory with model config
             return ModelProcessorFactory.create_processor(
                 model_config=self.config.get("model", {}),
                 class_names=class_names,
-                font_path=font_path,
             )
         except Exception as e:
             logger.error(f"Error creating post-processor: {e}")

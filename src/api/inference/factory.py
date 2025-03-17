@@ -29,7 +29,7 @@ class ModelProcessorFactory:
 
     @classmethod
     def create_processor(
-        cls, model_config: Dict[str, Any], class_names: List[str], font_path: str
+        cls, model_config: Dict[str, Any], class_names: List[str]
     ) -> ModelProcessor:
         """Create and return the appropriate model processor.
 
@@ -42,7 +42,6 @@ class ModelProcessorFactory:
                 Expected keys include 'model_name', and potentially
                 'input_size', 'conf_threshold', 'iou_threshold', 'font_size'.
             class_names: List of class names for the model.
-            font_path: Path to font file for visualization.
 
         Returns:
             An initialized ModelProcessor instance appropriate for the model.
@@ -65,7 +64,6 @@ class ModelProcessorFactory:
 
         # Build visualization configuration
         vis_config = VisualizationConfig(
-            font_path=font_path,
             font_size=model_config.get("font_size", 10),
         )
 

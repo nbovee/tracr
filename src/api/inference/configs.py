@@ -17,7 +17,6 @@ class VisualizationConfig:
     Holds settings for drawing text and boxes on images.
 
     Attributes:
-        font_path: Path to a TrueType font file.
         font_size: Size of the font (default: 10).
         text_color: Color of the text (default: "white").
         box_color: Color for drawing boxes (default: "red").
@@ -25,7 +24,6 @@ class VisualizationConfig:
         padding: Padding around text and boxes (default: 5 pixels).
     """
 
-    font_path: str  # Path to a TrueType font file.
     font_size: int = DEFAULT_FONT_SIZE  # Size of the font.
     text_color: str = "white"  # Color of the text.
     box_color: str = "red"  # Color for drawing boxes.

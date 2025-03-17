@@ -5,7 +5,6 @@
 # ================================================================
 default:
   device: cuda
-  font_path: config/fonts/DejaVuSans-Bold.ttf
   save_layer_images: false
   collect_metrics: false
 
