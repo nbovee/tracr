@@ -397,7 +397,7 @@ class BaseExperiment(ExperimentInterface):
         host_time: float,
         travel_time: float,
         server_time: float,
-        battery_energy: float = 0.0,
+        # battery_energy: float = 0.0,
     ) -> None:
         """Log a summary of processing performance metrics.
 
@@ -405,10 +405,8 @@ class BaseExperiment(ExperimentInterface):
             host_time: Time spent on host-side processing.
             travel_time: Time spent on network transfer.
             server_time: Time spent on server-side processing.
-            battery_energy: Energy consumption in mWh (if available).
+            # battery_energy: Energy consumption in mWh (if available).
         """
-        if not self.collect_metrics:
-            return
 
         logger.info(
             "\n"
@@ -418,7 +416,7 @@ class BaseExperiment(ExperimentInterface):
             f"Host Processing Time:   {host_time:.2f}s\n"
             f"Network Transfer Time:  {travel_time:.2f}s\n"
             f"Server Processing Time: {server_time:.2f}s\n"
-            f"Host Battery Energy:    {battery_energy:.2f}mWh\n"
+            # f"Host Battery Energy:    {battery_energy:.2f}mWh\n"
             "==============================\n"
             f"Total Time:             {host_time + travel_time + server_time:.2f}s\n"
             "=================================================="
