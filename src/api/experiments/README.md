@@ -22,6 +22,7 @@ The tensor sharing process follows these steps:
          │ [networked.py: NetworkedExperiment]                 │
          │                                                     │
          │ 2. Prepare tensor with metadata                     │
+         │ (output tensor + original_size)                     │
          │ ───────────────────────────────────                 │
          │ [networked.py: NetworkedExperiment]                 │
          │                                                     │
@@ -33,7 +34,11 @@ The tensor sharing process follows these steps:
          │ ───────────────────────────────────                 │
          │ [encryption.py: TensorEncryption]                   │
          │                                                     │
-         │                    4. Send tensor                   │
+         │ 4a. Send protocol header with split_layer           │
+         │ ───────────────────────────────────                 │
+         │ [client.py: SplitComputeClient]                     │
+         │                                                     │
+         │ 4b. Send compressed tensor data                     │
          │ ──────────────────────────────────────────────────► │
          │ [client.py: SplitComputeClient]                     │
          │                                                     │ 5a. Decrypt received tensor (future)
@@ -44,7 +49,11 @@ The tensor sharing process follows these steps:
          │                                                     │ ───────────────────────────────────
          │                                                     │ [compression.py: DataCompression]
          │                                                     │
-         │                                                     │ 5c. Move tensor to device (GPU/CPU)
+         │                                                     │ 5c. Combine tensor with split_layer
+         │                                                     │ ───────────────────────────────────
+         │                                                     │ [server.py: Server._process_data]
+         │                                                     │
+         │                                                     │ 5d. Move tensor to device (GPU/CPU)
          │                                                     │ ───────────────────────────────────
          │                                                     │ [base.py: BaseExperiment]
          │                                                     │
@@ -65,7 +74,7 @@ The tensor sharing process follows these steps:
          │ [client.py: SplitComputeClient]                     │
          │                                                     │
          │ 9a. Decrypt result tensor (future)                  │
-         │ ───────────────────────────────────                 │
+         │ ───────────────────────────────                     │
          │ [encryption.py: TensorEncryption]                   │
          │                                                     │
          │ 9b. Decompress result tensor                        │
@@ -112,17 +121,12 @@ original_size = (
 data_to_send = (output, original_size)
 ```
 
-This prepares a data package with:
+This prepares the tensor data package with:
 
 1. The intermediate tensor (`output`)
-2. Metadata about the original input:
-   ```python
-   # Package tensor with metadata for proper reconstruction on server
-   return {
-       "input": (output, original_image.shape),
-       "split_layer": split_layer
-   }
-   ```
+2. Metadata about the original input dimensions (`original_size`)
+
+Note that the `split_layer` is not included in this data package, but will be transmitted separately in the protocol header.
 
 ### 3. Compression (Edge Device)
 
@@ -193,67 +197,78 @@ def process_split_computation(self, split_index: int, intermediate_output: bytes
     self.socket.sendall(intermediate_output)
 ```
 
-The transmission protocol includes:
-1. A header with:
-   - 4 bytes for split index (which neural network layer to start from)
+Key aspects of the transmission protocol:
+1. The `split_layer` is sent separately in the protocol header (not in the tensor data)
+2. The header consists of:
+   - 4 bytes for split_index (which neural network layer to start from)
    - 4 bytes for data length (enables proper reception of fragmented data)
-2. The compressed tensor data itself
+3. The compressed tensor data is sent as the payload after the header
 
-This design enables reliable transmission of tensors that may exceed typical network buffer sizes.
+This design follows standard network protocol patterns by separating metadata (headers) from the payload data.
 
-### 5-6. Server-side Processing
+### 5. Server Reception and Processing
 
-In `BaseExperiment.process_data`:
+In `server.py`, the server receives and processes the data:
+
+```python
+# Read header from socket
+header = conn.recv(LENGTH_PREFIX_SIZE * 2)
+split_layer_index = int.from_bytes(header[:LENGTH_PREFIX_SIZE], "big")
+expected_length = int.from_bytes(header[LENGTH_PREFIX_SIZE:], "big")
+
+# Receive and decompress tensor data
+compressed_data = self.compress_data.receive_full_message(conn, expected_length)
+output, original_size = self.compress_data.decompress_data(compressed_data)
+
+# Combine tensor data with split_layer for processing
+processed_result, processing_time = self._process_data(
+    experiment=experiment,
+    output=output,
+    original_size=original_size,
+    split_layer_index=split_layer_index
+)
+```
+
+The server:
+1. Extracts `split_layer_index` from the protocol header
+2. Receives and decompresses the tensor data
+3. Recombines the tensor data with the split_layer index into a complete structure
+4. Processes the data by continuing model execution from the split point
+
+Then in `BaseExperiment.process_data`:
 
 ```python
 def process_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-    """Process tensors received from client during distributed computation.
-    
-    This is the critical server-side method in tensor sharing architecture that:
-    1. Receives intermediate tensors from client devices
-    2. Continues model execution from the specified split point
-    3. Returns the processed results back to the client
-    """
-    # === TENSOR RECEPTION ===
-    # Extract the transmitted tensor and metadata
-output, original_size = data["input"]
+    """Process tensors received from client during distributed computation."""
+    output, original_size = data["input"]
 
     with torch.no_grad():
-        # === TENSOR PREPARATION ===
         # Move tensor to appropriate computation device (GPU/CPU)
-        if hasattr(output, "inner_dict"):
-            # Handle complex tensor containers with multiple tensors
-            inner_dict = output.inner_dict
-            for key, value in inner_dict.items():
-                if isinstance(value, torch.Tensor):
-                    inner_dict[key] = value.to(self.device, non_blocking=True)
-        elif isinstance(output, torch.Tensor):
-            # Move tensor to target device for efficient processing
-output = output.to(self.device, non_blocking=True)
+        if isinstance(output, torch.Tensor):
+            output = output.to(self.device, non_blocking=True)
 
-        # === TENSOR PROCESSING ===
         # Continue model execution from the split point specified
-result = self.model(output, start=data["split_layer"])
+        result = self.model(output, start=data["split_layer"])
+        
         # Handle models that return additional metadata
         if isinstance(result, tuple):
             result, _ = result
 
-        # === RESULT PREPARATION ===
         # Move result back to CPU for network transmission
-if isinstance(result, torch.Tensor) and result.device != torch.device("cpu"):
-    result = result.cpu()
+        if isinstance(result, torch.Tensor) and result.device != torch.device("cpu"):
+            result = result.cpu()
 
         # Apply post-processing to generate final output
-return self.post_processor.process_output(result, original_size)
+        return self.post_processor.process_output(result, original_size)
 ```
 
 Server-side tensor processing has several stages:
-1. **Tensor Extraction**: Unpacking and decompressing the received tensor data
+1. **Tensor Extraction**: Unpacking the received tensor data
 2. **Device Placement**: Moving the tensor to the appropriate computation device (GPU/CPU)
 3. **Model Execution**: Continuing neural network processing from the split point
 4. **Result Preparation**: Preparing the output tensor for transmission back to the client
 
-### 7-8. Result Transmission (Server to Edge)
+### 6-7. Result Transmission (Server to Edge)
 
 After processing, the server sends results back to the client using `DataCompression.send_result`:
 
@@ -283,7 +298,7 @@ The return protocol follows a similar pattern:
 2. A 4-byte length prefix is sent first
 3. The compressed tensor data follows
 
-### 9. Result Reception and Decompression (Edge Device)
+### 8-9. Result Reception and Decompression (Edge Device)
 
 The client receives and decompresses the result:
 

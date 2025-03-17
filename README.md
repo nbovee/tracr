@@ -8,27 +8,27 @@
 ## Quick Start Workflow
 
 ```
-┌───────────────────────────────────────────────────────────────────────┐
-│                          SETUP PHASE                                  │
-├─────────────────┬───────────────────────────────┬─────────────────────┤
-│ 1. Repository   │ 2. Configuration              │ 3. SSH Setup        │
-│                 │                               │                     │
-│ git clone       │ cp devices_template.yaml      │ ssh-keygen          │
-│ cd tracr        │    devices_config.yaml        │ ssh-copy-id         │
-│ python -m venv  │                               │ chmod 600 keys      │
-│ pip install     │ Edit IP/user settings         │                     │
-└─────────────────┴───────────────────────────────┴─────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                                  SETUP PHASE                                  │
+├─────────────────────────┬───────────────────────────────┬─────────────────────┤
+│ 1. Repository           │ 2. Configuration              │ 3. SSH Setup        │
+│                         │                               │                     │
+│ git clone               │ cp devices_template.yaml      │ ssh-keygen          │
+│ cd tracr                │    devices_config.yaml        │ ssh-copy-id         │
+│ python -m venv          │                               │ chmod 600 keys      │
+│ pip install             │ Edit IP/user settings         │                     │
+└─────────────────────────┴───────────────────────────────┴─────────────────────┘
                                     │
                                     ▼
-┌───────────────────────────────────────────────────────────────────────┐
-│                        EXECUTION PHASE                                │
-├─────────────────┬───────────────────────────────┬─────────────────────┤
-│ 4. Server       │ 5. Host Execution             │ 6. Analysis         │
-│                 │                               │                     │
-│ python server.py│ python host.py                │ Review metrics in   │
-│                 │   --config config/NAME.yaml   │ results directory   │
-│                 │                               │                     │
-└─────────────────┴───────────────────────────────┴─────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                                EXECUTION PHASE                                │
+├─────────────────────────┬───────────────────────────────┬─────────────────────┤
+│ 4. Server               │ 5. Host Execution             │ 6. Analysis         │
+│                         │                               │                     │
+│ python server.py        │ python host.py                │ Review metrics in   │
+│                         │   --config config/NAME.yaml   │ results directory   │
+│                         │                               │                     │
+└─────────────────────────┴───────────────────────────────┴─────────────────────┘
 ```
 
 ### Required Components
