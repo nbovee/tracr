@@ -134,17 +134,38 @@ class ImageNetDataset(BaseDataset):
         if not self.img_dir:
             return
 
-        for img_path in self.img_dir.iterdir():
-            if not img_path.is_file():
-                continue
+        for idx, class_name in enumerate(self.classes):
+            for img_path in self.img_dir.iterdir():
+                if not img_path.is_file():
+                    continue
 
-            try:
-                class_id, *name_parts = img_path.stem.split("_")
-                class_name = " ".join(name_parts)
-                if class_name in self.classes:
-                    self.class_id_to_name[class_id] = class_name
-            except Exception as e:
-                logger.warning(f"Error processing {img_path.name}: {e}")
+                try:
+                    filename = img_path.stem
+                    if "_" in filename:
+                        # Extract the synset ID from filenames like "n01440764_tench"
+                        synset_id = filename.split("_")[0]
+
+                        # Use the index-based mapping
+                        if (
+                            idx < len(self.classes)
+                            and synset_id in self.imagenet_class_mapping
+                        ):
+                            class_idx = self.imagenet_class_mapping[synset_id]
+                            if class_idx == idx:
+                                self.class_id_to_name[synset_id] = class_name
+                                break
+                    else:
+                        synset_id = filename
+                        if (
+                            idx < len(self.classes)
+                            and synset_id in self.imagenet_class_mapping
+                        ):
+                            class_idx = self.imagenet_class_mapping[synset_id]
+                            if class_idx == idx:
+                                self.class_id_to_name[synset_id] = class_name
+                                break
+                except Exception as e:
+                    logger.warning(f"Error processing {img_path.name}: {e}")
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, int, str]:
         """Get image, label, and filename for given index.
@@ -164,11 +185,18 @@ class ImageNetDataset(BaseDataset):
 
         try:
             image = self._load_and_transform_image(img_path)
-            class_id = img_path.stem.split("_")[0]
-            class_idx = self.imagenet_class_mapping.get(class_id, -1)
+            filename = img_path.stem
+
+            # Extract synset ID properly based on filename format
+            if "_" in filename:
+                synset_id = filename.split("_")[0]
+            else:
+                synset_id = filename
+
+            class_idx = self.imagenet_class_mapping.get(synset_id, -1)
 
             if class_idx == -1:
-                logger.warning(f"Unknown class ID {class_id} for {img_path.name}")
+                logger.warning(f"Unknown class ID {synset_id} for {img_path.name}")
 
             return image, class_idx, img_path.name
         except Exception as e:
@@ -199,21 +227,40 @@ class ImageNetDataset(BaseDataset):
             logger.warning("No image directory provided for mapping")
             return
 
+        # Store the synset IDs encountered
+        encountered_synsets = []
+
         for img_path in self.img_dir.iterdir():
             if not img_path.is_file():
                 continue
 
             try:
-                synset_id, *name_parts = img_path.stem.split("_")
-                class_name = " ".join(name_parts)
-
-                try:
-                    class_idx = class_names.index(class_name)
-                    self.imagenet_class_mapping[synset_id] = class_idx
-                except ValueError:
-                    logger.debug(f"Class name '{class_name}' not found in class list")
+                filename = img_path.stem
+                # Check if there's an underscore in the filename
+                if "_" in filename:
+                    # Parse filenames like "n01440764_tench"
+                    synset_id = filename.split("_")[0]
+                    # Extract the class name directly from the class list using index
+                    if synset_id not in encountered_synsets:
+                        encountered_synsets.append(synset_id)
+                else:
+                    # Handle case where filename doesn't contain underscore
+                    synset_id = filename
+                    if synset_id not in encountered_synsets:
+                        encountered_synsets.append(synset_id)
             except Exception as e:
                 logger.warning(f"Error parsing filename {img_path.name}: {e}")
+                continue
+
+        # Map synset IDs to class indices in order
+        for i, synset_id in enumerate(encountered_synsets):
+            if i < len(class_names):
+                self.imagenet_class_mapping[synset_id] = i
+                logger.debug(
+                    f"Mapped {synset_id} to class {class_names[i]} (index {i})"
+                )
+            else:
+                logger.warning(f"No class name available for synset ID {synset_id}")
 
     @classmethod
     def create_subset(

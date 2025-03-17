@@ -15,15 +15,13 @@ import socket
 import zlib
 
 from ..core import NetworkError
+from .protocols import (
+    LENGTH_PREFIX_SIZE,
+    CHUNK_SIZE,
+    HIGHEST_PROTOCOL,
+)
 
 logger = logging.getLogger("split_computing_logger")
-
-# Number of bytes used to represent the length of the message.
-LENGTH_PREFIX_SIZE = 4
-# The maximum size of each chunk received over the network.
-CHUNK_SIZE = 4096
-# Use the highest pickle protocol available for performance.
-HIGHEST_PROTOCOL = pickle.HIGHEST_PROTOCOL
 
 
 @dataclass(frozen=True)
