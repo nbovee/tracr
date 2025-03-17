@@ -14,9 +14,8 @@
 # ================================================================
 default:
   device: "cuda"                      # [OPTIONAL] Computing device: 'cuda' (GPU) or 'cpu'. Default: 'cuda' if available, else 'cpu'
-  font_path: "config/fonts/DejaVuSans-Bold.ttf"  # [OPTIONAL] Path to font for visualization. Default: 'config/fonts/DejaVuSans-Bold.ttf'
   save_layer_images: false            # [OPTIONAL] Save intermediate layer images. Default: false
-  collect_metrics: false              # [OPTIONAL] Collect detailed metrics per layer (time-consuming). Default: false
+  collect_metrics: false              # [OPTIONAL] Collect detailed metrics per layer (time-consuming for cpu systems). Default: false
 
 # ================================================================
 # LOGGING CONFIGURATIONS
