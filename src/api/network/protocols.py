@@ -59,7 +59,7 @@ HIGHEST_PROTOCOL: Final[int] = -1  # Use the highest available
 DEFAULT_COMPRESSION_SETTINGS: Final[dict] = {
     "clevel": 3,
     "filter": "SHUFFLE",
-    "codec": "ZLIB",
+    "codec": "ZSTD",
 }
 
 # Minimal compression settings for server (optimized for speed)

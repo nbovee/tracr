@@ -26,7 +26,7 @@ try:
 
     BLOSC2_AVAILABLE = True
     logger = logging.getLogger("split_computing_logger")
-    logger.info("Using blosc2 compression (codec: ZLIB, filter: SHUFFLE, level: 3)")
+    logger.info("Using blosc2 compression (codec: ZSTD, filter: SHUFFLE, level: 3)")
 except ImportError:
     import zlib
 
@@ -74,7 +74,7 @@ class DataCompression:
         if BLOSC2_AVAILABLE:
             # Default filter and codec if not specified
             self._filter = blosc2.Filter.SHUFFLE
-            self._codec = blosc2.Codec.ZLIB
+            self._codec = blosc2.Codec.ZSTD
 
             # Set filter if specified and valid
             if "filter" in self.config:
@@ -91,7 +91,7 @@ class DataCompression:
                     self._codec = blosc2.Codec[self.config["codec"]]
                 except (KeyError, AttributeError):
                     logger.warning(
-                        f"Invalid blosc2 codec: {self.config['codec']}, using ZLIB"
+                        f"Invalid blosc2 codec: {self.config['codec']}, using ZSTD"
                     )
 
             if "clevel" not in self.config:
@@ -184,7 +184,7 @@ class SplitComputeClient:
 
         # Initialize compression with config from network_config
         compression_config = self.config.get(
-            "compression", {"clevel": 3, "filter": "SHUFFLE", "codec": "ZLIB"}
+            "compression", {"clevel": 3, "filter": "SHUFFLE", "codec": "ZSTD"}
         )
         self.compressor = DataCompression(compression_config)
 

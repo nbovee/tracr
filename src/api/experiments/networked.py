@@ -58,7 +58,7 @@ class NetworkedExperiment(BaseExperiment):
             self.config["compression"] = {
                 "clevel": 3,
                 "filter": "SHUFFLE",
-                "codec": "ZLIB",
+                "codec": "ZSTD",
             }
 
         # Setup network client for tensor sharing with the server
@@ -329,10 +329,7 @@ class NetworkedExperiment(BaseExperiment):
                         "Energy monitor doesn't support battery energy measurements"
                     )
 
-            if self.collect_metrics:
-                self._log_performance_summary(
-                    total_host, total_travel, total_server, total_battery_energy
-                )
+            self._log_performance_summary(total_host, total_travel, total_server)
 
             return split_layer, total_host, total_travel, total_server
 
