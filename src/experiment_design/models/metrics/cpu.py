@@ -1,4 +1,4 @@
-"""CPU power and energy monitoring for different operating systems."""
+"""CPU power and energy monitoring for different operating systems"""
 
 import logging
 import platform
@@ -12,31 +12,17 @@ logger = logging.getLogger("split_computing_logger")
 
 
 class CPUPowerMonitor(PowerMonitor):
-    """CPU power and energy monitoring for various operating systems.
+    """CPU power and energy monitoring with multi-platform support.
 
-    This class provides power monitoring on systems without dedicated
-    GPU monitoring capabilities (laptops, desktops without NVIDIA GPUs).
-    It uses different approaches depending on the operating system:
-    - Windows: CPU power model based on utilization
-    - Linux: Battery monitoring (if available) or CPU utilization model
+    Implements hardware-agnostic power monitoring for systems without dedicated
+    power measurement capabilities. Uses platform-specific approaches:
+    - Windows: CPU power model based on utilization and TDP
+    - Linux: Battery monitoring with fallback to CPU utilization model
     - macOS: CPU utilization model
-
-    Attributes:
-        device_type: Always "cpu"
-        _os_type: The operating system type (Windows, Linux, Darwin)
-        _tdp: Estimated CPU Thermal Design Power in watts
-        _cpu_name: CPU model name for logging and TDP estimation
-        _background_metrics_thread: Thread for background metrics collection
-        _lock: Thread lock for safe concurrent access
-        _background_metrics: Dict storing metrics collected in background
     """
 
     def __init__(self) -> None:
-        """Initialize the CPU power monitor.
-
-        Raises:
-            MonitoringInitError: If initialization fails
-        """
+        """Initialize the CPU power monitor."""
         super().__init__("cpu")
 
         # System information
@@ -75,15 +61,12 @@ class CPUPowerMonitor(PowerMonitor):
         logger.info(f"CPU: {self._cpu_name}, estimated TDP: {self._tdp}W")
 
     def get_current_power(self) -> float:
-        """Get current CPU power consumption in watts.
+        """Get current CPU power consumption using platform-specific methods.
 
-        The implementation varies by operating system:
-        - Windows: Uses a power model based on CPU utilization and TDP
-        - Linux with battery: Uses battery discharge rate if available
-        - Other: Uses a CPU utilization-based model
-
-        Returns:
-            Current power consumption in watts
+        Implementation varies by platform:
+        1. Battery-powered device: Uses discharge rate when unplugged
+        2. Windows: Uses TDP-based linear model with CPU utilization scaling
+        3. Other platforms: Uses a fixed percentage of TDP
         """
         try:
             # First try to get power from battery if available and unplugged
@@ -103,11 +86,7 @@ class CPUPowerMonitor(PowerMonitor):
             return 0.4 * self._tdp  # Default to 40% of TDP
 
     def get_system_metrics(self) -> Dict[str, Any]:
-        """Get CPU system metrics including power, CPU and memory utilization.
-
-        Returns:
-            Dictionary with power and utilization metrics
-        """
+        """Get CPU system metrics including power, CPU and memory utilization."""
         try:
             # If Windows and cumulative metrics are enabled, use dedicated collection
             if self._os_type == "Windows" and self._cumulative_metrics_enabled:
@@ -147,10 +126,10 @@ class CPUPowerMonitor(PowerMonitor):
             }
 
     def start_cumulative_measurement(self) -> None:
-        """Start collecting cumulative metrics for split computation.
+        """Start collecting cumulative metrics for Windows CPU devices.
 
-        This is optimized for Windows CPU devices to collect metrics once
-        at the split point instead of for each layer.
+        Optimizes data collection for Windows by gathering metrics at specific
+        measurement points rather than continuously, reducing overhead.
         """
         # Only enable for Windows CPU devices
         if self._os_type == "Windows":
@@ -164,11 +143,7 @@ class CPUPowerMonitor(PowerMonitor):
             self._estimate_windows_cpu_power()
 
     def get_cumulative_metrics(self) -> Dict[str, float]:
-        """Get cumulative metrics collected for CPU devices.
-
-        Returns:
-            Dictionary with cumulative power and energy metrics
-        """
+        """Calculate aggregated metrics from cumulative measurements."""
         if not self._cumulative_metrics_enabled:
             return {}
 
@@ -234,11 +209,7 @@ class CPUPowerMonitor(PowerMonitor):
             }
 
     def _get_cpu_name(self) -> str:
-        """Get CPU model name.
-
-        Returns:
-            CPU model name as a string
-        """
+        """Get CPU model name using platform-specific methods."""
         try:
             if platform.system() == "Windows":
                 import subprocess
@@ -265,10 +236,12 @@ class CPUPowerMonitor(PowerMonitor):
             return "Unknown CPU"
 
     def _detect_cpu_tdp(self) -> float:
-        """Estimate CPU TDP (Thermal Design Power) based on CPU model.
+        """Estimate CPU TDP based on model name and system characteristics.
 
-        Returns:
-            Estimated TDP in watts
+        Uses a heuristic approach to estimate TDP (Thermal Design Power):
+        1. Checks CPU model name for common processor families
+        2. Adjusts for laptop vs desktop systems
+        3. Falls back to core count-based estimation
         """
         try:
             # Use a default TDP if we can't determine it
@@ -331,11 +304,7 @@ class CPUPowerMonitor(PowerMonitor):
             return 65.0  # Default to a mid-range desktop CPU TDP
 
     def _check_battery(self) -> bool:
-        """Check if the system has a battery.
-
-        Returns:
-            True if the system has a battery, False otherwise
-        """
+        """Check if the system has a battery using psutil."""
         try:
             import psutil
 
@@ -360,10 +329,12 @@ class CPUPowerMonitor(PowerMonitor):
             logger.debug(f"Error initializing battery monitoring: {e}")
 
     def _estimate_battery_power(self) -> float:
-        """Estimate power consumption from battery changes.
+        """Estimate power consumption from battery discharge rate.
 
-        Returns:
-            Estimated power consumption in watts or 0 if not available
+        Calculates power by monitoring battery percentage changes over time:
+        Power (W) = (% change / 100) * Battery capacity (Wh) * (3600 / time diff)
+
+        Returns 0 if the device is plugged in or discharge rate is unavailable.
         """
         try:
             import psutil
@@ -405,10 +376,15 @@ class CPUPowerMonitor(PowerMonitor):
             return 0.0
 
     def _estimate_windows_cpu_power(self) -> float:
-        """Estimate Windows CPU power consumption based on CPU utilization and TDP.
+        """Estimate Windows CPU power using a utilization-based linear model.
 
-        Returns:
-            Estimated power consumption in watts
+        Uses a simplified linear power model:
+        Power = Idle power + (Max power - Idle power) * (CPU utilization / 100)
+
+        Where:
+        - Idle power is 30% of TDP
+        - Max power is the full TDP
+        - Small random variation added for realistic behavior
         """
         try:
             # Get current CPU metrics - use non-blocking mode
@@ -441,11 +417,7 @@ class CPUPowerMonitor(PowerMonitor):
             return 0.4 * self._tdp  # Default to 40% of TDP
 
     def cleanup(self) -> None:
-        """Clean up resources used by the CPU power monitor.
-
-        This method ensures that background threads are properly stopped
-        and any open resources are released.
-        """
+        """Clean up resources used by the CPU power monitor."""
         # Stop background metrics collection for Windows
         if self._os_type == "Windows" and hasattr(self, "_background_metrics_thread"):
             self._stop_background_thread = True

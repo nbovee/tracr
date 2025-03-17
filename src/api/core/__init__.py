@@ -1,4 +1,4 @@
-"""Core functionality for the application."""
+"""Core functionality for the api module"""
 
 from .exceptions import (
     BaseError,

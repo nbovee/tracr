@@ -1,4 +1,4 @@
-"""Prediction utilities for different model types."""
+"""Prediction utilities for different model types"""
 
 import logging
 from typing import List, Tuple
@@ -15,58 +15,49 @@ logger = logging.getLogger("split_computing_logger")
 class ImageNetPredictor:
     """Handles ImageNet classification predictions.
 
-    This class processes raw model outputs into human-readable
+    Processes raw tensor outputs from neural networks into human-readable
     classification predictions with confidence scores.
     """
 
     def __init__(self, class_names: List[str], vis_config: VisualizationConfig):
-        """Initialize predictor with class names and visualization settings.
-
-        Args:
-            class_names: List of class names corresponding to model outputs.
-            vis_config: Configuration for visualization settings.
-        """
+        """Initialize predictor with class names and visualization settings."""
         self.class_names = class_names
         self.vis_config = vis_config
-        # Define a softmax function over the logits.
-        self._softmax = torch.nn.Softmax(dim=0)
+        self._softmax = torch.nn.Softmax(
+            dim=0
+        )  # For converting logits to probabilities
 
     def predict_top_k(
         self, output: torch.Tensor, k: int = 5
     ) -> List[Tuple[str, float]]:
-        """Obtain the top-k predictions from model output.
+        """Obtain the top-k predictions from model output tensor.
 
-        Args:
-            output: Raw logits tensor from the model.
-            k: Number of top predictions to return.
-
-        Returns:
-            List of tuples (class_name, probability) for the top k predictions.
+        === TENSOR PROCESSING ===
+        Transforms the raw logit tensor from the network into probability scores,
+        then identifies the top k class predictions by probability.
         """
-        # Squeeze extra dimensions if present.
+        # Reshape tensor if necessary to remove batch dimension
         logits = output.squeeze(0) if output.dim() > 1 else output
+        # Convert logits to probability distribution
         probabilities = self._softmax(logits)
+        # Extract top k probabilities and corresponding class indices
         top_prob, top_catid = torch.topk(probabilities, k)
 
-        # Check that predicted indices are within valid range.
+        # Validate predicted indices
         if max(top_catid) >= len(self.class_names):
             logger.error(
                 f"Invalid class index {max(top_catid)} for {len(self.class_names)} classes"
             )
             return [("unknown", 0.0)]
 
-        # Return a list of (class name, probability) pairs.
+        # Map indices to class names and return with probabilities
         return [
             (self.class_names[catid.item()], prob.item())
             for prob, catid in zip(top_prob, top_catid)
         ]
 
     def log_predictions(self, predictions: List[Tuple[str, float]]) -> None:
-        """Log top predictions in a formatted manner.
-
-        Args:
-            predictions: List of (class_name, probability) tuples.
-        """
+        """Log top predictions in a formatted manner."""
         logger.debug("\nTop predictions:")
         logger.debug("-" * 50)
         for i, (class_name, prob) in enumerate(predictions, 1):
@@ -77,35 +68,19 @@ class ImageNetPredictor:
 class YOLODetector:
     """Handles YOLO detection processing.
 
-    This class processes raw YOLO model outputs into formatted
-    detection results with boxes, scores, and class IDs.
+    Processes raw tensor outputs from YOLO models into formatted
+    detection results with bounding boxes, confidence scores, and class IDs.
     """
 
     def __init__(self, class_names: List[str], config: DetectionConfig):
-        """Initialize detector with class names and detection configuration.
-
-        Args:
-            class_names: List of class names corresponding to detection outputs.
-            config: Configuration for detection parameters.
-        """
+        """Initialize detector with class names and detection configuration."""
         self.class_names = class_names
         self.config = config
 
     def _scale_box(
         self, box: np.ndarray, x_factor: float, y_factor: float
     ) -> List[int]:
-        """Scale a detection box to the original image size.
-
-        The YOLO box format is [x_center, y_center, width, height].
-
-        Args:
-            box: Array of box coordinates [x_center, y_center, width, height].
-            x_factor: Scaling factor for x-coordinates.
-            y_factor: Scaling factor for y-coordinates.
-
-        Returns:
-            List of scaled coordinates [left, top, width, height].
-        """
+        """Scale a detection box to the original image size."""
         x, y, w, h = box
 
         # Scale width and height
@@ -127,44 +102,43 @@ class YOLODetector:
     def process_detections(
         self, outputs: torch.Tensor, original_img_size: Tuple[int, int]
     ) -> List[Tuple[List[int], float, int]]:
-        """Process YOLO detection outputs and return a list of detections.
+        """Process YOLO detection tensors into a list of bounding boxes.
 
-        Args:
-            outputs: Raw outputs from YOLO model.
-            original_img_size: Original size of the input image (width, height).
-
-        Returns:
-            List of tuples (box, score, class_id) for each valid detection.
+        === TENSOR PROCESSING ===
+        Transforms the raw tensor outputs from YOLO models into detection objects
+        with properly scaled coordinates, applying confidence thresholds and
+        non-maximum suppression to filter overlapping detections.
         """
         outputs = self._prepare_outputs(outputs)
 
-        # Calculate scaling factors to map model output to original image dimensions
+        # Calculate scaling factors for coordinate mapping
         img_w, img_h = original_img_size
         input_h, input_w = self.config.input_size
         scale_factors = (float(img_w) / float(input_w), float(img_h) / float(input_h))
 
-        # Extract class scores from the outputs (assuming scores start at index 4)
+        # Extract class scores from the tensor (scores start at index 4)
         class_scores = outputs[:, 4:]
-        # Determine the class with highest score for each detection
+        # Get highest scoring class for each detection
         class_ids = np.argmax(class_scores, axis=1)
         confidences = class_scores[np.arange(len(class_scores)), class_ids]
-        # Apply confidence threshold filtering
+
+        # Filter detections by confidence threshold
         mask = confidences >= self.config.conf_threshold
 
         if not np.any(mask):
             return []
 
-        # Filter outputs based on the confidence mask
+        # Apply mask to filter outputs
         filtered_outputs = outputs[mask]
         filtered_confidences = confidences[mask]
         filtered_class_ids = class_ids[mask]
 
-        # Scale boxes from model output to original image dimensions
+        # Scale boxes from model output space to original image dimensions
         boxes = np.array(
             [self._scale_box(det[:4], *scale_factors) for det in filtered_outputs]
         )
 
-        # Filter out invalid boxes (zero or negative width/height)
+        # Filter invalid boxes
         valid_mask = (boxes[:, 2] > 0) & (boxes[:, 3] > 0)
         if not np.any(valid_mask):
             return []
@@ -174,33 +148,30 @@ class YOLODetector:
         class_ids = filtered_class_ids[valid_mask].tolist()
 
         try:
-            # Apply Non-Maximum Suppression (NMS) to remove overlapping boxes
+            # Apply Non-Maximum Suppression to remove duplicate/overlapping detections
             indices = cv2.dnn.NMSBoxes(
                 boxes, scores, self.config.conf_threshold, self.config.iou_threshold
             ).flatten()
-            # Return a list of tuples: (box, score, class_id) for each remaining detection
             return [(boxes[i], scores[i], class_ids[i]) for i in indices]
         except Exception as e:
             logger.error(f"Error during NMS: {e}")
             return []
 
     def _prepare_outputs(self, outputs: torch.Tensor) -> np.ndarray:
-        """Prepare the raw model outputs for processing.
+        """Prepare raw model tensor outputs for processing.
 
-        This function handles tuple outputs, moves the tensor to CPU,
-        converts it to a numpy array, and ensures the correct shape.
-
-        Args:
-            outputs: Raw output tensor from the model.
-
-        Returns:
-            Numpy array with appropriate shape for processing.
+        === TENSOR TRANSFORMATION ===
+        Converts PyTorch tensor outputs to numpy arrays and reshapes
+        them for consistent processing regardless of model output format.
         """
+        # Handle tuple outputs (common in some YOLO implementations)
         if isinstance(outputs, tuple):
             outputs = outputs[0]
+
+        # Move tensor to CPU and convert to numpy
         outputs = outputs.detach().cpu().numpy()
-        # If outputs are one-dimensional, add a new axis
+
+        # Normalize dimensions
         outputs = outputs[np.newaxis, :] if outputs.ndim == 1 else outputs
-        # Remove singleton dimensions and transpose if necessary
         outputs = np.transpose(np.squeeze(outputs))
         return outputs

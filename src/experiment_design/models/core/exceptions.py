@@ -1,4 +1,4 @@
-"""Custom exceptions for model-related errors."""
+"""Custom exceptions for model-related errors"""
 
 
 class ModelError(Exception):

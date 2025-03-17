@@ -1,4 +1,4 @@
-"""Datasets package for experiment design."""
+"""Datasets package for experiment design"""
 
 # Dataset implementations
 from .imagenet import ImageNetDataset, load_imagenet_dataset

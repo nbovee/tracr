@@ -1,4 +1,4 @@
-"""Visualization utilities for inference results."""
+"""Visualization utilities for inference results"""
 
 import logging
 import os
@@ -14,28 +14,17 @@ logger = logging.getLogger("split_computing_logger")
 class PredictionVisualizer:
     """Handles visualization of classification predictions.
 
-    This class draws classification results on images, including
-    predicted class, confidence, and optionally ground truth.
+    Renders processed model prediction results onto images, providing
+    visual feedback for classification outputs in split computing scenarios.
     """
 
     def __init__(self, vis_config: VisualizationConfig):
-        """Initialize the visualizer.
-
-        Args:
-            vis_config: Configuration for visualization settings.
-        """
+        """Initialize the visualizer with configuration settings."""
         self.config = vis_config
         self.font = self._load_font(self.config.font_size)
 
     def _load_font(self, font_size: int) -> ImageFont.FreeTypeFont:
-        """Load a font with fallback mechanisms for different platforms.
-
-        Args:
-            font_size: Size of the font to load
-
-        Returns:
-            A usable font for drawing text
-        """
+        """Load a font with fallback mechanisms for different platforms."""
         # Try to load the default font with size parameter
         try:
             return ImageFont.load_default()
@@ -75,14 +64,9 @@ class PredictionVisualizer:
     ) -> Image.Image:
         """Draw classification results on the image.
 
-        Args:
-            image: Original image to draw on.
-            pred_class: Predicted class name.
-            confidence: Confidence score (0-1) for the prediction.
-            true_class: Optional ground truth class for comparison.
-
-        Returns:
-            Image with classification results overlaid.
+        === RESULT VISUALIZATION ===
+        Renders the processed tensor output (now as classification results)
+        with class name and confidence score overlay on the original image.
         """
         draw = ImageDraw.Draw(image)
 
@@ -92,7 +76,7 @@ class PredictionVisualizer:
         if true_class:
             texts.append(f"True: {true_class}")
 
-        # Compute text dimensions for each text block - handle different font capabilities
+        # Compute text dimensions for each text block
         text_widths = []
         text_heights = []
 
@@ -105,7 +89,7 @@ class PredictionVisualizer:
             # Fallback to older method for non-TrueType fonts
             logger.warning("Using fallback font size approximation")
             text_widths = [draw.textlength(text, font=self.font) for text in texts]
-            # Approximate text height - use a reasonable default
+            # Approximate text height
             text_heights = [self.config.font_size + 4 for _ in texts]
 
         max_width = max(text_widths)
@@ -132,7 +116,6 @@ class PredictionVisualizer:
         current_y = y
         for i, text in enumerate(texts):
             draw.text((x, current_y), text, font=self.font, fill=self.config.text_color)
-            # Use the text height for this specific text
             current_y += text_heights[i] + self.config.padding
 
         return image
@@ -141,30 +124,18 @@ class PredictionVisualizer:
 class DetectionVisualizer:
     """Handles visualization of detection results.
 
-    This class draws detection boxes and labels on images,
-    with customizable visualization settings.
+    Renders processed model detection results onto images, providing
+    visual feedback for object detection in split computing scenarios.
     """
 
     def __init__(self, class_names: List[str], vis_config: VisualizationConfig):
-        """Initialize the detection visualizer.
-
-        Args:
-            class_names: List of class names corresponding to detection classes.
-            vis_config: Configuration for visualization settings.
-        """
+        """Initialize the detection visualizer with class names and configuration."""
         self.class_names = class_names
         self.config = vis_config
         self.font = self._load_font(self.config.font_size)
 
     def _load_font(self, font_size: int) -> ImageFont.FreeTypeFont:
-        """Load a font with fallback mechanisms for different platforms.
-
-        Args:
-            font_size: Size of the font to load
-
-        Returns:
-            A usable font for drawing text
-        """
+        """Load a font with fallback mechanisms for different platforms."""
         # Try to load the default font with size parameter
         try:
             return ImageFont.load_default()
@@ -200,16 +171,9 @@ class DetectionVisualizer:
     ) -> Image.Image:
         """Draw detection boxes and labels on the image.
 
-        For each detection, draws a rectangle and adds a label
-        with the class name and confidence.
-
-        Args:
-            image: Original image to draw on.
-            detections: List of detection dictionaries, each containing
-                'box', 'confidence', and 'class_name' keys.
-
-        Returns:
-            Image with detection boxes and labels overlaid.
+        === RESULT VISUALIZATION ===
+        Renders the processed tensor output (now as detection objects)
+        by drawing bounding boxes and labels for each detected object.
         """
         draw = ImageDraw.Draw(image)
 
@@ -228,7 +192,7 @@ class DetectionVisualizer:
                 # Prepare the label text with class name and confidence
                 label = f"{class_name}: {score:.2f}"
 
-                # Calculate text dimensions - handle different font capabilities
+                # Calculate text dimensions based on font capabilities
                 try:
                     # Try to use textbbox if available (requires TrueType font)
                     bbox = draw.textbbox((0, 0), label, font=self.font)
@@ -237,7 +201,7 @@ class DetectionVisualizer:
                 except (ValueError, AttributeError):
                     # Fallback to older method for non-TrueType fonts
                     text_w = draw.textlength(label, font=self.font)
-                    # Approximate text height - use a reasonable default
+                    # Approximate text height
                     text_h = self.config.font_size + 4
 
                 # Calculate label position with padding

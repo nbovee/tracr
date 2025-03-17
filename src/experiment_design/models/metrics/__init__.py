@@ -1,4 +1,4 @@
-"""Power and energy monitoring for split computing experiments."""
+"""Power and energy monitoring for split computing experiments"""
 
 from .base import PowerMonitor
 from .collector import MetricsCollector

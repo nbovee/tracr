@@ -1,4 +1,4 @@
-"""Inference utilities for model processing and visualization."""
+"""Inference utilities for model processing and visualization"""
 
 from .configs import DetectionConfig, VisualizationConfig
 from .factory import ModelProcessorFactory
@@ -11,7 +11,6 @@ from .processors import (
 from .predictors import ImageNetPredictor, YOLODetector
 from .visualizers import PredictionVisualizer, DetectionVisualizer
 
-# Define default constants that are exposed at the module level
 from .configs import (
     DEFAULT_FONT_SIZE,
     DEFAULT_CONF_THRESHOLD,

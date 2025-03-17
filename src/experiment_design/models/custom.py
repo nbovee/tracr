@@ -1,4 +1,4 @@
-"""Custom model implementation with configurable architecture."""
+"""Custom model implementation with configurable architecture"""
 
 import logging
 from typing import Any, Dict, List, Tuple, ClassVar

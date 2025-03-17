@@ -25,16 +25,11 @@ from src.api import (
 )
 from src.api.network.protocols import SSH_DEFAULT_CONNECT_TIMEOUT, DEFAULT_PORT
 
-# Set up logger
 logger = logging.getLogger(__name__)
 
 
 def parse_arguments() -> argparse.Namespace:
-    """Parse command line arguments.
-
-    Returns:
-        Parsed arguments namespace
-    """
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Split Computing Host Application")
 
     # Required arguments
@@ -61,31 +56,28 @@ def parse_arguments() -> argparse.Namespace:
 
 
 class ExperimentHost:
-    """Manages the experiment setup and execution on the host side."""
+    """
+    Manages the experiment setup and execution on the host side.
+
+    Responsible for:
+    1. Loading and validating configuration
+    2. Setting up logging infrastructure
+    3. Initializing the appropriate experiment type (local or networked)
+    4. Managing datasets and data loaders
+    5. Running the experiment and handling results
+    """
 
     def __init__(self, config_path: str) -> None:
-        """Initialize the experiment host.
-
-        Args:
-            config_path: Path to the configuration file
-        """
-        # Initialize state
+        """Initialize the experiment host with specified configuration."""
         self.results_copied = False
         self.logging_server_started = False
-
-        # Load config
         self.config = read_yaml_file(config_path)
         if not self.config:
             raise ValueError(f"Failed to load configuration from {config_path}")
 
-        # Set up logging
         self._setup_logging()
-
-        # Initialize device manager
         self.device_mgr = DeviceManager()
         self._verify_devices()
-
-        # Set up experiment
         self._setup_experiment()
 
         logger.info("Experiment host initialized successfully")
@@ -93,19 +85,18 @@ class ExperimentHost:
     @staticmethod
     @lru_cache(maxsize=1)
     def _load_config(config_path: str) -> Dict[str, Any]:
-        """
-        Load and cache configuration from file.
-
-        Args:
-            config_path: Path to the configuration file
-
-        Returns:
-            The loaded configuration dictionary
-        """
+        """Load and cache configuration from file for efficient reuse."""
         return read_yaml_file(config_path)
 
     def _setup_logging(self) -> None:
-        """Set up logging for the host application."""
+        """
+        Configure logging system based on configuration settings.
+
+        Supports multiple output destinations:
+        - Console output with configurable verbosity
+        - File logging with rotation
+        - Remote logging via logging server
+        """
         log_config = self.config.get("logging", {})
         log_level_str = log_config.get("level", "INFO")
         log_level = getattr(logging, log_level_str.upper(), logging.INFO)
@@ -138,10 +129,15 @@ class ExperimentHost:
         logger.debug(f"Logging initialized with level {log_level_str}")
 
     def _verify_devices(self) -> None:
-        """Verify that devices are properly loaded and validate SERVER device."""
+        """
+        Verify that all devices are properly configured and reachable.
+
+        This method validates SERVER device connectivity which is crucial
+        for networked experiments. Device connectivity issues will be logged
+        as warnings or errors.
+        """
         logger.info("Verifying device configuration...")
 
-        # Import here to avoid circular imports
         from src.api import DeviceType
 
         # Check all devices - use get_devices() instead of get_all_devices()
@@ -172,10 +168,19 @@ class ExperimentHost:
             logger.warning("No SERVER device found in configuration")
 
     def _setup_experiment(self) -> None:
-        """Set up the experiment based on configuration."""
+        """
+        Initialize the appropriate experiment type based on configuration.
+
+        This method determines whether to run in local or networked mode:
+        - Local mode: Runs entirely on the host machine
+        - Networked mode: Distributes computation between host and server
+
+        The mode selection can be:
+        - Explicitly specified in the configuration
+        - Automatically determined based on server availability
+        """
         logger.info("Setting up experiment...")
 
-        # Get server device from device manager - fix the retrieval method
         from src.api import DeviceType
 
         server_device = self.device_mgr.get_device_by_type(DeviceType.SERVER)
@@ -235,10 +240,17 @@ class ExperimentHost:
         logger.info(f"Experiment of type '{exp_type}' set up successfully")
 
     def _setup_dataloader(self) -> None:
-        """Set up the data loader based on the configuration."""
+        """
+        Initialize dataset and data loader for experiment execution.
+
+        This method:
+        1. Resolves dataset specification from configuration
+        2. Registers and loads the appropriate dataset
+        3. Configures batch size, shuffling, and workers
+        4. Sets up custom collation functions if needed
+        """
         logger.info("Setting up data loader...")
 
-        # Import necessary classes from the correct modules
         from src.experiment_design.datasets.core.loaders import DatasetRegistry
         from src.experiment_design.datasets.core.collate_fns import CollateRegistry
         import torch.utils.data
@@ -306,11 +318,10 @@ class ExperimentHost:
         )
 
     def run_experiment(self) -> None:
-        """Run the experiment using the configured experiment instance."""
+        """Execute the configured experiment and handle any exceptions."""
         logger.info("Starting experiment...")
 
         try:
-            # Run the experiment
             self.experiment.run()
             logger.info(
                 f"Experiment completed successfully. Results saved to {self.experiment.paths.results_dir}"
@@ -322,13 +333,10 @@ class ExperimentHost:
     @contextmanager
     def _ssh_connection(self, server_device: Any) -> Generator[Any, None, None]:
         """
-        Context manager for SSH connections.
+        Create and manage an SSH connection to the server.
 
-        Args:
-            server_device: Server device configuration object
-
-        Yields:
-            The SSH client instance
+        This context manager ensures proper resource cleanup even if
+        an exception occurs during SSH operations.
         """
         ssh_client = None
         try:
@@ -358,10 +366,11 @@ class ExperimentHost:
                 logger.debug("SSH connection closed")
 
     def _copy_results_to_server(self) -> bool:
-        """Copy results to the server.
+        """
+        Transfer experiment results to the server using SCP.
 
         Returns:
-            bool: True if results were successfully copied, False otherwise
+            bool: True if results were successfully copied
         """
         logger.info("Copying results to server...")
         server_device = self.device_mgr.get_device_by_type(DeviceType.SERVER)
@@ -407,7 +416,13 @@ class ExperimentHost:
             return False
 
     def cleanup(self) -> None:
-        """Clean up resources."""
+        """
+        Release resources and perform final operations.
+
+        Handles:
+        1. Optional copying of results to the server
+        2. Shutdown of logging infrastructure
+        """
         logger.info("Cleaning up...")
 
         # Optionally copy results to server if not already done
@@ -418,7 +433,6 @@ class ExperimentHost:
             if success:
                 logger.info("Results copied during cleanup")
 
-        # Shut down the logging server if it was started
         if self.logging_server_started:
             shutdown_logging_server()
 
@@ -426,11 +440,18 @@ class ExperimentHost:
 
 
 def main() -> None:
-    """Main entry point for the host application."""
+    """
+    Main entry point for the host application.
+
+    Handles:
+    1. Command-line argument parsing
+    2. Initialization of the experiment host
+    3. Experiment execution and result handling
+    4. Error handling and cleanup
+    """
     args = parse_arguments()
     config_path = Path(args.config)
 
-    # Configure basic logging until the host sets up proper logging
     logging_level = logging.INFO
     logging.basicConfig(
         level=logging_level,
@@ -456,7 +477,6 @@ def main() -> None:
         print("Starting experiment...")
         host.run_experiment()
 
-        # Copy results if requested
         if args.copy_results and host:
             print("Copying results to server...")
             success = host._copy_results_to_server()

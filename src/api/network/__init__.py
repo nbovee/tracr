@@ -1,4 +1,4 @@
-"""Network functionality for the application."""
+"""Network functionality for the application"""
 
 from .client import NetworkConfig, SplitComputeClient, create_network_client
 from .compression import DataCompression

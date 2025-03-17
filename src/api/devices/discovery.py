@@ -1,4 +1,4 @@
-"""Network discovery utilities."""
+"""Network discovery utilities"""
 
 import logging
 import socket
@@ -20,13 +20,9 @@ logger = logging.getLogger("split_computing_logger")
 
 
 class LAN:
-    """Provides general networking utilities for the local area network.
+    """Provides utilities for host discovery and reachability testing in local networks."""
 
-    This class implements methods for checking host reachability and
-    discovering available hosts on a local network.
-    """
-
-    # Define a list of IP addresses in the local network (192.168.1.0/24)
+    # Generate IP address list from CIDR notation
     LOCAL_CIDR_BLOCK: List[str] = [
         str(ip) for ip in ipaddress.ip_network(DEFAULT_LOCAL_CIDR).hosts()
     ]
@@ -35,21 +31,7 @@ class LAN:
     def is_host_reachable(
         cls, host: str, port: int, timeout: Union[int, float]
     ) -> bool:
-        """Determine if the given host is reachable on the given port.
-
-        Attempts to open a socket connection to verify reachability.
-
-        Args:
-            host: The hostname or IP address to check.
-            port: The port number to check.
-            timeout: The timeout in seconds for the connection attempt.
-
-        Returns:
-            bool: True if the host is reachable, False otherwise.
-
-        Raises:
-            TimeoutError: When the connection attempt times out.
-        """
+        """Test if a host is reachable by attempting a socket connection."""
         try:
             with socket.create_connection((host, port), timeout):
                 logger.debug(f"Host {host} is reachable on port {port}")
@@ -70,22 +52,10 @@ class LAN:
         max_threads: int = MAX_DISCOVERY_THREADS,
         callback: Optional[Callable[[str], None]] = None,
     ) -> List[str]:
-        """Determine the availability of hosts on the local network.
+        """Discover available hosts using parallel connection testing.
 
-        Uses multithreading to efficiently check multiple hosts in parallel.
-
-        Args:
-            hosts: List of hosts to check. If None, checks the local CIDR block.
-            port: Port number to check on each host.
-            timeout: Timeout in seconds for each connection attempt.
-            max_threads: Maximum number of concurrent threads to use.
-            callback: Optional callback function to call for each available host.
-
-        Returns:
-            List[str]: List of available hosts.
-
-        Raises:
-            NetworkError: If there's an error during the network scan.
+        Uses ThreadPoolExecutor to efficiently scan multiple hosts concurrently.
+        Each successful connection triggers the optional callback function.
         """
         # Use the provided list of hosts or default to the local CIDR block
         hosts_to_check = hosts or cls.LOCAL_CIDR_BLOCK
@@ -115,14 +85,7 @@ class LAN:
 
     @staticmethod
     def get_local_ip() -> str:
-        """Get the local IP address of this machine.
-
-        Returns:
-            str: The local IP address.
-
-        Raises:
-            NetworkError: If the local IP address cannot be determined.
-        """
+        """Get the local IP address by creating a dummy connection to a public IP."""
         try:
             # Create a socket and connect to an external server to determine local IP
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:

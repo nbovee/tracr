@@ -1,4 +1,4 @@
-"""Factory module for creating power monitoring instances."""
+"""Factory module for creating power monitoring instances"""
 
 import logging
 from typing import Any, Literal
@@ -20,19 +20,8 @@ def create_power_monitor(
 ) -> PowerMonitor:
     """Create the appropriate power monitor for the current hardware.
 
-    This factory function detects the available hardware and creates
-    the most appropriate monitor instance.
-
-    Args:
-        device_type: The type of device to monitor. If "auto", automatically detect.
-        force_cpu: If True, force CPU monitoring even if GPU is available.
-        **kwargs: Additional arguments to pass to the specific monitor constructor.
-
-    Returns:
-        A PowerMonitor instance for the detected or specified hardware.
-
-    Raises:
-        MonitoringInitError: If monitor initialization fails.
+    Selects and instantiates the optimal power monitoring implementation
+    based on hardware detection or explicit configuration.
     """
     if force_cpu:
         logger.info("Forcing CPU monitoring as requested")
@@ -57,10 +46,12 @@ def create_power_monitor(
 
 
 def _detect_device_type() -> str:
-    """Detect the hardware platform.
+    """Detect the hardware platform through progressive feature detection.
 
-    Returns:
-        String identifier for the detected hardware ("nvidia", "jetson", or "cpu").
+    Performs platform detection in priority order:
+    1. Check for Jetson-specific sysfs entries
+    2. Check for NVIDIA GPU availability via CUDA or NVML
+    3. Fall back to CPU monitoring
     """
     # Check for Jetson first (edge device)
     if _is_jetson():
@@ -75,11 +66,7 @@ def _detect_device_type() -> str:
 
 
 def _is_jetson() -> bool:
-    """Check if running on a Jetson platform.
-
-    Returns:
-        True if running on Jetson, False otherwise.
-    """
+    """Check for Jetson platform by examining platform-specific sysfs entries."""
     from pathlib import Path
 
     jetson_paths = [
@@ -91,10 +78,11 @@ def _is_jetson() -> bool:
 
 
 def _has_nvidia_gpu() -> bool:
-    """Check if an NVIDIA GPU is available.
+    """Check for NVIDIA GPU availability using multiple detection methods.
 
-    Returns:
-        True if NVIDIA GPU is available, False otherwise.
+    Attempts detection through:
+    1. PyTorch CUDA runtime detection
+    2. NVIDIA Management Library (NVML)
     """
     try:
         import torch

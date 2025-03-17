@@ -1,4 +1,4 @@
-"""Core experiment infrastructure for split computing."""
+"""Core experiment infrastructure for split computing"""
 
 import logging
 import sys
@@ -12,11 +12,6 @@ import pandas as pd
 import torch
 from PIL import Image
 
-# Add project root to path if not already there
-project_root = Path(__file__).resolve().parents[3]
-if str(project_root) not in sys.path:
-    sys.path.append(str(project_root))
-
 from src.interface import ExperimentInterface, ModelInterface
 
 logger = logging.getLogger("split_computing_logger")
@@ -24,7 +19,11 @@ logger = logging.getLogger("split_computing_logger")
 
 @dataclass
 class ProcessingTimes:
-    """Container for processing time measurements."""
+    """Measurement container for distributed computation timing metrics.
+
+    Captures the time spent at each stage of split computing to analyze performance
+    tradeoffs between local computation and network-based offloading.
+    """
 
     # Time spent on the host (local) side processing.
     host_time: float = 0.0
@@ -57,25 +56,24 @@ class ExperimentPaths:
 
 
 class BaseExperiment(ExperimentInterface):
-    """Base class for all experiment types.
+    """Base class for all split computing experiment types.
 
-    This class provides common functionality for experiments,
-    including configuration, model setup, and result processing.
-    It serves as the foundation for both local and networked experiments.
+    Provides core functionality for experiments where computation may be split between:
+    1. Local processing only (LocalExperiment)
+    2. Distributed processing (NetworkedExperiment)
+
+    This class handles model initialization, result processing, and performance measurement
+    while concrete subclasses implement specific tensor sharing strategies.
     """
 
     def __init__(self, config: Dict[str, Any], host: str, port: int) -> None:
-        """Initialize the experiment with the given configuration.
-
-        Args:
-            config: Dictionary containing experiment configuration.
-            host: Hostname or IP address for networked experiments.
-            port: Port number for networked experiments.
-        """
+        """Initialize experiment infrastructure for potential tensor sharing."""
         self.config = config
         self.host = host
         self.port = port
         self.collect_metrics = config.get("default", {}).get("collect_metrics", False)
+
+        # Set computation device for tensor processing
         self.device = torch.device(
             config.get("default", {}).get(
                 "device", "cuda" if torch.cuda.is_available() else "cpu"
@@ -85,14 +83,14 @@ class BaseExperiment(ExperimentInterface):
         if not self.collect_metrics:
             logger.info("Metrics collection is disabled")
 
-        # Set up directories for storing results and images.
+        # Set up directories for storing results and images
         self.paths = ExperimentPaths()
         self.paths.setup_directories(self.config["model"]["model_name"])
 
         # Initialize timing and metrics data structures
         self.layer_timing_data = {}
 
-        # Load model and processor
+        # Initialize model and processor components
         self.model = self.initialize_model()
         self.post_processor = self._initialize_post_processor()
 
@@ -100,33 +98,23 @@ class BaseExperiment(ExperimentInterface):
         self.results = pd.DataFrame()
 
     def initialize_model(self) -> ModelInterface:
-        """Initialize and configure the model by dynamically importing it."""
+        """Initialize and configure the model for potential split computation."""
         model_module = __import__(
             "src.experiment_design.models.model_hooked", fromlist=["WrappedModel"]
         )
-        # The model is instantiated with the experiment configuration.
+        # Create a model instance that supports tensor extraction at any layer
         return getattr(model_module, "WrappedModel")(config=self.config)
 
     def _load_model(self, model_name: str) -> torch.nn.Module:
         """Load the model with the given name.
 
-        Args:
-            model_name: Name of the model to load.
-
-        Returns:
-            Loaded model as a torch.nn.Module.
+        Deprecated: Use initialize_model instead.
         """
-        # This method is now deprecated - use initialize_model instead
-        # Kept for backward compatibility
         logger.warning("_load_model is deprecated, use initialize_model instead")
         return self.initialize_model()
 
     def _initialize_post_processor(self) -> Any:
-        """Initialize ML utilities (e.g. for output processing and visualization) based on model configuration.
-
-        Returns:
-            Post-processor for the model.
-        """
+        """Initialize processor for handling model outputs after tensor processing."""
         try:
             # Import the factory
             from src.api.inference import ModelProcessorFactory
@@ -144,11 +132,7 @@ class BaseExperiment(ExperimentInterface):
             raise
 
     def _load_class_names(self) -> List[str]:
-        """Load class names either from a list in the config or from a text file.
-
-        Returns:
-            List of class names.
-        """
+        """Load class names from config or file."""
         # Get class_names directly from the dataset config (new format)
         class_names_path = self.config.get("dataset", {}).get("class_names")
         if isinstance(class_names_path, list):
@@ -173,77 +157,54 @@ class BaseExperiment(ExperimentInterface):
         return []
 
     def process_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process input data and return results.
+        """Process tensors received from client during distributed computation.
 
-        This is a key method for understanding tensor processing in experiments.
-        For networked experiments, this method is executed on the server side to
-        process the tensors received from the client/edge device.
+        This is the critical server-side method in tensor sharing architecture that:
+        1. Receives intermediate tensors from client devices
+        2. Continues model execution from the specified split point
+        3. Returns the processed results back to the client
 
-        The method:
-        1. Extracts the received tensor and metadata from the input data
-        2. Moves the tensor to the appropriate device (CPU/GPU)
-        3. Processes the tensor with the model, starting from the split layer
-        4. Moves the result back to CPU for transmission back to the client
-        5. Applies post-processing to the result
-
-        This would be the point to add tensor decryption if encryption were
-        implemented on the client side.
-
-        Args:
-            data: Dictionary containing input data and processing parameters.
-                Expected keys:
-                - "input": A tuple (output_tensor, original_size)
-                - "split_layer": Layer index at which to start processing
-
-        Returns:
-            Dictionary containing processed results.
+        === TENSOR SHARING FLOW ===
+        Client → [intermediate tensor + metadata] → Server (this method) → [results] → Client
         """
-        # Extract the tensor and metadata from the input data
-        # TENSOR SHARING - Server Side, Step 1: Receive and extract shared tensor
-        # Future decryption would happen here if encrypted by the client
+        # === TENSOR RECEPTION ===
+        # Extract the transmitted tensor and metadata
+        # This is where decryption would occur if encryption is implemented
         output, original_size = data["input"]
 
         with torch.no_grad():
-            # Move tensor to the appropriate device (GPU/CPU)
-            # TENSOR SHARING - Server Side, Step 2: Prepare tensor for processing
+            # === TENSOR PREPARATION ===
+            # Move tensor to appropriate computation device (GPU/CPU)
             if hasattr(output, "inner_dict"):
-                # Handle case where output is a container with tensors
+                # Handle complex tensor containers with multiple tensors
                 inner_dict = output.inner_dict
                 for key, value in inner_dict.items():
                     if isinstance(value, torch.Tensor):
                         inner_dict[key] = value.to(self.device, non_blocking=True)
             elif isinstance(output, torch.Tensor):
-                # Move the tensor to the desired device
+                # Move tensor to target device for efficient processing
                 output = output.to(self.device, non_blocking=True)
 
-            # Process the tensor with the model, starting from the split layer
-            # TENSOR SHARING - Server Side, Step 3: Process the shared tensor
+            # === TENSOR PROCESSING ===
+            # Continue model execution from the split point specified
             result = self.model(output, start=data["split_layer"])
-            # If the model returns a tuple, use only the first element
+            # Handle models that return additional metadata
             if isinstance(result, tuple):
                 result, _ = result
 
-            # Move the result tensor back to CPU for network transfer
-            # TENSOR SHARING - Server Side, Step 4: Prepare processed result for return
-            # Future encryption would happen here before returning to client
+            # === RESULT PREPARATION ===
+            # Move result back to CPU for network transmission
+            # This is where encryption would occur before returning to client
             if isinstance(result, torch.Tensor) and result.device != torch.device(
                 "cpu"
             ):
                 result = result.cpu()
 
-            # Apply post-processing to the result
+            # Apply post-processing to generate final output
             return self.post_processor.process_output(result, original_size)
 
     def _get_original_image(self, tensor: torch.Tensor, image_path: str) -> Image.Image:
-        """Convert a tensor back to an Image object for visualization.
-
-        Args:
-            tensor: Input tensor representing an image.
-            image_path: Path to the original image file.
-
-        Returns:
-            PIL Image object.
-        """
+        """Reconstruct or load original image from tensor or file path."""
         try:
             # First attempt to check if there's a dataset with get_original_image method
             if hasattr(self, "data_loader") and hasattr(
@@ -252,42 +213,6 @@ class BaseExperiment(ExperimentInterface):
                 original_image = self.data_loader.dataset.get_original_image(image_path)
                 if original_image is not None:
                     return original_image
-
-            # If not available from dataset, try loading from the dataset root if specified in config
-            dataset_config = self.config.get("dataset", {})
-            dataset_root = dataset_config.get("root")
-            img_directory = dataset_config.get("img_directory")
-
-            # Try different possible paths
-            paths_to_try = []
-
-            # First try the path as provided (might be absolute)
-            paths_to_try.append(image_path)
-
-            # Try with the img_directory from config
-            if img_directory:
-                paths_to_try.append(str(Path(img_directory) / Path(image_path).name))
-
-            # Try with dataset root + image_path
-            if dataset_root:
-                paths_to_try.append(str(Path(dataset_root) / Path(image_path).name))
-
-                # Also try dataset root + 'testing' + filename as that's a common convention
-                paths_to_try.append(
-                    str(Path(dataset_root) / "testing" / Path(image_path).name)
-                )
-
-            # Try each path in order
-            for path in paths_to_try:
-                try:
-                    return Image.open(path).convert("RGB")
-                except (FileNotFoundError, OSError):
-                    continue
-
-            # If we get here, fall back to reconstructing from tensor
-            logger.warning(
-                f"Could not load original image from {image_path}: tried paths {paths_to_try}"
-            )
 
             # Fall back to reconstructing from tensor
             if tensor.dim() == 4:  # Batch of images
@@ -321,24 +246,20 @@ class BaseExperiment(ExperimentInterface):
             return Image.fromarray(numpy_image)
 
     def _save_visualization(self, result: Dict[str, Any], image_file: str) -> None:
-        """Save visualization of the processed result.
-
-        Args:
-            result: Processed result from the model.
-            image_file: Name of the image file.
-        """
-        # Implementation would depend on the specific visualization needs
+        """Save visualization of the processed result."""
+        # Implementation depends on specific visualization needs
         pass
 
     def run(self) -> None:
-        """Execute the experiment by testing different split layers and saving results."""
+        """Execute the experiment by testing different tensor split points."""
+        # Determine which split layer(s) to test
         split_layer = int(self.config["model"]["split_layer"])
-        # If split_layer is -1, test over all layers; otherwise, use the given split layer.
+        # If split_layer is -1, test over all layers; otherwise, use the given split layer
         split_layers = (
             [split_layer] if split_layer != -1 else range(1, self.model.layer_count)
         )
 
-        # Run experiments for each split layer and collect performance records.
+        # Run experiments for each split layer and collect performance records
         performance_records = [
             self.test_split_performance(split_layer=layer) for layer in split_layers
         ]
@@ -419,13 +340,10 @@ class BaseExperiment(ExperimentInterface):
         )
 
     def _aggregate_split_energy_metrics(self, split_idx: int) -> Dict[str, float]:
-        """Aggregate energy metrics for a specific split point.
+        """Aggregate energy metrics for a specific tensor split point.
 
-        Args:
-            split_idx: Index of the split layer.
-
-        Returns:
-            Dictionary of aggregated energy metrics.
+        Collects comprehensive energy data for tensors processed up to the specified split layer,
+        consolidating measurements across different data sources for reliable metrics.
         """
         metrics = {
             "processing_energy": 0.0,
@@ -439,7 +357,7 @@ class BaseExperiment(ExperimentInterface):
         if not self.collect_metrics:
             return metrics
 
-        # First try to get metrics directly from get_layer_metrics which uses metrics_collector
+        # PRIMARY SOURCE: Direct metrics from collector
         metrics_from_model = self.model.get_layer_metrics()
         if metrics_from_model:
             logger.info(
@@ -452,26 +370,27 @@ class BaseExperiment(ExperimentInterface):
             total_energy = 0.0
             total_comm_energy = 0.0
 
-            # Get metrics for each layer up to split_idx
+            # Aggregate metrics across all layers up to the tensor split point
             for layer_idx in range(split_idx + 1):
                 if layer_idx in metrics_from_model:
                     layer_data = metrics_from_model[layer_idx]
 
-                    # Only include layers with valid data
+                    # Only include layers with valid power readings
                     if layer_data.get("power_reading", 0) > 0:
-                        # Update max power
+                        # Track maximum power consumption across layers
                         max_power = max(max_power, layer_data.get("power_reading", 0))
 
-                        # Sum energies
+                        # Accumulate tensor processing energy
                         total_energy += layer_data.get("processing_energy", 0)
 
-                        # Only add communication energy at the split point
+                        # Communication energy only applies at the actual split point
+                        # where tensor is transmitted over network
                         if layer_idx == split_idx:
                             total_comm_energy = layer_data.get(
                                 "communication_energy", 0
                             )
 
-                        # Get memory utilization if available
+                        # Track peak memory utilization
                         if layer_data.get("memory_utilization", 0) > 0:
                             metrics["memory_utilization"] = max(
                                 metrics["memory_utilization"],
@@ -480,7 +399,7 @@ class BaseExperiment(ExperimentInterface):
 
                         layers_processed += 1
 
-            # Only update metrics if we found valid data
+            # Only update final metrics if valid data was found
             if layers_processed > 0:
                 metrics["processing_energy"] = total_energy
                 metrics["communication_energy"] = total_comm_energy
@@ -492,16 +411,16 @@ class BaseExperiment(ExperimentInterface):
                 )
                 return metrics
 
-        # Fallback: Try to access historical energy data directly
+        # FALLBACK SOURCE: Historical energy measurements
         energy_data = getattr(self.model, "layer_energy_data", {})
         if not energy_data:
             logger.warning("No energy data available for metrics aggregation")
             return metrics
 
-        # Log all collected split points
+        # Identify available split points in collected data
         split_points = set()
         for layer_idx, measurements in energy_data.items():
-            # Only consider layers up to the split point
+            # Only consider layers up to the tensor split point
             if layer_idx > split_idx:
                 continue
 
@@ -510,14 +429,15 @@ class BaseExperiment(ExperimentInterface):
                     split_points.add(m["split_point"])
         logger.info(f"Found energy data for split points: {sorted(split_points)}")
 
-        # Get layers that were executed for this split point
+        # Identify layers relevant to current split configuration
         valid_layers = [i for i in range(split_idx + 1)]
         layer_measurements = []
 
+        # Collect measurements for each layer
         for layer_idx in valid_layers:
             layer_energy = energy_data.get(layer_idx, [])
             if layer_energy:
-                # Filter to measurements for this specific split point
+                # First try to find measurements specific to this split point
                 split_measurements = [
                     m for m in layer_energy if m.get("split_point", -1) == split_idx
                 ]
@@ -528,7 +448,7 @@ class BaseExperiment(ExperimentInterface):
                         f"Found {len(split_measurements)} measurements for layer {layer_idx}, split {split_idx}"
                     )
                 elif layer_energy:
-                    # If no measurements specifically for this split, use all available
+                    # Fallback to all available measurements for this layer
                     layer_measurements.append(layer_energy)
                     logger.debug(
                         f"Using {len(layer_energy)} generic measurements for layer {layer_idx}"
@@ -538,7 +458,7 @@ class BaseExperiment(ExperimentInterface):
             logger.warning(f"No layer measurements found for split {split_idx}")
             return metrics
 
-        # Process each layer's measurements
+        # Process each layer's energy measurements
         for layer_split_measurements in layer_measurements:
             n_measurements = len(layer_split_measurements)
             if n_measurements == 0:
@@ -547,13 +467,14 @@ class BaseExperiment(ExperimentInterface):
             # Get the layer index from the first measurement
             layer_idx = layer_split_measurements[0].get("layer_idx", -1)
 
-            # Calculate averages for this layer
+            # Calculate per-layer average energy metrics
             layer_avg = {
                 "processing_energy": sum(
                     float(m.get("processing_energy", 0.0))
                     for m in layer_split_measurements
                 )
                 / n_measurements,
+                # Communication energy only applies at the actual tensor split point
                 "communication_energy": (
                     sum(
                         float(m.get("communication_energy", 0.0))
@@ -562,7 +483,7 @@ class BaseExperiment(ExperimentInterface):
                     / n_measurements
                     if layer_idx == split_idx
                     else 0.0
-                ),  # Only at split point
+                ),
                 "power_reading": sum(
                     float(m.get("power_reading", 0.0)) for m in layer_split_measurements
                 )
@@ -574,7 +495,7 @@ class BaseExperiment(ExperimentInterface):
                 / n_measurements,
             }
 
-            # Calculate memory utilization if present
+            # Calculate memory utilization if present in measurements
             if any("memory_utilization" in m for m in layer_split_measurements):
                 memory_values = [
                     float(m.get("memory_utilization", 0.0))
@@ -586,13 +507,13 @@ class BaseExperiment(ExperimentInterface):
                         memory_values
                     )
 
-            # Sum energy metrics across layers
+            # Accumulate metrics across all relevant layers
             metrics["processing_energy"] += layer_avg["processing_energy"]
-            # Only add communication energy at the split point
+            # Communication energy only at split boundary
             if layer_idx == split_idx:
                 metrics["communication_energy"] = layer_avg["communication_energy"]
 
-            # Take max for utilization/power readings
+            # Use maximum values for utilization metrics
             metrics["power_reading"] = max(
                 metrics["power_reading"], layer_avg["power_reading"]
             )
@@ -604,7 +525,7 @@ class BaseExperiment(ExperimentInterface):
                     metrics["memory_utilization"], layer_avg["memory_utilization"]
                 )
 
-        # Calculate total energy
+        # Total energy combines processing and communication components
         metrics["total_energy"] = (
             metrics["processing_energy"] + metrics["communication_energy"]
         )
@@ -613,10 +534,13 @@ class BaseExperiment(ExperimentInterface):
         return metrics
 
     def save_results(self, results: List[Tuple[int, float, float, float]]) -> None:
-        """Save experiment results to an Excel file.
+        """Save experiment results to an Excel file with detailed tensor metrics.
 
-        Args:
-            results: List of tuples containing (split_layer, host_time, travel_time, server_time).
+        This method collects and aggregates performance and energy metrics for each split point,
+        focusing on tensor sharing efficiency across different model layers. The metrics include:
+        - Processing time (host and server)
+        - Network transfer time
+        - Energy consumption metrics for tensor operations
         """
         # Check if paths is configured
         if not self.paths:
@@ -645,7 +569,8 @@ class BaseExperiment(ExperimentInterface):
             logger.info("Metrics collection is disabled, skipping results saving")
             return
 
-        # Create Overall Performance sheet
+        # === PERFORMANCE METRICS FOR TENSOR SHARING ===
+        # Create Overall Performance sheet with timing metrics for tensor transfer and processing
         df = pd.DataFrame(
             results,
             columns=[
@@ -659,11 +584,12 @@ class BaseExperiment(ExperimentInterface):
             df["Host Time"] + df["Travel Time"] + df["Server Time"]
         )
 
-        # Process layer metrics from all available sources - prioritize metrics_collector
+        # === LAYER-SPECIFIC TENSOR METRICS COLLECTION ===
+        # Gather detailed metrics about tensor operations at each layer
         layer_metrics = []
         all_layer_indices = sorted(self.model.forward_info.keys())
 
-        # Check if we can get metrics directly from the metrics collector
+        # Determine metrics source - prefer collector over historical data
         model_metrics = self.model.get_layer_metrics()
         has_collector_metrics = bool(model_metrics)
 
@@ -673,7 +599,7 @@ class BaseExperiment(ExperimentInterface):
         for split_idx, _, _, _ in results:
             logger.debug(f"Processing metrics for split layer {split_idx}")
 
-            # Get all energy metrics for this split point
+            # Get energy metrics for this tensor split point (computation cost)
             split_energy_metrics = self._aggregate_split_energy_metrics(split_idx)
             logger.info(
                 f"Split {split_idx} aggregated energy metrics: {split_energy_metrics}"
@@ -682,15 +608,18 @@ class BaseExperiment(ExperimentInterface):
             # Only include layers up to and including the split point
             valid_layer_indices = [i for i in all_layer_indices if i <= split_idx]
 
+            # === TENSOR SIZE AND LATENCY METRICS ===
+            # Collect data about tensor dimensions, processing time, and energy consumption
             for layer_idx in valid_layer_indices:
                 layer_info = self.model.forward_info.get(layer_idx, {})
 
-                # Safely convert values with defaults for None
+                # Calculate inference latency (ms) for this tensor operation
                 inference_time = layer_info.get("inference_time")
                 latency_ms = (
                     float(inference_time) * 1e3 if inference_time is not None else 0.0
                 )
 
+                # Calculate tensor size (MB) for network transmission assessment
                 output_bytes = layer_info.get("output_bytes")
                 output_mb = (
                     float(output_bytes) / (1024 * 1024)
@@ -698,16 +627,17 @@ class BaseExperiment(ExperimentInterface):
                     else 0.0
                 )
 
-                # Always include basic metrics with safe conversions
+                # Create basic metrics entry for this layer's tensor
                 metrics_entry = {
                     "Split Layer": split_idx,
                     "Layer ID": layer_idx,
                     "Layer Type": layer_info.get("layer_type", "Unknown"),
                     "Layer Latency (ms)": latency_ms,
-                    "Output Size (MB)": output_mb,
+                    "Output Size (MB)": output_mb,  # Size of tensor at this layer
                 }
 
-                # Priority 1: Get metrics from metrics collector if available
+                # === HIGH-PRECISION METRICS FROM COLLECTOR ===
+                # Use metrics collector data if available (more accurate)
                 if has_collector_metrics and layer_idx in model_metrics:
                     layer_data = model_metrics[layer_idx]
 
@@ -719,23 +649,24 @@ class BaseExperiment(ExperimentInterface):
                         else 0.0
                     )
 
-                    # Get GPU utilization directly from the metrics - ensure it's included even if zero
+                    # GPU utilization during tensor computation
                     gpu_utilization = layer_data.get("gpu_utilization", 0.0)
 
-                    # Use the metrics collector data directly
+                    # Add detailed energy metrics for this tensor layer
                     metrics_entry.update(
                         {
                             "Layer Latency (ms)": latency_ms,
                             "Processing Energy (J)": layer_data.get(
                                 "processing_energy", 0.0
                             ),
+                            # Communication energy only applies at the tensor transmission point
                             "Communication Energy (J)": (
                                 layer_data.get("communication_energy", 0.0)
                                 if layer_idx == split_idx
                                 else 0.0
                             ),
                             "Power Reading (W)": layer_data.get("power_reading", 0.0),
-                            "GPU Utilization (%)": gpu_utilization,  # Make sure GPU utilization is included
+                            "GPU Utilization (%)": gpu_utilization,
                             "Total Energy (J)": layer_data.get("processing_energy", 0.0)
                             + (
                                 layer_data.get("communication_energy", 0.0)
@@ -753,9 +684,10 @@ class BaseExperiment(ExperimentInterface):
 
                     logger.debug(f"Added metrics from collector for layer {layer_idx}")
 
-                # Priority 2: Fall back to layer_energy_data if metrics collector data is not available
+                # === FALLBACK METRICS FROM ENERGY DATA ===
+                # Use layer_energy_data if metrics collector is not available
                 else:
-                    # Get layer-specific energy metrics from layer_energy_data
+                    # Get layer-specific energy metrics from energy data store
                     energy_data = getattr(self.model, "layer_energy_data", {})
                     layer_energy_metrics = []
                     if energy_data and layer_idx in energy_data:
@@ -765,7 +697,7 @@ class BaseExperiment(ExperimentInterface):
                             if m.get("split_point", -1) == split_idx
                         ]
 
-                    # If we have layer-specific energy data, use it
+                    # If we have layer-specific energy data, calculate averages
                     if layer_energy_metrics:
                         try:
                             # Calculate averages from all measurements for this layer
@@ -835,6 +767,7 @@ class BaseExperiment(ExperimentInterface):
                             logger.warning(
                                 f"Error calculating energy metrics for layer {layer_idx}: {e}"
                             )
+                            # Fall back to forward_info metrics
                             avg_metrics = {
                                 "Processing Energy (J)": layer_info.get(
                                     "processing_energy", 0.0
@@ -865,7 +798,7 @@ class BaseExperiment(ExperimentInterface):
                                 ]
                             metrics_entry.update(avg_metrics)
                     else:
-                        # Fall back to metrics from forward_info if no specific measurements
+                        # Fall back to metrics from forward_info if no layer-specific data
                         avg_metrics = {
                             "Processing Energy (J)": layer_info.get(
                                 "processing_energy", 0.0
@@ -905,7 +838,8 @@ class BaseExperiment(ExperimentInterface):
 
                 layer_metrics.append(metrics_entry)
 
-        # Create DataFrames and save to Excel
+        # === CREATE DATAFRAMES AND SAVE TO EXCEL ===
+        # Format all collected metrics for export
         layer_metrics_df = (
             pd.DataFrame(layer_metrics) if layer_metrics else pd.DataFrame()
         )
@@ -917,14 +851,13 @@ class BaseExperiment(ExperimentInterface):
         else:
             logger.info(f"Collected metrics for {len(layer_metrics_df)} layer entries")
 
-            # Check if we're running on Windows CPU and need to fix any zero values
+            # Windows CPU platform-specific adjustments
             is_windows_cpu = False
             if hasattr(self.model, "is_windows_cpu"):
                 is_windows_cpu = self.model.is_windows_cpu
 
             if is_windows_cpu:
-                # For Windows CPU, make sure we have valid non-zero metrics
-                # Sometimes the hooks don't capture every layer, so we need to get direct metrics
+                # Fix metrics for Windows CPU platforms where hardware monitoring may be limited
                 logger.info("Applying Windows CPU specific post-processing for metrics")
 
                 for idx, row in layer_metrics_df.iterrows():
@@ -996,7 +929,7 @@ class BaseExperiment(ExperimentInterface):
                                 f"Failed to update Windows CPU metrics for layer {layer_id}: {e}"
                             )
 
-        # Create timestamp and output path
+        # Generate timestamped output filename
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         if hasattr(self.paths, "model_dir") and self.paths.model_dir:
             output_file = self.paths.model_dir / f"analysis_{timestamp}.xlsx"
@@ -1008,6 +941,7 @@ class BaseExperiment(ExperimentInterface):
         # Make sure parent directory exists
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
+        # Write results to Excel with multiple sheets for comprehensive analysis
         with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
             df.to_excel(writer, sheet_name="Overall Performance", index=False)
 
@@ -1023,13 +957,14 @@ class BaseExperiment(ExperimentInterface):
                     writer, sheet_name="Layer Metrics", index=False
                 )
 
-                # Create energy summary with aggregated metrics
+                # === CREATE ENERGY SUMMARY FOR TENSOR SHARING ANALYSIS ===
+                # Aggregate energy metrics across layers for research analysis
                 energy_agg_dict = {
                     "Processing Energy (J)": "sum",
                     "Communication Energy (J)": "sum",
                     "Total Energy (J)": "sum",
                     "Power Reading (W)": "mean",
-                    "GPU Utilization (%)": "mean",  # Make sure to include GPU utilization
+                    "GPU Utilization (%)": "mean",
                     "Host Battery Energy (mWh)": "first",
                 }
 
@@ -1037,15 +972,14 @@ class BaseExperiment(ExperimentInterface):
                 if "Memory Utilization (%)" in layer_metrics_df.columns:
                     energy_agg_dict["Memory Utilization (%)"] = "mean"
 
-                # Group by Split Layer and create summary
+                # Group by Split Layer for comprehensive tensor sharing analysis
                 energy_summary = (
                     layer_metrics_df.groupby("Split Layer")
                     .agg(energy_agg_dict)
                     .reset_index()
                 )
 
-                # Fix the aggregation for better research paper representation:
-                # Only average power and GPU metrics across layers that actually executed (non-zero values)
+                # Filter metrics to only include active layers for accurate reporting
                 for split_layer in energy_summary["Split Layer"].unique():
                     # Get metrics for this split layer
                     split_metrics = layer_metrics_df[
@@ -1085,11 +1019,6 @@ class BaseExperiment(ExperimentInterface):
                                     "Memory Utilization (%)",
                                 ] = memory_active["Memory Utilization (%)"].mean()
 
-                # Add explanation in the logs for transparency
-                logger.info(
-                    "Adjusted Energy Analysis metrics to only average across active layers for accurate paper representation"
-                )
-
                 energy_summary.to_excel(
                     writer, sheet_name="Energy Analysis", index=False
                 )
@@ -1099,12 +1028,14 @@ class BaseExperiment(ExperimentInterface):
     def test_split_performance(
         self, split_layer: int
     ) -> Tuple[int, float, float, float]:
-        """Test performance for a specific split layer.
+        """Test performance for a specific tensor split point.
 
-        This method must be implemented by subclasses.
+        This method evaluates execution performance when the model is split at the
+        specified layer, measuring processing time on both host and server sides,
+        as well as network transfer time for the intermediate tensor.
 
         Args:
-            split_layer: Index of the layer to split at.
+            split_layer: Index of the layer to split tensor processing at.
 
         Returns:
             Tuple of (split_layer, host_time, travel_time, server_time).

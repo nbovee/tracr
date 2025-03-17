@@ -37,11 +37,7 @@ class DeviceType(Enum):
 
 @dataclass
 class LogConfig:
-    """Configuration settings for the logging system.
-
-    This dataclass holds configuration parameters for the logging system,
-    including log level, file paths, and formatting options.
-    """
+    """Configuration settings for the logging system."""
 
     level: int
     default_file: Path
@@ -56,10 +52,7 @@ class LogConfig:
 
 @dataclass
 class LoggingTheme:
-    """Theme settings for colorized logging output.
-
-    Defines colors and styles for different device types and log elements.
-    """
+    """Theme settings for colorized logging output."""
 
     # Device type colors
     server_color: str = "cyan"
@@ -81,14 +74,7 @@ class LoggingTheme:
     )
 
     def get_device_color(self, device_type: Optional[DeviceType]) -> str:
-        """Get the appropriate color for a device type.
-
-        Args:
-            device_type: The device type to get color for.
-
-        Returns:
-            The color string for the device type.
-        """
+        """Get the appropriate color for a device type."""
         if not device_type:
             return self.unknown_color
 
@@ -99,11 +85,7 @@ class LoggingTheme:
 
 
 class LoggingContext:
-    """Thread-safe context manager for storing logging context.
-
-    This class maintains thread-local storage of device type and other
-    context information needed for formatting log messages.
-    """
+    """Thread-safe context manager for storing logging context."""
 
     _device: ClassVar[Optional[DeviceType]] = None
     _lock: ClassVar[threading.Lock] = threading.Lock()
@@ -111,63 +93,34 @@ class LoggingContext:
 
     @classmethod
     def set_device(cls, device: DeviceType) -> None:
-        """Set the current device type in a thread-safe manner.
-
-        Args:
-            device: The device type to set.
-        """
+        """Set the current device type in a thread-safe manner."""
         with cls._lock:
             cls._device = device
 
     @classmethod
     def get_device(cls) -> Optional[DeviceType]:
-        """Retrieve the current device type in a thread-safe manner.
-
-        Returns:
-            The current device type or None if not set.
-        """
+        """Retrieve the current device type in a thread-safe manner."""
         with cls._lock:
             return cls._device
 
     @classmethod
     def set_theme(cls, theme: LoggingTheme) -> None:
-        """Set the logging theme.
-
-        Args:
-            theme: The theme to use for logging.
-        """
+        """Set the logging theme."""
         with cls._lock:
             cls._theme = theme
 
     @classmethod
     def get_theme(cls) -> LoggingTheme:
-        """Retrieve the current logging theme.
-
-        Returns:
-            The current logging theme.
-        """
+        """Retrieve the current logging theme."""
         with cls._lock:
             return cls._theme
 
 
 class ColorByDeviceFormatter(logging.Formatter):
-    """Custom formatter that adds device-specific color coding to log messages.
-
-    This formatter enhances log readability by:
-    1. Color-coding by device type (server, participant, etc.)
-    2. Highlighting important keywords (errors, warnings, etc.)
-    3. Formatting the message for better visual separation
-    """
+    """Custom formatter that adds device-specific color coding to log messages."""
 
     def format(self, record: logging.LogRecord) -> str:
-        """Format the log record with colors and highlights.
-
-        Args:
-            record: The log record to format.
-
-        Returns:
-            The formatted log message with color and highlighting.
-        """
+        """Format the log record with colors and highlights based on device type and keywords."""
         # Format the basic message
         message = super().format(record)
 
@@ -200,14 +153,7 @@ class ColorByDeviceFormatter(logging.Formatter):
 
 
 class BufferedSocketHandler(SocketHandler):
-    """A buffered socket handler for transmitting log messages over the network.
-
-    This handler improves network efficiency by:
-    1. Buffering messages until a specified threshold
-    2. Sending messages in batches
-    3. Handling network errors gracefully
-    4. Using length-prefixed messages for proper framing
-    """
+    """A buffered socket handler for transmitting log messages over the network."""
 
     def __init__(
         self,
@@ -216,14 +162,7 @@ class BufferedSocketHandler(SocketHandler):
         buffer_size: int = BUFFER_SIZE,
         timeout: float = SOCKET_TIMEOUT,
     ):
-        """Initialize the buffered socket handler.
-
-        Args:
-            host: The hostname or IP of the logging server.
-            port: The port of the logging server.
-            buffer_size: Number of messages to buffer before sending.
-            timeout: Socket timeout in seconds.
-        """
+        """Initialize the buffered socket handler."""
         super().__init__(host, port)
         self.buffer: List[str] = []
         self.buffer_size = buffer_size
@@ -233,11 +172,7 @@ class BufferedSocketHandler(SocketHandler):
         self.connection_error = False
 
     def createSocket(self) -> None:
-        """Create a non-blocking socket connection for log transmission.
-
-        Raises:
-            ConnectionError: If socket creation fails.
-        """
+        """Create a non-blocking socket connection for log transmission."""
         if self.connection_error:
             return
 
@@ -252,11 +187,7 @@ class BufferedSocketHandler(SocketHandler):
             raise ConnectionError(f"Socket creation failed: {e}") from e
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Buffer and emit a log record.
-
-        Args:
-            record: The log record to emit.
-        """
+        """Buffer log record and flush when buffer reaches threshold."""
         if self.connection_error:
             return
 
@@ -284,11 +215,7 @@ class BufferedSocketHandler(SocketHandler):
                 self.buffer.clear()
 
     def _send_log(self, msg: str) -> None:
-        """Send a single log message over the socket with a length prefix.
-
-        Args:
-            msg: The log message to send.
-        """
+        """Send a single log message with length-prefixed framing for proper message boundaries."""
         if not self.sock or self.connection_error:
             return
 
@@ -313,14 +240,10 @@ class BufferedSocketHandler(SocketHandler):
 
 
 class LogRecordStreamHandler(socketserver.StreamRequestHandler):
-    """Handles incoming log records from the network.
-
-    This handler processes log messages received over the network
-    and forwards them to the local logging system.
-    """
+    """Handles incoming log records from the network."""
 
     def handle(self) -> None:
-        """Continuously process incoming log messages until the connection is closed."""
+        """Process incoming log messages using length-prefixed framing protocol."""
         logger = logging.getLogger("split_computing_logger")
 
         while True:
@@ -345,11 +268,7 @@ class LogRecordStreamHandler(socketserver.StreamRequestHandler):
 
 
 class DaemonThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
-    """A threaded TCP server for centralized log handling.
-
-    This server uses daemon threads to handle multiple log record streams
-    concurrently without blocking the main application thread.
-    """
+    """A threaded TCP server for centralized log handling."""
 
     allow_reuse_address = True
     daemon_threads = True
@@ -361,20 +280,7 @@ def setup_logger(
     config: Optional[Dict[str, Any]] = None,
     theme: Optional[LoggingTheme] = None,
 ) -> logging.Logger:
-    """Configure and return the application logger.
-
-    This function sets up a fully configured logger with console and file
-    handlers based on the provided configuration.
-
-    Args:
-        is_server: Whether this instance is a server (affects device type).
-        device: Explicitly specify device type (overrides is_server).
-        config: Configuration dictionary for logging settings.
-        theme: Custom theme for log colors and styles.
-
-    Returns:
-        The configured logger instance.
-    """
+    """Configure and return the application logger."""
     logger = logging.getLogger("split_computing_logger")
 
     # Return the existing logger if it's already configured
@@ -395,14 +301,7 @@ def setup_logger(
 
 
 def _parse_log_config(config: Optional[Dict[str, Any]]) -> LogConfig:
-    """Parse logging configuration from a dictionary.
-
-    Args:
-        config: Configuration dictionary for logging settings.
-
-    Returns:
-        Parsed LogConfig object with defaults applied where needed.
-    """
+    """Extract logging configuration from a dictionary with sensible defaults."""
     level = logging.INFO
     default_file = LOGS_DIR / "app.log"
     model_file = None
@@ -446,14 +345,7 @@ def _configure_logger(
     is_server: bool,
     device: Optional[DeviceType],
 ) -> None:
-    """Configure the logger with handlers and formatters.
-
-    Args:
-        logger: The logger to configure.
-        config: Configuration settings for the logger.
-        is_server: Whether this instance is a server.
-        device: The device type, if specified.
-    """
+    """Configure the logger with appropriate handlers and formatters."""
     # Set the base log level
     logger.setLevel(config.level)
 
@@ -520,22 +412,7 @@ def start_logging_server(
     device: Optional[DeviceType] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> Optional[DaemonThreadingTCPServer]:
-    """Start a TCP server for centralized logging.
-
-    This function sets up a server that can receive logs from multiple clients
-    and aggregate them in one place.
-
-    Args:
-        port: The port to listen on for log messages.
-        device: The device type for this logging server.
-        config: Configuration dictionary for logging settings.
-
-    Returns:
-        The server instance or None if startup failed.
-
-    Raises:
-        NetworkError: If the server fails to start due to network issues.
-    """
+    """Start a TCP server for centralized logging."""
     # Set up logger first
     logger = setup_logger(is_server=True, device=device, config=config)
 
@@ -559,11 +436,7 @@ def start_logging_server(
 
 
 def shutdown_logging_server(server: DaemonThreadingTCPServer) -> None:
-    """Shutdown the logging server gracefully.
-
-    Args:
-        server: The server instance to shut down.
-    """
+    """Shutdown the logging server gracefully."""
     if server:
         logger = logging.getLogger("split_computing_logger")
         logger.info("Shutting down logging server")
@@ -572,12 +445,5 @@ def shutdown_logging_server(server: DaemonThreadingTCPServer) -> None:
 
 
 def get_logger() -> logging.Logger:
-    """Get the application logger.
-
-    A convenience function to retrieve the already-configured logger
-    without setting it up again.
-
-    Returns:
-        The application logger.
-    """
+    """Get the pre-configured application logger."""
     return logging.getLogger("split_computing_logger")

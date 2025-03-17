@@ -16,7 +16,7 @@ import argparse
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple, Any, Dict, Final, Generator
+from typing import Optional, Tuple, Any, Dict, Generator
 
 import torch
 
@@ -25,7 +25,6 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-# Import using the original paths
 from src.api import (
     DataCompression,
     DeviceManager,
@@ -38,16 +37,13 @@ from src.api import (
 )
 from src.api.network.protocols import (
     LENGTH_PREFIX_SIZE,
-    HIGHEST_PROTOCOL,
     ACK_MESSAGE,
     SERVER_COMPRESSION_SETTINGS,
-    BUFFER_SIZE,
     SERVER_LISTEN_TIMEOUT,
     SOCKET_TIMEOUT,
     DEFAULT_PORT,
 )
 
-# Default configuration
 DEFAULT_CONFIG: Dict[str, Any] = {
     "logging": {"log_file": "logs/server.log", "log_level": "INFO"}
 }
@@ -58,15 +54,7 @@ logger = logging.getLogger("split_computing_logger")
 
 
 def get_device(requested_device: str = "cuda") -> str:
-    """
-    Determine the appropriate device based on availability and request.
-
-    Args:
-        requested_device: The requested device ('cuda', 'gpu', 'mps', or 'cpu')
-
-    Returns:
-        The selected device name ('cuda' or 'cpu')
-    """
+    """Determine the appropriate device based on availability and request."""
     requested_device = requested_device.lower()
 
     if requested_device == "cpu":
@@ -108,14 +96,7 @@ class Server:
     def __init__(
         self, local_mode: bool = False, config_path: Optional[str] = None
     ) -> None:
-        """
-        Initialize the Server.
-
-        Args:
-            local_mode: Whether to run in local mode (without network)
-            config_path: Path to the configuration file
-        """
-        logger.debug("Initializing server...")
+        """Initialize the Server with specified mode and configuration."""
         self.device_manager = DeviceManager()
         self.experiment_manager: Optional[ExperimentManager] = None
         self.server_socket: Optional[socket.socket] = None
@@ -124,9 +105,7 @@ class Server:
         self.metrics = ServerMetrics()
         self.compress_data: Optional[DataCompression] = None
 
-        # Configure device based on config if provided
         self._load_config_and_setup_device()
-
         # Setup compression if in networked mode
         if not local_mode:
             self._setup_compression()
@@ -170,14 +149,10 @@ class Server:
 
     def _setup_and_run_local_experiment(self) -> None:
         """Set up and run a local experiment based on configuration."""
-        # Import DatasetRegistry from the new location
         from src.experiment_design.datasets.core.loaders import DatasetRegistry
         import torch.utils.data
 
-        # Load experiment configuration
         config = read_yaml_file(self.config_path)
-
-        # Set up experiment manager and experiment
         self.experiment_manager = ExperimentManager(config, force_local=True)
         experiment = self.experiment_manager.setup_experiment()
 
@@ -229,12 +204,16 @@ class Server:
         experiment.run()
 
     def _get_collate_function(self, dataloader_config: Dict[str, Any]) -> Optional[Any]:
-        """Get the collate function specified in the configuration."""
+        """
+        Get the collate function specified in the configuration.
+
+        Collate functions customize how individual data samples are combined
+        into batches for model processing.
+        """
         if not dataloader_config.get("collate_fn"):
             return None
 
         try:
-            # Updated import path to use the new core module structure
             from src.experiment_design.datasets.core.collate_fns import CollateRegistry
 
             collate_fn_name = dataloader_config["collate_fn"]
@@ -294,7 +273,11 @@ class Server:
             self.cleanup()
 
     def _accept_connections(self) -> None:
-        """Accept and handle client connections."""
+        """
+        Accept and handle client connections in a continuous loop.
+
+        Uses socket timeout to allow for graceful shutdown on keyboard interrupt.
+        """
         while True:
             try:
                 conn, addr = self.server_socket.accept()
@@ -310,7 +293,14 @@ class Server:
                 continue
 
     def _setup_socket(self, port: int) -> None:
-        """Set up server socket with proper error handling."""
+        """
+        Set up server socket with proper error handling.
+
+        Creates a socket that:
+        - Allows address reuse (SO_REUSEADDR)
+        - Has a timeout to enable graceful shutdown
+        - Listens on all interfaces (empty host string)
+        """
         try:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -327,8 +317,9 @@ class Server:
         """
         Receive and parse configuration from client.
 
-        Args:
-            conn: The client connection socket
+        Implements a length-prefixed protocol for receiving structured data:
+        1. First 4 bytes indicate the total message length
+        2. Remaining bytes contain the serialized configuration
 
         Returns:
             The deserialized configuration dictionary
@@ -380,7 +371,11 @@ class Server:
         split_layer_index: int,
     ) -> Tuple[Any, float]:
         """
-        Process received data through model and return results along with processing time.
+        Process received tensor data through the model and measure performance.
+
+        This is the core split computation function that:
+        1. Continues model execution from the specified split point
+        2. Returns both the processed result and the time taken
 
         Args:
             experiment: The experiment object that will process the data
@@ -399,7 +394,12 @@ class Server:
 
     @contextmanager
     def _safe_connection(self, conn: socket.socket) -> Generator[None, None, None]:
-        """Context manager for safely handling client connections."""
+        """
+        Context manager for safely handling client connections.
+
+        Ensures proper exception handling and connection cleanup regardless
+        of how the connection processing terminates.
+        """
         try:
             yield
         except Exception as e:
@@ -412,10 +412,16 @@ class Server:
 
     def handle_connection(self, conn: socket.socket) -> None:
         """
-        Handle an individual client connection.
+        Handle an individual client connection for split computing.
 
-        Args:
-            conn: The client connection socket
+        The connection handling protocol follows these steps:
+        1. Receive experiment configuration from client
+        2. Initialize experiment based on received configuration
+        3. Send acknowledgment to client
+        4. Enter processing loop to handle tensor data
+           - Receive intermediate tensors from client
+           - Process tensors through the model from the split point
+           - Send results back to client
         """
         with self._safe_connection(conn):
             # Receive configuration from the client
@@ -522,7 +528,14 @@ class Server:
         processing_time: float,
         compressed_result: bytes,
     ) -> None:
-        """Send the processed result back to the client."""
+        """
+        Send the processed result back to the client using framed protocol.
+
+        The response protocol uses:
+        1. 4-byte length prefix for result size
+        2. 4-byte field for processing time (as padded string)
+        3. Variable-length compressed result data
+        """
         try:
             # Send result size as header (4 bytes)
             size_bytes = result_size.to_bytes(LENGTH_PREFIX_SIZE, "big")
@@ -545,8 +558,10 @@ class Server:
         """
         Update compression settings from received configuration.
 
-        Args:
-            config: Configuration dictionary that may contain compression settings
+        Compression settings affect the tradeoff between:
+        - Network bandwidth usage
+        - CPU utilization for compression/decompression
+        - Memory usage during transfer
         """
         if "compression" in config:
             logger.debug(f"Updating compression settings: {config['compression']}")
@@ -557,7 +572,12 @@ class Server:
             )
 
     def cleanup(self) -> None:
-        """Clean up server resources and close the socket."""
+        """
+        Clean up server resources and close the socket.
+
+        Ensures graceful shutdown with proper resource release
+        and final metrics logging.
+        """
         logger.info("Starting server cleanup...")
         if self.server_socket:
             try:

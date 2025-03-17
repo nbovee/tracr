@@ -1,4 +1,4 @@
-"""Implementation of a model that can be hooked into a split computing framework."""
+"""Implementation of a model that can be hooked into a split computing framework"""
 
 import atexit
 import copy
@@ -30,16 +30,15 @@ logger = logging.getLogger("split_computing_logger")
 
 
 class WrappedModel(BaseModel, ModelInterface):
-    """Model wrapper implementing hook-based functionality for edge computing experiments.
+    """Model wrapper implementing hook-based instrumentation for performance analysis.
 
-    This wrapper registers hooks (both pre- and post-) on the model's layers.
-    The hooks capture intermediate outputs, timings, and energy metrics.
+    Registers pre and post hooks on model layers to capture timing, energy metrics,
+    and intermediate outputs. Provides a foundation for split computing experiments
+    by enabling controlled model execution up to a specified layer boundary.
 
-    **Tensor/Data Sharing at the Split Point:**
-      - On the Edge device, the intermediate outputs are saved in the `banked_output` dictionary.
-      - When the designated split layer is reached, a HookExitException is raised carrying the
-        `banked_output`. This output is then wrapped by an EarlyOutput instance and serves as the
-        shared tensor that will be transmitted to the Cloud device.
+    The model can operate in two modes:
+    1. Edge device mode (start_i=0): Processes from input up to the split point
+    2. Cloud device mode (start_i>0): Processes from split point to final output
     """
 
     DEFAULT_DEPTH: ClassVar[int] = 2
@@ -49,7 +48,7 @@ class WrappedModel(BaseModel, ModelInterface):
     def __init__(
         self, config: Dict[str, Any], master_dict: Optional[Any] = None, **kwargs
     ) -> None:
-        """Initialize wrapped model with configuration and optional master dictionary."""
+        """Initialize wrapped model with configuration and metrics collection."""
         BaseModel.__init__(self, config)
         ModelInterface.__init__(self, config)
         logger.debug(f"Initializing WrappedModel with config: {config}")
@@ -127,7 +126,7 @@ class WrappedModel(BaseModel, ModelInterface):
         logger.info("WrappedModel initialization complete")
 
     def cleanup(self) -> None:
-        """Clean up resources."""
+        """Release hardware monitoring resources."""
         if hasattr(self, "energy_monitor") and self.energy_monitor is not None:
             try:
                 self.energy_monitor.cleanup()
@@ -146,7 +145,7 @@ class WrappedModel(BaseModel, ModelInterface):
             print(f"Error during WrappedModel cleanup: {e}", file=sys.stderr)
 
     def _setup_model(self) -> None:
-        """Set up model layers, register hooks, and initialize state."""
+        """Configure model by analyzing layers and registering hooks."""
         self.torchinfo_summary = summary(
             self.model, (1, *self.input_size), device=self.device, verbose=0
         )
@@ -161,7 +160,12 @@ class WrappedModel(BaseModel, ModelInterface):
         self.warmup(iterations=self.warmup_iterations)
 
     def _walk_modules(self, modules: Any, depth: int, walk_i: int) -> int:
-        """Register hooks on model layers recursively."""
+        """Traverse model hierarchy recursively to register hooks on appropriate layers.
+
+        Follows module hierarchy up to the configured depth, registering hooks
+        only on leaf modules that perform actual computation rather than
+        container modules.
+        """
         for child in modules:
             child_name = child.__class__.__name__
             children = list(child.children())
@@ -177,7 +181,7 @@ class WrappedModel(BaseModel, ModelInterface):
     def _register_layer(
         self, layer: torch.nn.Module, layer_name: str, depth: int, walk_i: int
     ) -> int:
-        """Register hooks and initialize metrics for a single layer."""
+        """Register hooks and initialize metrics storage for a single model layer."""
         layer_info = next(
             (
                 info
@@ -242,7 +246,16 @@ class WrappedModel(BaseModel, ModelInterface):
         end: Union[int, float] = np.inf,
         log: bool = True,
     ) -> Any:
-        """Execute forward pass with optional slicing and logging."""
+        """Execute model forward pass with configurable start/end layers.
+
+        Provides fine-grained control over model execution:
+        - start: First layer to process (0 for full model)
+        - end: Last layer to process (stopping point for split computation)
+        - log: Whether to collect and store metrics
+
+        When end < layer_count, execution will stop after the specified layer
+        and return an EarlyOutput instance containing intermediate results.
+        """
         start_time = self.timer()
         end = self.layer_count if end == np.inf else end
         logger.info(
@@ -268,7 +281,7 @@ class WrappedModel(BaseModel, ModelInterface):
         return output
 
     def _setup_inference_id(self, inference_id: Optional[str]) -> None:
-        """Set up inference ID and logging state."""
+        """Generate unique inference ID for metrics tracking."""
         if inference_id:
             base_id, *suffix = inference_id.rsplit(".", maxsplit=1)
             suffix = int(suffix[0]) + 1 if suffix else 0
@@ -278,7 +291,7 @@ class WrappedModel(BaseModel, ModelInterface):
             self.inference_info["inference_id"] = "warmup"
 
     def _execute_forward(self, x: Union[torch.Tensor, Image.Image]) -> Any:
-        """Execute model forward pass with appropriate context."""
+        """Run model forward pass with appropriate inference mode context."""
         context = torch.no_grad() if self.get_mode() == "eval" else nullcontext()
         with context:
             logger.debug("Starting model forward pass")
@@ -287,7 +300,12 @@ class WrappedModel(BaseModel, ModelInterface):
             return output
 
     def _handle_early_exit(self, exception: HookExitException) -> EarlyOutput:
-        """Handle early exit from forward pass triggered by the hooks."""
+        """Process early exit from forward pass triggered by hooks at split point.
+
+        When execution reaches the designated split point, this preserves
+        timing data for all completed layers and packages the intermediate
+        outputs for communication to the next stage.
+        """
         output = EarlyOutput(exception.result)
 
         # Preserve timing data for all completed layers.
@@ -311,7 +329,7 @@ class WrappedModel(BaseModel, ModelInterface):
         return output
 
     def _handle_results(self, start_time: int) -> None:
-        """Handle forward pass results and logging."""
+        """Process forward pass results and update performance metrics."""
         total_time = self.timer() - start_time
         self.inference_info["total_time"] = total_time
         logger.debug(f"Total forward pass time: {total_time/1e9:.6f} seconds")
@@ -349,7 +367,7 @@ class WrappedModel(BaseModel, ModelInterface):
         self.banked_output = None
 
     def update_master_dict(self) -> None:
-        """Update master dictionary with buffered data."""
+        """Flush buffered metrics to master dictionary for external analysis."""
         if self.master_dict and self.io_buffer:
             self.master_dict.update(self.io_buffer)
             self.io_buffer.clear()
@@ -363,7 +381,7 @@ class WrappedModel(BaseModel, ModelInterface):
         self.model.load_state_dict(state_dict)
 
     def get_layer_metrics(self) -> Dict[int, Dict[str, Any]]:
-        """Get layer-specific metrics collected during inference."""
+        """Retrieve per-layer performance metrics from current execution."""
         # Only return metrics if collection is enabled
         if not self.collect_metrics:
             logger.debug("Metrics collection is disabled, returning empty metrics")
@@ -376,7 +394,7 @@ class WrappedModel(BaseModel, ModelInterface):
         return {}
 
     def _ensure_energy_data_stored(self, layer_idx):
-        """Get energy data from metrics collector."""
+        """Fetch energy consumption metrics from collector for historical analysis."""
         if hasattr(self, "metrics_collector") and self.metrics_collector:
             energy_data = self.metrics_collector.get_energy_data()
             return energy_data

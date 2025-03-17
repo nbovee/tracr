@@ -1,4 +1,4 @@
-"""Experiment management utilities."""
+"""Experiment management utilities"""
 
 import logging
 import os

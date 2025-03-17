@@ -1,4 +1,4 @@
-"""SSH protocol utilities for remote operations."""
+"""SSH protocol utilities for secure tensor transmission and remote execution in split computing"""
 
 import logging
 import os
@@ -29,15 +29,15 @@ from ..core import (
 
 logger = logging.getLogger("split_computing_logger")
 
-# Constants for SSH connections and file transfer
+# Constants for SSH connections and tensor transfer operations
 DEFAULT_PORT: Final[int] = 22
 DEFAULT_TIMEOUT: Final[float] = 10.0
-CHUNK_SIZE: Final[int] = 1024
+CHUNK_SIZE: Final[int] = 1024  # Size of tensor data chunks during transfer
 DEFAULT_PERMISSIONS: Final[int] = 0o777
 
 
 class SSHKeyType(Enum):
-    """SSH key types supported by the system."""
+    """SSH key types supported for secure tensor transmission."""
 
     RSA = "RSA"
     ED25519 = "OPENSSH PRIVATE KEY"
@@ -46,15 +46,15 @@ class SSHKeyType(Enum):
 
 @dataclass
 class SSHConfig:
-    """Configuration for SSH connections.
+    """Configuration for secure SSH connections used in tensor transmission.
 
-    This dataclass holds configuration for establishing SSH connections,
-    including connection parameters and authentication details.
+    Holds the parameters required to establish secure connections between
+    edge devices and computation servers for split model execution.
     """
 
-    host: str  # Hostname or IP address
-    user: str  # Username for SSH authentication
-    private_key_path: Path  # Path to the SSH private key file
+    host: str  # Server hostname or IP address for tensor computation
+    user: str  # Username for server authentication
+    private_key_path: Path  # Path to SSH private key for secure connection
     port: int = DEFAULT_PORT  # SSH port (default 22)
     timeout: float = DEFAULT_TIMEOUT  # Connection timeout in seconds
     allow_agent: bool = False  # Whether to allow paramiko's SSH agent
@@ -65,42 +65,20 @@ class LogFunction(Protocol):
     """Protocol for a logging function."""
 
     def __call__(self, message: str) -> None:
-        """Log a message.
-
-        Args:
-            message: The message to log.
-        """
+        """Log a message."""
         ...
 
 
 def ensure_connection(func: Callable):
-    """Decorator to ensure an SSH connection is active before performing operations.
+    """Decorator to ensure an SSH connection is active before tensor operations.
 
-    If the connection is not active, this decorator will attempt to establish it
-    before calling the decorated function.
-
-    Args:
-        func: The function to decorate.
-
-    Returns:
-        The decorated function.
+    Verifies connection status and attempts reconnection if needed, ensuring
+    tensor transfers and remote execution commands have a stable connection.
     """
 
     @wraps(func)
     def wrapper(self: "SSHClient", *args: Any, **kwargs: Any) -> Any:
-        """Wrapper function that ensures connection is established.
-
-        Args:
-            self: The SSHClient instance.
-            *args: Positional arguments to pass to the wrapped function.
-            **kwargs: Keyword arguments to pass to the wrapped function.
-
-        Returns:
-            The result of the wrapped function.
-
-        Raises:
-            ConnectionError: If the connection cannot be established.
-        """
+        """Wrapper function that ensures connection is established."""
         if not self.is_connected():
             self._establish_connection()
         return func(self, *args, **kwargs)
@@ -109,30 +87,16 @@ def ensure_connection(func: Callable):
 
 
 class SSHKeyHandler:
-    """Handles SSH key operations.
-
-    This class provides utilities for detecting key types, checking key
-    permissions, and loading SSH keys for authentication.
-    """
+    """Handles SSH key operations for secure tensor transmission channels."""
 
     REQUIRED_FILE_PERMISSIONS = 0o600  # -rw-------
     REQUIRED_DIR_PERMISSIONS = 0o700  # drwx------
 
     @staticmethod
     def check_key_permissions(key_path: Union[str, Path]) -> bool:
-        """Check if the key file and its parent directory have correct permissions.
+        """Verify SSH key has proper permissions for secure tensor transmission.
 
-        This function verifies that SSH key files have the required permissions
-        to be used securely.
-
-        Args:
-            key_path: Path to the SSH key file.
-
-        Returns:
-            True if permissions are correct, False otherwise.
-
-        Raises:
-            KeyPermissionError: If the key file or directory doesn't exist.
+        Ensures keys used to secure tensor data transfers meet security requirements.
         """
         try:
             key_path = Path(key_path).resolve()
@@ -146,10 +110,8 @@ class SSHKeyHandler:
 
             if is_windows:
                 # On Windows, just check if the file exists and is readable
-                # Windows doesn't use the same permission model as Unix
                 try:
                     with open(key_path, "r") as f:
-                        # Just try to read a byte to verify access
                         f.read(1)
                     return True
                 except PermissionError:
@@ -159,7 +121,6 @@ class SSHKeyHandler:
                     return False
             else:
                 # Unix-style permission checks (Linux/WSL)
-                # Check file permissions
                 file_mode = key_path.stat().st_mode & 0o777
                 if file_mode != SSHKeyHandler.REQUIRED_FILE_PERMISSIONS:
                     logger.error(
@@ -168,7 +129,6 @@ class SSHKeyHandler:
                     )
                     return False
 
-                # Check directory permissions
                 dir_mode = key_path.parent.stat().st_mode & 0o777
                 if dir_mode != SSHKeyHandler.REQUIRED_DIR_PERMISSIONS:
                     logger.error(
@@ -185,20 +145,7 @@ class SSHKeyHandler:
 
     @staticmethod
     def detect_key_type(key_path: Union[str, Path]) -> SSHKeyType:
-        """Detect the type of SSH key based on the file extension or content.
-
-        This function examines the key file to determine its type (RSA, ED25519, etc.).
-
-        Args:
-            key_path: Path to the SSH key file.
-
-        Returns:
-            The detected key type.
-
-        Raises:
-            KeyPermissionError: If the key has invalid permissions.
-            SSHError: If the key file cannot be read.
-        """
+        """Determine SSH key type for establishing secure tensor transmission channels."""
         try:
             # First check permissions
             if not SSHKeyHandler.check_key_permissions(key_path):
@@ -236,21 +183,7 @@ class SSHKeyHandler:
 
     @staticmethod
     def load_key(key_path: Union[str, Path]) -> paramiko.PKey:
-        """Load an SSH key from the given file path.
-
-        This function tries to detect the key type and load it using paramiko.
-
-        Args:
-            key_path: Path to the SSH key file.
-
-        Returns:
-            The loaded private key object.
-
-        Raises:
-            KeyPermissionError: If the key has invalid permissions.
-            AuthenticationError: If the key requires a passphrase.
-            SSHError: If the key cannot be loaded or is of unsupported type.
-        """
+        """Load an SSH key for secure tensor transmission connections."""
         try:
             # Check permissions before attempting to load
             if not SSHKeyHandler.check_key_permissions(key_path):
@@ -292,18 +225,14 @@ class SSHKeyHandler:
 
 
 class SSHClient:
-    """Manages SSH connections and remote operations.
+    """Manages secure connections for tensor transmission and remote model execution.
 
-    This class provides methods for establishing SSH connections,
-    executing remote commands, and transferring files to remote hosts.
+    This class provides methods for establishing SSH connections to remote computation
+    servers, transmitting tensor data, and executing distributed model components.
     """
 
     def __init__(self, config: SSHConfig):
-        """Initialize the SSH client with the given configuration.
-
-        Args:
-            config: Configuration for the SSH connection.
-        """
+        """Initialize SSH client for secure tensor transmission."""
         self.config = config
         self._client: Optional[paramiko.SSHClient] = None
         self._sftp: Optional[paramiko.SFTPClient] = None
@@ -313,11 +242,7 @@ class SSHClient:
         )
 
     def is_connected(self) -> bool:
-        """Check if the SSH connection is active.
-
-        Returns:
-            True if the connection exists and is active, False otherwise.
-        """
+        """Verify if the secure tensor transmission channel is active."""
         return bool(
             self._client
             and self._client.get_transport()
@@ -325,14 +250,10 @@ class SSHClient:
         )
 
     def _establish_connection(self) -> None:
-        """Establish an SSH connection using the configuration parameters.
+        """Establish secure SSH connection for tensor transmission.
 
-        This method loads the private key and creates a paramiko SSHClient connection.
-
-        Raises:
-            KeyPermissionError: If the key has invalid permissions.
-            AuthenticationError: If authentication fails.
-            ConnectionError: If the connection cannot be established.
+        Sets up the encrypted channel used for transmitting model tensors
+        and executing remote computation operations.
         """
         try:
             # Load the private key using SSHKeyHandler
@@ -380,22 +301,10 @@ class SSHClient:
         get_pty: bool = False,
         environment: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """Execute a command on the remote host.
+        """Execute remote tensor processing commands on the computation server.
 
-        This method runs a command on the remote host and captures its output.
-
-        Args:
-            command: The command to execute.
-            timeout: Optional timeout for the command execution.
-            get_pty: Whether to request a pseudo-terminal for the command.
-            environment: Optional environment variables for the command.
-
-        Returns:
-            A dictionary with keys: success, stdout, stderr, and exit_status.
-
-        Raises:
-            CommandExecutionError: If the command execution fails.
-            ConnectionError: If the SSH connection is lost.
+        This method allows execution of commands for model setup, tensor processing,
+        and distributed computation management on the remote server.
         """
         result = {
             "success": False,
@@ -455,21 +364,10 @@ class SSHClient:
         timeout: Optional[float] = None,
         get_pty: bool = False,
     ) -> int:
-        """Execute a command with real-time output streaming.
+        """Execute remote tensor processing with real-time output monitoring.
 
-        Args:
-            command: The command to execute.
-            stdout_callback: Function to call with stdout lines.
-            stderr_callback: Function to call with stderr lines.
-            timeout: Optional timeout for the command.
-            get_pty: Whether to request a pseudo-terminal.
-
-        Returns:
-            The exit status of the command.
-
-        Raises:
-            CommandExecutionError: If the command execution fails.
-            ConnectionError: If the SSH connection is lost.
+        Executes commands on the remote server while providing live feedback,
+        useful for monitoring long-running tensor operations or training processes.
         """
         try:
             # Start the command execution
@@ -542,16 +440,12 @@ class SSHClient:
         destination: Path,
         callback: Optional[Callable[[int, int], None]] = None,
     ) -> None:
-        """Transfer a single file to the remote host.
+        """Transfer a single tensor data file to the remote computation server.
 
-        Args:
-            source: The local file path.
-            destination: The remote file path.
-            callback: Optional progress callback function.
-
-        Raises:
-            SSHError: If the file transfer fails.
-            FileNotFoundError: If the source file doesn't exist.
+        === TENSOR SHARING - FILE TRANSFER ===
+        Securely transfers model files or tensor data between edge devices and
+        computation servers using SFTP. This is a key component of the tensor
+        sharing pipeline for distributed model execution.
         """
         # Ensure the source file exists
         if not source.exists() or not source.is_file():
@@ -583,17 +477,17 @@ class SSHClient:
             except Exception as e:
                 logger.warning(f"Could not create directory structure: {e}")
 
-            # Transfer the file via SFTP
+            # Transfer the tensor file via SFTP
             self._sftp.put(str(source), str(destination), callback=callback)
 
-            logger.debug(f"Transferred {source} to {destination}")
+            logger.debug(f"Transferred tensor file {source} to {destination}")
 
         except paramiko.SSHException as e:
-            error_msg = f"SSH error during file transfer: {e}"
+            error_msg = f"SSH error during tensor file transfer: {e}"
             logger.error(error_msg)
             raise ConnectionError(error_msg) from e
         except Exception as e:
-            error_msg = f"File transfer failed: {e}"
+            error_msg = f"Tensor file transfer failed: {e}"
             logger.error(error_msg)
             raise SSHError(error_msg) from e
 
@@ -604,16 +498,12 @@ class SSHClient:
         destination: Path,
         callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:
-        """Recursively transfer a directory to the remote host.
+        """Recursively transfer model and tensor directories to remote servers.
 
-        Args:
-            source: The local directory path.
-            destination: The remote directory path.
-            callback: Optional progress callback function.
-
-        Raises:
-            SSHError: If the directory transfer fails.
-            FileNotFoundError: If the source directory doesn't exist.
+        === TENSOR SHARING - DIRECTORY TRANSFER ===
+        Transfers entire model directories containing weights, tensors, and configuration
+        files to remote computation nodes. Essential for distributing complete model
+        components in split computing architectures.
         """
         # Ensure the source directory exists
         if not source.exists():
@@ -652,7 +542,7 @@ class SSHClient:
             # Create the destination directory if it doesn't exist
             self._ensure_remote_directory(normalized_destination)
 
-            # Recursively transfer files and directories
+            # Recursively transfer tensor and model files
             total_files = sum(1 for _ in source.rglob("*") if _.is_file())
             transferred_files = 0
 
@@ -674,14 +564,14 @@ class SSHClient:
 
                         file_progress_callback = file_callback
 
-                    # Transfer the file
+                    # Transfer the tensor file
                     try:
                         self._sftp.put(
                             str(item), str(remote_path), callback=file_progress_callback
                         )
                         transferred_files += 1
                         logger.debug(
-                            f"Transferred file {transferred_files}/{total_files}: "
+                            f"Transferred tensor file {transferred_files}/{total_files}: "
                             f"{item} to {remote_path}"
                         )
                     except Exception as e:
@@ -689,28 +579,21 @@ class SSHClient:
                         # Continue with other files
 
             logger.info(
-                f"Transferred directory {source} to {destination} "
+                f"Transferred model directory {source} to {destination} "
                 f"({transferred_files}/{total_files} files)"
             )
 
         except paramiko.SSHException as e:
-            error_msg = f"SSH error during directory transfer: {e}"
+            error_msg = f"SSH error during tensor directory transfer: {e}"
             logger.error(error_msg)
             raise ConnectionError(error_msg) from e
         except Exception as e:
-            error_msg = f"Directory transfer failed: {e}"
+            error_msg = f"Tensor directory transfer failed: {e}"
             logger.error(error_msg)
             raise SSHError(error_msg) from e
 
     def _ensure_remote_directory(self, path: Path) -> None:
-        """Ensure a remote directory exists.
-
-        This method creates the directory and any parent directories
-        if they don't exist.
-
-        Args:
-            path: The remote directory path.
-        """
+        """Create directory structure on remote server for tensor storage."""
         if not self._sftp:
             return
 
@@ -740,15 +623,10 @@ class SSHClient:
             logger.warning(f"Error ensuring remote directory {path}: {e}")
 
     def verify_transfer(self, remote_path: Path) -> bool:
-        """Verify that a file transfer was successful.
+        """Verify tensor file transfer was successful.
 
-        This method checks if the specified file exists on the remote host.
-
-        Args:
-            remote_path: The remote file path to check.
-
-        Returns:
-            True if the file exists, False otherwise.
+        Confirms that tensor data was correctly transferred to the remote
+        computation server, ensuring data integrity before model execution.
         """
         try:
             result = self.execute_command(f"ls -la {remote_path}")
@@ -757,11 +635,7 @@ class SSHClient:
             return False
 
     def close(self) -> None:
-        """Close the SSH connection and any associated sessions.
-
-        This method should be called when the client is no longer needed
-        to ensure all resources are properly released.
-        """
+        """Close the SSH connection and terminate tensor transmission channel."""
         try:
             if self._sftp:
                 self._sftp.close()
@@ -771,54 +645,31 @@ class SSHClient:
                 self._client.close()
                 self._client = None
 
-            logger.info("SSH connection closed")
+            logger.info("SSH tensor transmission connection closed")
         except Exception as e:
             logger.error(f"Error closing SSH connection: {e}")
 
     def __enter__(self) -> "SSHClient":
-        """Context manager entry point.
-
-        This method allows the client to be used in a 'with' statement.
-
-        Returns:
-            The SSHClient instance.
-        """
+        """Context manager entry point for automated connection handling."""
         if not self.is_connected():
             self._establish_connection()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Context manager exit point.
-
-        This method ensures the connection is closed when exiting a 'with' block.
-        """
+        """Context manager exit point ensuring connection cleanup."""
         self.close()
 
 
 class SSHLogger:
-    """Handles logging of SSH command output.
-
-    This class processes and logs output from SSH commands, filtering
-    duplicate lines and formatting the output.
-    """
+    """Processes and logs output from remote tensor operations."""
 
     def __init__(self, log_func: LogFunction):
-        """Initialize the SSH logger.
-
-        Args:
-            log_func: Function to call with log messages.
-        """
+        """Initialize the SSH logger for tensor operation monitoring."""
         self.log_func = log_func
         self.unique_lines: set = set()
 
     def process_output(self, channel: paramiko.Channel) -> None:
-        """Process output from an SSH channel.
-
-        This method reads data from the channel and logs unique lines.
-
-        Args:
-            channel: The paramiko Channel to read from.
-        """
+        """Process output from remote tensor operations in real-time."""
         while not channel.closed:
             # Use select to check if the channel has data
             readable, _, _ = select.select([channel], [], [], 0.1)
@@ -829,13 +680,7 @@ class SSHLogger:
                     self._log_unique_lines(output)
 
     def _log_unique_lines(self, output: str) -> None:
-        """Log only unique lines from SSH output.
-
-        This method filters duplicate lines to avoid excessive logging.
-
-        Args:
-            output: The text output to log.
-        """
+        """Log unique lines from remote tensor processing output."""
         for line in output.splitlines():
             stripped_line = line.strip()
             if stripped_line and stripped_line not in self.unique_lines:
@@ -852,22 +697,11 @@ def create_ssh_client(
     allow_agent: bool = False,
     look_for_keys: bool = False,
 ) -> SSHClient:
-    """Create and configure an SSHClient instance.
+    """
+    Create a configured SSH client for secure tensor transmission.
 
-    This is a convenience function for creating an SSHClient with
-    the specified parameters.
-
-    Args:
-        host: The remote host address.
-        user: The SSH username.
-        private_key_path: Path to the SSH private key file.
-        port: The SSH port (default: 22).
-        timeout: Connection timeout in seconds.
-        allow_agent: Whether to allow paramiko's SSH agent.
-        look_for_keys: Whether to search for discoverable private keys.
-
-    Returns:
-        A configured SSHClient instance.
+    This factory function simplifies the creation of secure connections
+    for tensor sharing between edge devices and computation servers.
     """
     # Resolve and normalize the private key path
     key_path = Path(private_key_path).expanduser().resolve()
@@ -883,5 +717,5 @@ def create_ssh_client(
         look_for_keys=look_for_keys,
     )
 
-    # Create and return the SSH client
+    # Create and return the SSH client for tensor transmission
     return SSHClient(config)

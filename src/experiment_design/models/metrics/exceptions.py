@@ -1,4 +1,4 @@
-"""Exceptions for power monitoring."""
+"""Exceptions for power monitoring"""
 
 
 class PowerMonitorError(Exception):
