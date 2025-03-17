@@ -60,4 +60,4 @@ dataloader:
 compression:
   clevel: 3
   filter: SHUFFLE
-  codec: ZSTD 
+  codec: ZLIB
