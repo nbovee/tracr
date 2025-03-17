@@ -30,6 +30,12 @@ class ExperimentManager:
         self.config = config
         self.device_manager = DeviceManager()
         self.server_device = self.device_manager.get_device_by_type("SERVER")
+        self.collect_metrics = config.get("default", {}).get("collect_metrics", False)
+
+        # Log if metrics collection is disabled
+        if not self.collect_metrics:
+            logger.info("Metrics collection is disabled for this experiment")
+
         # Decide whether to use networked or local experiment based on server availability and force_local flag.
         self.is_networked = (
             bool(self.server_device and self.server_device.is_reachable())
@@ -60,7 +66,7 @@ class ExperimentManager:
         if self.is_networked:
             self.experiment = NetworkedExperiment(self.config, self.host, self.port)
         else:
-            self.experiment = LocalExperiment(self.config)
+            self.experiment = LocalExperiment(self.config, self.host, self.port)
 
         # Store reference to the model and setup data for saving results
         self.model = self.experiment.model if self.experiment else None
@@ -74,6 +80,10 @@ class ExperimentManager:
             output_file: Path to the output file. If None, uses self.output_file.
             include_columns: List of columns to include. If None, includes all columns.
         """
+        if not self.collect_metrics:
+            logger.info("Metrics collection is disabled, skipping results saving")
+            return
+
         if output_file is None:
             output_file = self.output_file
 

@@ -75,12 +75,15 @@ class BaseExperiment(ExperimentInterface):
         self.config = config
         self.host = host
         self.port = port
+        self.collect_metrics = config.get("default", {}).get("collect_metrics", False)
         self.device = torch.device(
             config.get("default", {}).get(
                 "device", "cuda" if torch.cuda.is_available() else "cpu"
             )
         )
         logger.info(f"Using device: {self.device}")
+        if not self.collect_metrics:
+            logger.info("Metrics collection is disabled")
 
         # Set up directories for storing results and images.
         self.paths = ExperimentPaths()
@@ -404,6 +407,9 @@ class BaseExperiment(ExperimentInterface):
             server_time: Time spent on server-side processing.
             battery_energy: Energy consumption in mWh (if available).
         """
+        if not self.collect_metrics:
+            return
+
         logger.info(
             "\n"
             "==================================================\n"
@@ -435,6 +441,9 @@ class BaseExperiment(ExperimentInterface):
             "memory_utilization": 0.0,
             "total_energy": 0.0,
         }
+
+        if not self.collect_metrics:
+            return metrics
 
         # First try to get metrics directly from get_layer_metrics which uses metrics_collector
         metrics_from_model = self.model.get_layer_metrics()
@@ -636,6 +645,10 @@ class BaseExperiment(ExperimentInterface):
                 + summary_df["Server Time"]
             )
             logger.info("\nResults Summary:\n" + str(summary_df))
+            return
+
+        if not self.collect_metrics:
+            logger.info("Metrics collection is disabled, skipping results saving")
             return
 
         # Create Overall Performance sheet

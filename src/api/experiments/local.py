@@ -80,6 +80,7 @@ class LocalExperiment(BaseExperiment):
                     output_dir,
                 )
 
+            # Return timing even if metrics collection is disabled to maintain function signature
             return ProcessingTimes(
                 host_time=total_time, travel_time=0.0, server_time=0.0
             )
@@ -134,8 +135,13 @@ class LocalExperiment(BaseExperiment):
         if times:
             total_host = sum(t.host_time for t in times)
             avg_host = total_host / len(times)
-            logger.info(f"Local processing: average time per image = {avg_host:.4f}s")
-            self._log_performance_summary(avg_host, 0.0, 0.0)
+
+            if self.collect_metrics:
+                logger.info(
+                    f"Local processing: average time per image = {avg_host:.4f}s"
+                )
+                self._log_performance_summary(avg_host, 0.0, 0.0)
+
             return split_layer, avg_host, 0.0, 0.0
 
         return split_layer, 0.0, 0.0, 0.0
