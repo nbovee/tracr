@@ -143,9 +143,6 @@ analysis/*
 # output_images
 output_images*/*
 
-# pkeys
-pkeys/
-
 # devices.yaml
 config/devices_config.yaml
 
@@ -157,3 +154,7 @@ logs/*
 
 # NOTES.md
 NOTES.md
+
+# keys
+*.rsa
+*.pem
