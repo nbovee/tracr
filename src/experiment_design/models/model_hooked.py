@@ -57,6 +57,11 @@ class WrappedModel(BaseModel, ModelInterface):
         # Get device from config that was validated upstream in server.py/host.py
         self.device = config.get("default", {}).get("device", "cpu")
 
+        # Check if metrics collection is enabled
+        self.collect_metrics = config.get("default", {}).get("collect_metrics", False)
+        if not self.collect_metrics:
+            logger.info("Model metrics collection is disabled")
+
         # Basic model attributes and metrics storage.
         self.timer = time.perf_counter_ns
         self.master_dict = master_dict
@@ -74,29 +79,40 @@ class WrappedModel(BaseModel, ModelInterface):
         self.is_windows_cpu = False
         self.os_type = platform.system()
 
-        # Initialize energy monitoring based on config device
-        try:
-            # Use the same device setting from config for monitoring
-            force_cpu = self.device == "cpu"
-            self.energy_monitor = create_power_monitor(
-                device_type="auto" if not force_cpu else "cpu", force_cpu=force_cpu
-            )
+        # Initialize energy monitoring and metrics collection only if enabled
+        self.energy_monitor = None
+        self.metrics_collector = None
 
-            # Create metrics collector with the energy monitor
-            self.metrics_collector = MetricsCollector(
-                energy_monitor=self.energy_monitor, device_type=self.device
-            )
+        if self.collect_metrics:
+            try:
+                # Use the same device setting from config for monitoring
+                force_cpu = self.device == "cpu"
+                self.energy_monitor = create_power_monitor(
+                    device_type="auto" if not force_cpu else "cpu", force_cpu=force_cpu
+                )
 
-            # Check for Windows CPU for optimized metrics path
-            if self.energy_monitor.device_type == "cpu" and self.os_type == "Windows":
-                self.is_windows_cpu = True
-                logger.info("Using optimized Windows CPU monitoring")
-            else:
-                logger.info(f"Using {self.energy_monitor.device_type} monitoring")
-        except Exception as e:
-            logger.warning(f"Energy monitoring initialization failed: {e}")
-            self.energy_monitor = None
-            self.metrics_collector = None
+                # Create metrics collector with the energy monitor
+                self.metrics_collector = MetricsCollector(
+                    energy_monitor=self.energy_monitor, device_type=self.device
+                )
+
+                # Check for Windows CPU for optimized metrics path
+                if (
+                    self.energy_monitor.device_type == "cpu"
+                    and self.os_type == "Windows"
+                ):
+                    self.is_windows_cpu = True
+                    logger.info("Using optimized Windows CPU monitoring")
+                else:
+                    logger.info(f"Using {self.energy_monitor.device_type} monitoring")
+            except Exception as e:
+                logger.warning(f"Energy monitoring initialization failed: {e}")
+                self.energy_monitor = None
+                self.metrics_collector = None
+        else:
+            logger.info(
+                "Skipping energy monitoring initialization (metrics collection disabled)"
+            )
 
         # Hook state tracking variables.
         self.start_i: Optional[int] = None  # First layer to process.
@@ -348,7 +364,12 @@ class WrappedModel(BaseModel, ModelInterface):
 
     def get_layer_metrics(self) -> Dict[int, Dict[str, Any]]:
         """Get layer-specific metrics collected during inference."""
-        # Only use metrics collector, no fallback needed
+        # Only return metrics if collection is enabled
+        if not self.collect_metrics:
+            logger.debug("Metrics collection is disabled, returning empty metrics")
+            return {}
+
+        # Use metrics collector if available
         if hasattr(self, "metrics_collector") and self.metrics_collector:
             return self.metrics_collector.get_all_layer_metrics()
         # Return empty dict if no metrics collector

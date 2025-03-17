@@ -67,9 +67,11 @@ def create_forward_prehook(
             if layer_index == 0:
                 wrapped_model.banked_output = {}
 
-                # Start global energy monitoring
+                # Start global energy monitoring if metrics collection is enabled
                 if (
-                    hasattr(wrapped_model, "metrics_collector")
+                    hasattr(wrapped_model, "collect_metrics")
+                    and wrapped_model.collect_metrics
+                    and hasattr(wrapped_model, "metrics_collector")
                     and wrapped_model.metrics_collector
                 ):
                     wrapped_model.metrics_collector.set_split_point(
@@ -77,9 +79,11 @@ def create_forward_prehook(
                     )
                     wrapped_model.metrics_collector.start_global_measurement()
 
-            # Start layer-specific metrics collection
+            # Start layer-specific metrics collection if enabled
             if (
-                hasattr(wrapped_model, "metrics_collector")
+                hasattr(wrapped_model, "collect_metrics")
+                and wrapped_model.collect_metrics
+                and hasattr(wrapped_model, "metrics_collector")
                 and wrapped_model.metrics_collector
                 and layer_index <= wrapped_model.stop_i
             ):
@@ -93,8 +97,8 @@ def create_forward_prehook(
                 # Return dummy tensor
                 hook_output = torch.randn(1, *wrapped_model.input_size).to(device)
 
-        # Record layer start time for timing measurement
-        if wrapped_model.log:
+        # Record layer start time for timing measurement if logging is enabled
+        if wrapped_model.log and getattr(wrapped_model, "collect_metrics", False):
             # Record start time in wrapped_model.layer_times for compatibility
             start_time = time.perf_counter()
             wrapped_model.layer_times[layer_index] = start_time
@@ -120,8 +124,8 @@ def create_forward_posthook(
         """Execute post-nn.Module hook operations."""
         logger.debug(f"Start posthook {layer_index} - {layer_name}")
 
-        # Collect metrics if logging is enabled
-        if wrapped_model.log:
+        # Collect metrics if logging is enabled and metrics collection is enabled
+        if wrapped_model.log and getattr(wrapped_model, "collect_metrics", False):
             # Get layer data dictionary
             layer_data = wrapped_model.forward_info.get(layer_index, {})
 

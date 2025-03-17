@@ -89,7 +89,7 @@ class NetworkedExperiment(BaseExperiment):
             hasattr(psutil, "sensors_battery") and psutil.sensors_battery() is not None
         )
 
-        if self.can_monitor_battery:
+        if self.can_monitor_battery and self.collect_metrics:
             self.initial_battery_percent = psutil.sensors_battery().percent
             logger.info(f"Initial battery percentage: {self.initial_battery_percent}%")
 
@@ -255,7 +255,8 @@ class NetworkedExperiment(BaseExperiment):
 
         # Start battery measurement for this split layer using PowerMonitor
         if (
-            hasattr(self.model, "energy_monitor")
+            self.collect_metrics
+            and hasattr(self.model, "energy_monitor")
             and self.model.energy_monitor is not None
         ):
             try:
@@ -271,7 +272,11 @@ class NetworkedExperiment(BaseExperiment):
                 logger.warning(f"Error starting split measurement: {e}")
 
         # Set the split point in the metrics collector if available
-        if hasattr(self.model, "metrics_collector") and self.model.metrics_collector:
+        if (
+            self.collect_metrics
+            and hasattr(self.model, "metrics_collector")
+            and self.model.metrics_collector
+        ):
             try:
                 self.model.metrics_collector.set_split_point(split_layer)
                 logger.info(f"Set split point {split_layer} in metrics collector")
@@ -296,7 +301,8 @@ class NetworkedExperiment(BaseExperiment):
             # Record battery energy if available - important for power profiling
             total_battery_energy = 0.0
             if (
-                hasattr(self.model, "energy_monitor")
+                self.collect_metrics
+                and hasattr(self.model, "energy_monitor")
                 and self.model.energy_monitor is not None
             ):
                 if hasattr(self.model.energy_monitor, "get_battery_energy"):
@@ -323,9 +329,11 @@ class NetworkedExperiment(BaseExperiment):
                         "Energy monitor doesn't support battery energy measurements"
                     )
 
-            self._log_performance_summary(
-                total_host, total_travel, total_server, total_battery_energy
-            )
+            if self.collect_metrics:
+                self._log_performance_summary(
+                    total_host, total_travel, total_server, total_battery_energy
+                )
+
             return split_layer, total_host, total_travel, total_server
 
         return split_layer, 0.0, 0.0, 0.0
@@ -371,7 +379,7 @@ class NetworkedExperiment(BaseExperiment):
             self.run()
 
             # After all images are processed, calculate total battery energy used
-            if self.initial_battery_percent is not None:
+            if self.collect_metrics and self.initial_battery_percent is not None:
                 try:
                     battery = psutil.sensors_battery()
                     if battery and not battery.power_plugged:
