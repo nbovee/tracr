@@ -12,6 +12,15 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple, List, Final
 
+from .protocols import (
+    LENGTH_PREFIX_SIZE,
+    BUFFER_SIZE,
+    ACK_MESSAGE,
+    HIGHEST_PROTOCOL,
+    DEFAULT_COMPRESSION_SETTINGS,
+    DEFAULT_PORT,
+)
+
 try:
     import blosc2
 
@@ -27,15 +36,6 @@ except ImportError:
     )
 
 logger = logging.getLogger("split_computing_logger")
-
-# Number of bytes for message length header - MUST be 4 to match server
-HEADER_SIZE: Final[int] = 4
-# Buffer size for receiving data.
-BUFFER_SIZE: Final[int] = 4096
-# Acknowledgment message expected from the server - MUST be "OK"
-ACK_MESSAGE: Final[bytes] = b"OK"
-# Use highest pickle protocol for performance.
-HIGHEST_PROTOCOL: Final[int] = pickle.HIGHEST_PROTOCOL
 
 
 @dataclass(frozen=True)
@@ -204,7 +204,7 @@ class SplitComputeClient:
 
             # Send length prefix (4 bytes, big endian) + configuration data in one operation
             # This is crucial - the server expects them together in one packet
-            size_bytes = len(config_bytes).to_bytes(HEADER_SIZE, "big")
+            size_bytes = len(config_bytes).to_bytes(LENGTH_PREFIX_SIZE, "big")
             self.socket.sendall(size_bytes + config_bytes)
 
             # Wait for acknowledgment (must be exactly "OK")
@@ -246,9 +246,9 @@ class SplitComputeClient:
         try:
             # Send header: split_index (4 bytes) + data_length (4 bytes) in one operation
             # The server expects a single header of 8 bytes (4 for split index, 4 for data length)
-            header = split_index.to_bytes(HEADER_SIZE, "big") + len(
+            header = split_index.to_bytes(LENGTH_PREFIX_SIZE, "big") + len(
                 intermediate_output
-            ).to_bytes(HEADER_SIZE, "big")
+            ).to_bytes(LENGTH_PREFIX_SIZE, "big")
 
             # Send the header and compressed tensor data in separate operations
             self.socket.sendall(header)
@@ -258,8 +258,8 @@ class SplitComputeClient:
             )
 
             # Receive result size (4 bytes)
-            result_size_bytes = self.socket.recv(HEADER_SIZE)
-            if not result_size_bytes or len(result_size_bytes) != HEADER_SIZE:
+            result_size_bytes = self.socket.recv(LENGTH_PREFIX_SIZE)
+            if not result_size_bytes or len(result_size_bytes) != LENGTH_PREFIX_SIZE:
                 raise NetworkError(
                     "Connection closed by server while reading result size"
                 )
@@ -268,8 +268,8 @@ class SplitComputeClient:
             logger.debug(f"Server will send {result_size} bytes of result data")
 
             # Receive server processing time (4 bytes text)
-            server_time_bytes = self.socket.recv(HEADER_SIZE)
-            if not server_time_bytes or len(server_time_bytes) != HEADER_SIZE:
+            server_time_bytes = self.socket.recv(LENGTH_PREFIX_SIZE)
+            if not server_time_bytes or len(server_time_bytes) != LENGTH_PREFIX_SIZE:
                 raise NetworkError(
                     "Connection closed by server while reading server time"
                 )
@@ -314,7 +314,9 @@ class SplitComputeClient:
 
 
 def create_network_client(
-    config: Optional[Dict[str, Any]] = None, host: str = "localhost", port: int = 12345
+    config: Optional[Dict[str, Any]] = None,
+    host: str = "localhost",
+    port: int = DEFAULT_PORT,
 ) -> SplitComputeClient:
     """Create a network client for split computing.
 
@@ -331,7 +333,7 @@ def create_network_client(
 
     # Ensure compression config is present
     if "compression" not in config:
-        config["compression"] = {"clevel": 3, "filter": "SHUFFLE", "codec": "ZLIB"}
+        config["compression"] = DEFAULT_COMPRESSION_SETTINGS
 
     network_config = NetworkConfig(config=config, host=host, port=port)
     return SplitComputeClient(network_config)

@@ -17,6 +17,7 @@ from ..core import (
 )
 from .discovery import LAN
 from ..network.ssh import SSHKeyHandler, SSHConfig, create_ssh_client
+from ..network.protocols import SSH_PORT, SSH_CONNECTIVITY_TIMEOUT, DEFAULT_PORT
 from ..utils.utils import get_repo_root
 
 logger = logging.getLogger("split_computing_logger")
@@ -30,8 +31,8 @@ class SSHConnectionParams:
     """
 
     REQUIRED_FIELDS = {"host", "user", "pkey_fp"}
-    SSH_PORT: int = 22  # Default SSH port
-    TIMEOUT: float = 0.5  # Timeout for connectivity checks
+    SSH_PORT: int = SSH_PORT  # Default SSH port
+    TIMEOUT: float = SSH_CONNECTIVITY_TIMEOUT  # Timeout for connectivity checks
 
     def __init__(
         self,
@@ -325,18 +326,19 @@ class Device:
             raise DeviceNotReachableError(f"Device {self.device_type} is not reachable")
         return self.working_cparams.host
 
-    def get_port(self) -> int:
+    def get_port(self) -> Optional[int]:
         """Return the port of the working connection.
 
         Returns:
-            int: The port number.
+            int: The port number or DEFAULT_PORT if not specified.
 
         Raises:
             DeviceNotReachableError: If no working connection is available.
         """
         if not self.working_cparams:
             raise DeviceNotReachableError(f"Device {self.device_type} is not reachable")
-        return self.working_cparams.experiment_port
+        # Return the configured port if it exists, otherwise DEFAULT_PORT
+        return self.working_cparams.experiment_port or DEFAULT_PORT
 
     def get_username(self) -> str:
         """Return the username for the working connection.

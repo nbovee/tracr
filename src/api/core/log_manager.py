@@ -12,8 +12,6 @@ from typing import Any, Dict, List, Optional, Final, ClassVar
 
 from logging.handlers import RotatingFileHandler, SocketHandler
 from rich.logging import RichHandler
-from rich.style import Style
-from rich.theme import Theme
 
 from .exceptions import NetworkError, ConnectionError
 from ..utils import get_repo_root

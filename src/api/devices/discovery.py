@@ -9,6 +9,12 @@ from typing import List, Union, Optional, Callable
 import ipaddress
 
 from ..core import NetworkError
+from ..network.protocols import (
+    SSH_PORT,
+    DISCOVERY_TIMEOUT,
+    MAX_DISCOVERY_THREADS,
+    DEFAULT_LOCAL_CIDR,
+)
 
 logger = logging.getLogger("split_computing_logger")
 
@@ -22,7 +28,7 @@ class LAN:
 
     # Define a list of IP addresses in the local network (192.168.1.0/24)
     LOCAL_CIDR_BLOCK: List[str] = [
-        str(ip) for ip in ipaddress.ip_network("192.168.1.0/24").hosts()
+        str(ip) for ip in ipaddress.ip_network(DEFAULT_LOCAL_CIDR).hosts()
     ]
 
     @classmethod
@@ -59,9 +65,9 @@ class LAN:
     def get_available_hosts(
         cls,
         hosts: Optional[List[str]] = None,
-        port: int = 22,
-        timeout: Union[int, float] = 0.5,
-        max_threads: int = 10,
+        port: int = SSH_PORT,
+        timeout: Union[int, float] = DISCOVERY_TIMEOUT,
+        max_threads: int = MAX_DISCOVERY_THREADS,
         callback: Optional[Callable[[str], None]] = None,
     ) -> List[str]:
         """Determine the availability of hosts on the local network.

@@ -36,6 +36,16 @@ from src.api import (
     DataCompression,
     read_yaml_file,
 )
+from src.api.network.protocols import (
+    LENGTH_PREFIX_SIZE,
+    HIGHEST_PROTOCOL,
+    ACK_MESSAGE,
+    SERVER_COMPRESSION_SETTINGS,
+    BUFFER_SIZE,
+    SERVER_LISTEN_TIMEOUT,
+    SOCKET_TIMEOUT,
+    DEFAULT_PORT,
+)
 
 # Default configuration
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -45,11 +55,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 # Start logging server
 logging_server = start_logging_server(device=DeviceType.SERVER, config=DEFAULT_CONFIG)
 logger = logging.getLogger("split_computing_logger")
-
-# Highest pickle protocol for efficient serialization
-HIGHEST_PROTOCOL = pickle.HIGHEST_PROTOCOL
-# Number of bytes used to encode message lengths
-LENGTH_PREFIX_SIZE: Final[int] = 4
 
 
 def get_device(requested_device: str = "cuda") -> str:
@@ -140,13 +145,7 @@ class Server:
 
     def _setup_compression(self) -> None:
         """Initialize compression with minimal settings for optimal performance."""
-        self.compress_data = DataCompression(
-            {
-                "clevel": 1,  # Minimum compression level for speed
-                "filter": "NOFILTER",  # No filtering applied
-                "codec": "BLOSCLZ",  # Fast codec
-            }
-        )
+        self.compress_data = DataCompression(SERVER_COMPRESSION_SETTINGS)
         logger.debug("Initialized compression with minimal settings")
 
     def start(self) -> None:
@@ -276,9 +275,11 @@ class Server:
 
         # Use experiment port for network communication
         port = server_device.get_port()
-        if not port:
-            logger.error("No experiment port configured for SERVER device.")
-            return
+        if port is None:
+            logger.info(
+                f"No port configured for SERVER device, using DEFAULT_PORT={DEFAULT_PORT}"
+            )
+            port = DEFAULT_PORT
 
         logger.info(f"Starting networked server on port {port}...")
 
@@ -297,6 +298,8 @@ class Server:
         while True:
             try:
                 conn, addr = self.server_socket.accept()
+                # Set timeout on client socket for data operations
+                conn.settimeout(SOCKET_TIMEOUT)
                 logger.info(f"Connected by {addr}")
                 self.handle_connection(conn)
             except socket.timeout:
@@ -312,7 +315,7 @@ class Server:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             # Set a timeout to allow graceful shutdown on keyboard interrupt
-            self.server_socket.settimeout(1.0)
+            self.server_socket.settimeout(SERVER_LISTEN_TIMEOUT)
             self.server_socket.bind(("", port))
             self.server_socket.listen()
             logger.info(f"Server is listening on port {port} (all interfaces)")
@@ -438,7 +441,7 @@ class Server:
             no_grad_context = torch.no_grad()
 
             # Send acknowledgment to the client - must be exactly b"OK"
-            conn.sendall(b"OK")
+            conn.sendall(ACK_MESSAGE)
             logger.debug("Sent 'OK' acknowledgment to client")
 
             # Process incoming data in a loop

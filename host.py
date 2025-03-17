@@ -23,6 +23,7 @@ from src.api import (
     start_logging_server,
     shutdown_logging_server,
 )
+from src.api.network.protocols import SSH_DEFAULT_CONNECT_TIMEOUT, DEFAULT_PORT
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -188,6 +189,11 @@ class ExperimentHost:
         if server_device:
             host = server_device.get_host()
             port = server_device.get_port()
+            if port is None:
+                logger.info(
+                    f"No port configured in device settings, using DEFAULT_PORT={DEFAULT_PORT}"
+                )
+                port = DEFAULT_PORT
             logger.info(f"Using server at {host}:{port}")
         else:
             logger.warning("No SERVER device found, will run in local mode")
@@ -210,9 +216,9 @@ class ExperimentHost:
         elif exp_type == "networked":
             from src.api.experiments.networked import NetworkedExperiment
 
-            if not host or not port:
+            if not host:
                 raise ValueError(
-                    "Networked experiment requires a server device with host and port"
+                    "Networked experiment requires a server device with host"
                 )
 
             self.experiment = NetworkedExperiment(self.config, host, port)
@@ -338,7 +344,7 @@ class ExperimentHost:
                 user=server_device.get_username(),
                 private_key_path=server_device.get_private_key_path(),
                 port=ssh_port,
-                timeout=10.0,
+                timeout=SSH_DEFAULT_CONNECT_TIMEOUT,
             )
 
             yield ssh_client
