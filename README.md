@@ -372,10 +372,23 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) for deta
 ## Citation
 
 ```bibtex
-@software{tracr2025,
-  author = {Nick Bovee, Izhar Ali, Suraj Bitla, Gopi Patapanchala, Shen-Shyang Ho},
-  title = {SplitTracr: An Experimental Test-bed for Cooperative Inference using Split Computing},
-  year = {2024},
-  url = {https://github.com/nbovee/tracr}
+@inproceedings{bovee2025splitracr,
+  author = {Bovee, Nicholas and Ali, Izhar and Patapanchala, Gopi and Bitla, Suraj and Ho, Shen Shyang},
+  title = {SplitTracr: A Flexible Performance Evaluation Tool for Cooperative Inference and Split Computing},
+  booktitle = {Proceedings of the International Conference on Performance Engineering (ICPE)},
+  year = {2025},
+  address = {Toronto, Canada},
+  month = {May},
+  publisher = {ACM/SPEC}
 }
 ```
+
+## References
+
+1. Nicholas Bovee, Izhar Ali, Gopi Patapanchala, Suraj Bitla, and Shen Shyang Ho, "SplitTracr: A Flexible Performance Evaluation Tool for Cooperative Inference and Split Computing," International Conference on Performance Engineering (ICPE), Toronto, Canada, May 5-9, 2025.
+
+2. Shen-Shyang Ho, Paolo Rommel Sanchez, Nicholas Bovee, Suraj Bitla, Gopi Krishna Patapanchala and Stephen Piccolo, "Poster: Computation Offloading for Precision Agriculture using Cooperative Inference," 8th IEEE International Conference on Fog and Edge Computing (ICFEC 2024), Philadelphia, PA, May 6-9, 2024.
+
+3. Nicholas Bovee, Stephen Piccolo, Suraj Bitla, Gopi Krishna Patapanchala and Shen-Shyang Ho, "Poster: SplitTracer: A Cooperative Inference Evaluation Toolkit for Computation Offloading on the Edge," 8th IEEE International Conference on Fog and Edge Computing (ICFEC 2024), Philadelphia, PA, May 6-9, 2024.
+
+4. Nicholas Bovee, Stephen Piccolo, Shen Shyang Ho, and Ning Wang, "Experimental test-bed for Computation Offloading for Cooperative Inference on Edge Devices," EdgeComm: The Fourth Workshop on Edge Computing and Communications (at ACM/IEEE Symposium on Edge Computing), December 9, 2023, Wilmington, DE.
