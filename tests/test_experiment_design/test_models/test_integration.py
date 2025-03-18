@@ -80,6 +80,7 @@ class TestHookAndModelIntegration(unittest.TestCase):
                 "depth": 2,  # Deep enough to capture all layers
                 "warmup_iterations": 0,  # Disable warmup for testing
                 "flush_buffer_size": 1,
+                "collect_metrics": True,
             }
         }
 
@@ -348,6 +349,9 @@ class TestHookAndModelIntegration(unittest.TestCase):
         wrapped_model.metrics_collector.get_all_layer_metrics.return_value = (
             layer_metrics
         )
+
+        # Assert that collect_metrics is True and we can reach the get_all_layer_metrics() method
+        self.assertTrue(wrapped_model.collect_metrics)
 
         # Test metrics collection through the get_layer_metrics() method
         metrics = wrapped_model.get_layer_metrics()
