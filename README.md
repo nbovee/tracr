@@ -3,7 +3,7 @@
 **SplitTracr** is a framework for distributed neural network inference that enables controlled partitioning of deep learning models across multiple devices. It provides per-layer performance metrics collection and network communication primitives for split computing research and experimentation.
 
 > [!Warning]
-> `tracr` is currently an experimental framework intended to explore distributed AI inference patterns. While functional, it is primarily for research and educational purposes.
+> `tracr` is currently an experimental framework intended to explore distributed AI inference patterns. While functional, it is primarily for research and educational purposes. The `pickle` module is used for compression and decompression, as each device is trusted. These are internally flagged for conversion to safe functions in the future.
 
 ## Quick Start Workflow
 
