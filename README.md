@@ -324,6 +324,12 @@ Select optimal split points based on:
 ## Troubleshooting
 
 <details>
+<summary>Unit Testing</summary>
+- If issues present themselves, the provided unit tests may have some insight to the error. Please run the following, and refine to individual files for further details:
+  
+  ```python -m unittest discovery -s ./tests```
+</details>
+
 <summary>Connection Issues</summary>
 
 - **SSH Key Configuration**:
