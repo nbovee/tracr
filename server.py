@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-# server.py
+"""
+Server-side implementation of the split computing architecture.
+
+This module implements the server side of a split computing architecture.
+It can be run in either networked mode (handling connections from clients) or local mode
+(running experiments locally without network communication).
+"""
 
 import logging
 import pickle
@@ -7,46 +13,55 @@ import socket
 import sys
 import time
 import argparse
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple, Any
+from typing import Optional, Tuple, Any, Dict, Generator
+
 import torch
-from typing import Final
 
 # Add project root to path so we can import from src module
 project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api import (  # noqa: E402
+from src.api import (
     DataCompression,
     DeviceManager,
     ExperimentManager,
     DeviceType,
     start_logging_server,
     shutdown_logging_server,
+    DataCompression,
+    read_yaml_file,
 )
-from src.utils import read_yaml_file  # noqa: E402
+from src.api.network.protocols import (
+    LENGTH_PREFIX_SIZE,
+    ACK_MESSAGE,
+    SERVER_COMPRESSION_SETTINGS,
+    SERVER_LISTEN_TIMEOUT,
+    SOCKET_TIMEOUT,
+    DEFAULT_PORT,
+)
 
-default_config = {"logging": {"log_file": "logs/server.log", "log_level": "INFO"}}
-logging_server = start_logging_server(device=DeviceType.SERVER, config=default_config)
+DEFAULT_CONFIG: Dict[str, Any] = {
+    "logging": {"log_file": "logs/server.log", "log_level": "INFO"}
+}
+
+# Start logging server
+logging_server = start_logging_server(device=DeviceType.SERVER, config=DEFAULT_CONFIG)
 logger = logging.getLogger("split_computing_logger")
-
-HIGHEST_PROTOCOL = pickle.HIGHEST_PROTOCOL
-LENGTH_PREFIX_SIZE: Final[int] = 4  # Number of bytes used to encode message lengths
 
 
 def get_device(requested_device: str = "cuda") -> str:
     """Determine the appropriate device based on availability and request."""
     requested_device = requested_device.lower()
+
     if requested_device == "cpu":
         logger.info("CPU device explicitly requested")
         return "cpu"
 
-    if (
-        requested_device == "cuda"
-        or requested_device == "gpu"
-        or requested_device == "mps"
-    ) and torch.cuda.is_available():
+    if requested_device in ("cuda", "gpu", "mps") and torch.cuda.is_available():
         logger.info("CUDA is available and will be used")
         return "cuda"
 
@@ -54,42 +69,62 @@ def get_device(requested_device: str = "cuda") -> str:
     return "cpu"
 
 
+@dataclass
+class ServerMetrics:
+    """Container for metrics collected during server operation."""
+
+    total_requests: int = 0
+    total_processing_time: float = 0.0
+    avg_processing_time: float = 0.0
+
+    def update(self, processing_time: float) -> None:
+        """Update metrics with a new processing time measurement."""
+        self.total_requests += 1
+        self.total_processing_time += processing_time
+        self.avg_processing_time = self.total_processing_time / self.total_requests
+
+
 class Server:
-    """Handles server operations for managing connections and processing data."""
+    """
+    Handles server operations for managing connections and processing data.
+
+    This class implements both networked and local modes:
+    - Networked mode: listens for client connections and processes data sent by clients
+    - Local mode: runs experiments locally using the provided configuration
+    """
 
     def __init__(
         self, local_mode: bool = False, config_path: Optional[str] = None
     ) -> None:
-        """Initialize the Server with device manager and placeholders."""
-        logger.debug("Initializing server...")
+        """Initialize the Server with specified mode and configuration."""
         self.device_manager = DeviceManager()
         self.experiment_manager: Optional[ExperimentManager] = None
         self.server_socket: Optional[socket.socket] = None
         self.local_mode = local_mode
         self.config_path = config_path
+        self.metrics = ServerMetrics()
+        self.compress_data: Optional[DataCompression] = None
 
-        # Add device validation when loading config
-        if config_path:
-            config = read_yaml_file(config_path)
-            requested_device = config.get("default", {}).get("device", "cuda")
-            config["default"]["device"] = get_device(requested_device)
-            self.config = config
-
+        self._load_config_and_setup_device()
+        # Setup compression if in networked mode
         if not local_mode:
             self._setup_compression()
             logger.debug("Server initialized in network mode")
         else:
             logger.debug("Server initialized in local mode")
 
+    def _load_config_and_setup_device(self) -> None:
+        """Load configuration and set up device."""
+        if not self.config_path:
+            return
+
+        self.config = read_yaml_file(self.config_path)
+        requested_device = self.config.get("default", {}).get("device", "cuda")
+        self.config["default"]["device"] = get_device(requested_device)
+
     def _setup_compression(self) -> None:
-        """Initialize compression with minimal settings."""
-        self.compress_data = DataCompression(
-            {
-                "clevel": 1,  # Minimum compression level for speed
-                "filter": "NOFILTER",  # No filtering applied
-                "codec": "BLOSCLZ",  # Fast codec
-            }
-        )
+        """Initialize compression with minimal settings for optimal performance."""
+        self.compress_data = DataCompression(SERVER_COMPRESSION_SETTINGS)
         logger.debug("Initialized compression with minimal settings")
 
     def start(self) -> None:
@@ -107,55 +142,107 @@ class Server:
 
         try:
             logger.info("Starting local experiment...")
-            config = read_yaml_file(self.config_path)
-
-            from src.experiment_design.datasets import DataManager
-            import torch.utils.data
-
-            self.experiment_manager = ExperimentManager(config, force_local=True)
-            experiment = self.experiment_manager.setup_experiment()
-
-            logger.debug("Setting up data loader...")
-            dataset_config = config.get("dataset", {})
-            dataloader_config = config.get("dataloader", {})
-
-            collate_fn = None
-            if dataloader_config.get("collate_fn"):
-                try:
-                    from src.experiment_design.datasets.collate_fns import (
-                        COLLATE_FUNCTIONS,
-                    )
-
-                    collate_fn = COLLATE_FUNCTIONS[dataloader_config["collate_fn"]]
-                    logger.debug(
-                        f"Using custom collate function: {dataloader_config['collate_fn']}"
-                    )
-                except KeyError:
-                    logger.warning(
-                        f"Collate function '{dataloader_config['collate_fn']}' not found. "
-                        "Using default collation."
-                    )
-
-            dataset = DataManager.get_dataset(
-                {"dataset": dataset_config, "dataloader": dataloader_config}
-            )
-            data_loader = torch.utils.data.DataLoader(
-                dataset,
-                batch_size=dataloader_config.get("batch_size"),
-                shuffle=dataloader_config.get("shuffle"),
-                num_workers=dataloader_config.get("num_workers"),
-                collate_fn=collate_fn,
-            )
-
-            # Attach data loader to experiment
-            experiment.data_loader = data_loader
-            experiment.run()
+            self._setup_and_run_local_experiment()
             logger.info("Local experiment completed successfully")
         except Exception as e:
             logger.error(f"Error running local experiment: {e}", exc_info=True)
 
+    def _setup_and_run_local_experiment(self) -> None:
+        """Set up and run a local experiment based on configuration."""
+        from src.experiment_design.datasets.core.loaders import DatasetRegistry
+        import torch.utils.data
+
+        config = read_yaml_file(self.config_path)
+        self.experiment_manager = ExperimentManager(config, force_local=True)
+        experiment = self.experiment_manager.setup_experiment()
+
+        # Set up data loader
+        dataset_config = config.get("dataset", {})
+        dataloader_config = config.get("dataloader", {})
+
+        # Get the appropriate collate function if specified
+        collate_fn = self._get_collate_function(dataloader_config)
+
+        # Get dataset name - required parameter
+        dataset_name = dataset_config.get("name")
+        if not dataset_name:
+            logger.error("Dataset name not specified in config (required 'name' field)")
+            return
+
+        # Create a copy of the dataset config for loading
+        complete_config = dataset_config.copy()
+
+        # Add transform from dataloader config if not already specified
+        if "transform" not in complete_config and "transform" in dataloader_config:
+            complete_config["transform"] = dataloader_config.get("transform")
+
+        # Load dataset using registry
+        try:
+            # First register the dataset if needed
+            if DatasetRegistry.get_metadata(dataset_name) is None:
+                logger.info(f"Registering dataset '{dataset_name}'")
+                DatasetRegistry.register_dataset(dataset_name)
+
+            # Now load the dataset
+            dataset = DatasetRegistry.load(complete_config)
+            logger.info(f"Loaded dataset '{dataset_name}' successfully")
+        except Exception as e:
+            logger.error(f"Failed to load dataset '{dataset_name}': {e}")
+            raise  # Re-raise to ensure the error is properly handled
+
+        # Create data loader
+        data_loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=dataloader_config.get("batch_size"),
+            shuffle=dataloader_config.get("shuffle"),
+            num_workers=dataloader_config.get("num_workers"),
+            collate_fn=collate_fn,
+        )
+
+        # Attach data loader to experiment and run
+        experiment.data_loader = data_loader
+        experiment.run()
+
+    def _get_collate_function(self, dataloader_config: Dict[str, Any]) -> Optional[Any]:
+        """
+        Get the collate function specified in the configuration.
+
+        Collate functions customize how individual data samples are combined
+        into batches for model processing.
+        """
+        if not dataloader_config.get("collate_fn"):
+            return None
+
+        try:
+            from src.experiment_design.datasets.core.collate_fns import CollateRegistry
+
+            collate_fn_name = dataloader_config["collate_fn"]
+            collate_fn = CollateRegistry.get(collate_fn_name)
+
+            if not collate_fn:
+                logger.warning(
+                    f"Collate function '{collate_fn_name}' not found in registry. "
+                    "Using default collation."
+                )
+                return None
+
+            logger.debug(f"Using registered collate function: {collate_fn_name}")
+            return collate_fn
+        except ImportError as e:
+            logger.warning(
+                f"Failed to import collate functions: {e}. Using default collation."
+            )
+            return None
+        except KeyError:
+            logger.warning(
+                f"Collate function '{dataloader_config['collate_fn']}' not found. "
+                "Using default collation."
+            )
+            return None
+
     def _run_networked_server(self) -> None:
-        """Run server in networked mode."""
+        """Run server in networked mode, accepting client connections."""
+        # Get server device configuration
         server_device = self.device_manager.get_device_by_type("SERVER")
         if not server_device:
             logger.error("No SERVER device configured. Cannot start server.")
@@ -167,18 +254,17 @@ class Server:
 
         # Use experiment port for network communication
         port = server_device.get_port()
-        if not port:
-            logger.error("No experiment port configured for SERVER device.")
-            return
+        if port is None:
+            logger.info(
+                f"No port configured for SERVER device, using DEFAULT_PORT={DEFAULT_PORT}"
+            )
+            port = DEFAULT_PORT
 
         logger.info(f"Starting networked server on port {port}...")
 
         try:
             self._setup_socket(port)
-            while True:
-                conn, addr = self.server_socket.accept()
-                logger.info(f"Connected by {addr}")
-                self.handle_connection(conn)
+            self._accept_connections()
         except KeyboardInterrupt:
             logger.info("Server shutdown requested...")
         except Exception as e:
@@ -186,11 +272,40 @@ class Server:
         finally:
             self.cleanup()
 
+    def _accept_connections(self) -> None:
+        """
+        Accept and handle client connections in a continuous loop.
+
+        Uses socket timeout to allow for graceful shutdown on keyboard interrupt.
+        """
+        while True:
+            try:
+                conn, addr = self.server_socket.accept()
+                # Set timeout on client socket for data operations
+                conn.settimeout(SOCKET_TIMEOUT)
+                logger.info(f"Connected by {addr}")
+                self.handle_connection(conn)
+            except socket.timeout:
+                # Handle timeout, allow checking for keyboard interrupt
+                continue
+            except ConnectionError as e:
+                logger.error(f"Connection error: {e}")
+                continue
+
     def _setup_socket(self, port: int) -> None:
-        """Set up server socket with proper error handling."""
+        """
+        Set up server socket with proper error handling.
+
+        Creates a socket that:
+        - Allows address reuse (SO_REUSEADDR)
+        - Has a timeout to enable graceful shutdown
+        - Listens on all interfaces (empty host string)
+        """
         try:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # Set a timeout to allow graceful shutdown on keyboard interrupt
+            self.server_socket.settimeout(SERVER_LISTEN_TIMEOUT)
             self.server_socket.bind(("", port))
             self.server_socket.listen()
             logger.info(f"Server is listening on port {port} (all interfaces)")
@@ -199,12 +314,54 @@ class Server:
             raise
 
     def _receive_config(self, conn: socket.socket) -> dict:
-        """Receive and parse configuration from client."""
-        config_length = int.from_bytes(conn.recv(LENGTH_PREFIX_SIZE), "big")
-        config_data = self.compress_data.receive_full_message(
-            conn=conn, expected_length=config_length
-        )
-        return pickle.loads(config_data)
+        """
+        Receive and parse configuration from client.
+
+        Implements a length-prefixed protocol for receiving structured data:
+        1. First 4 bytes indicate the total message length
+        2. Remaining bytes contain the serialized configuration
+
+        Returns:
+            The deserialized configuration dictionary
+        """
+        try:
+            # Read the length prefix (4 bytes)
+            config_length_bytes = conn.recv(LENGTH_PREFIX_SIZE)
+            if (
+                not config_length_bytes
+                or len(config_length_bytes) != LENGTH_PREFIX_SIZE
+            ):
+                logger.error("Failed to receive config length prefix")
+                return {}
+
+            config_length = int.from_bytes(config_length_bytes, "big")
+            logger.debug(f"Expecting config data of length {config_length} bytes")
+
+            if not self.compress_data:
+                logger.error("Compression not initialized")
+                return {}
+
+            # Receive the raw config data (no compression for config)
+            config_data = self.compress_data.receive_full_message(
+                conn=conn, expected_length=config_length
+            )
+
+            if not config_data:
+                logger.error("Failed to receive config data")
+                return {}
+
+            # Deserialize using pickle
+            try:
+                config = pickle.loads(config_data)
+                logger.debug(f"Successfully received and parsed configuration")
+                return config
+            except Exception as e:
+                logger.error(f"Failed to deserialize config: {e}")
+                return {}
+
+        except Exception as e:
+            logger.error(f"Error receiving config: {e}")
+            return {}
 
     def _process_data(
         self,
@@ -213,91 +370,201 @@ class Server:
         original_size: Tuple[int, int],
         split_layer_index: int,
     ) -> Tuple[Any, float]:
-        """Process received data through model and return results along with processing time.
+        """
+        Process received tensor data through the model and measure performance.
 
-        **Tensor/Data Sharing:** The received tensor (output) and the original size tuple,
-        originally sent by the host, are passed into experiment.process_data."""
+        This is the core split computation function that:
+        1. Continues model execution from the specified split point
+        2. Returns both the processed result and the time taken
+
+        Args:
+            experiment: The experiment object that will process the data
+            output: The tensor output from the client
+            original_size: Original size information
+            split_layer_index: The index of the split layer
+
+        Returns:
+            Tuple of (processed_result, processing_time)
+        """
         server_start_time = time.time()
         processed_result = experiment.process_data(
             {"input": (output, original_size), "split_layer": split_layer_index}
         )
         return processed_result, time.time() - server_start_time
 
-    def handle_connection(self, conn: socket.socket) -> None:
-        """Handle an individual client connection."""
+    @contextmanager
+    def _safe_connection(self, conn: socket.socket) -> Generator[None, None, None]:
+        """
+        Context manager for safely handling client connections.
+
+        Ensures proper exception handling and connection cleanup regardless
+        of how the connection processing terminates.
+        """
         try:
-            # Receive configuration from the client.
-            config = self._receive_config(conn)
-            self._update_compression(config)
-
-            # Initialize experiment based on received configuration.
-            self.experiment_manager = ExperimentManager(config)
-            experiment = self.experiment_manager.setup_experiment()
-            experiment.model.eval()
-
-            # Cache torch.no_grad() context for inference.
-            no_grad_context = torch.no_grad()
-
-            # Send acknowledgment to the client.
-            conn.sendall(b"OK")
-
-            # Process incoming data in a loop.
-            while True:
-                # Receive header consisting of split layer index and data length.
-                header = conn.recv(LENGTH_PREFIX_SIZE * 2)
-                if not header or len(header) != LENGTH_PREFIX_SIZE * 2:
-                    break
-
-                split_layer_index = int.from_bytes(header[:LENGTH_PREFIX_SIZE], "big")
-                expected_length = int.from_bytes(header[LENGTH_PREFIX_SIZE:], "big")
-
-                # **Tensor/Data Sharing (Host → Server):**
-                # The client sends compressed data (a tuple containing the model's output tensor and original size).
-                compressed_data = self.compress_data.receive_full_message(
-                    conn=conn, expected_length=expected_length
-                )
-
-                with no_grad_context:
-                    # Decompress received data back into (output, original_size)
-                    output, original_size = self.compress_data.decompress_data(
-                        compressed_data=compressed_data
-                    )
-
-                    # Process data using the experiment's model and post-processor.
-                    processed_result, processing_time = self._process_data(
-                        experiment=experiment,
-                        output=output,
-                        original_size=original_size,
-                        split_layer_index=split_layer_index,
-                    )
-
-                # **Tensor/Data Sharing (Server → Host):**
-                # Compress the processed result (e.g., predictions/detections) to send back to the client.
-                compressed_result, result_size = self.compress_data.compress_data(
-                    processed_result
-                )
-
-                # Send result size as header.
-                conn.sendall(result_size.to_bytes(LENGTH_PREFIX_SIZE, "big"))
-                # Send processing time as fixed-length bytes.
-                time_bytes = (
-                    str(processing_time)
-                    .ljust(LENGTH_PREFIX_SIZE)
-                    .encode()[:LENGTH_PREFIX_SIZE]
-                )
-                conn.sendall(time_bytes)
-                # Send compressed result data.
-                conn.sendall(compressed_result)
-
+            yield
         except Exception as e:
             logger.error(f"Error handling connection: {e}", exc_info=True)
         finally:
-            conn.close()
+            try:
+                conn.close()
+            except Exception as e:
+                logger.debug(f"Error closing connection: {e}")
+
+    def handle_connection(self, conn: socket.socket) -> None:
+        """
+        Handle an individual client connection for split computing.
+
+        The connection handling protocol follows these steps:
+        1. Receive experiment configuration from client
+        2. Initialize experiment based on received configuration
+        3. Send acknowledgment to client
+        4. Enter processing loop to handle tensor data
+           - Receive intermediate tensors from client
+           - Process tensors through the model from the split point
+           - Send results back to client
+        """
+        with self._safe_connection(conn):
+            # Receive configuration from the client
+            config = self._receive_config(conn)
+            if not config:
+                logger.error("Failed to receive valid configuration from client")
+                return
+
+            # Update compression settings based on received config
+            self._update_compression(config)
+
+            # Initialize experiment based on received configuration
+            try:
+                self.experiment_manager = ExperimentManager(config)
+                experiment = self.experiment_manager.setup_experiment()
+                experiment.model.eval()
+                logger.info("Experiment initialized successfully with received config")
+            except Exception as e:
+                logger.error(f"Failed to initialize experiment: {e}")
+                return
+
+            # Cache torch.no_grad() context for inference
+            no_grad_context = torch.no_grad()
+
+            # Send acknowledgment to the client - must be exactly b"OK"
+            conn.sendall(ACK_MESSAGE)
+            logger.debug("Sent 'OK' acknowledgment to client")
+
+            # Process incoming data in a loop
+            while True:
+                try:
+                    # Receive header - 8 bytes total (4 for split index, 4 for length)
+                    header = conn.recv(LENGTH_PREFIX_SIZE * 2)
+                    if not header or len(header) != LENGTH_PREFIX_SIZE * 2:
+                        logger.info("Client disconnected or sent invalid header")
+                        break
+
+                    split_layer_index = int.from_bytes(
+                        header[:LENGTH_PREFIX_SIZE], "big"
+                    )
+                    expected_length = int.from_bytes(header[LENGTH_PREFIX_SIZE:], "big")
+                    logger.debug(
+                        f"Received header: split_layer={split_layer_index}, data_length={expected_length}"
+                    )
+
+                    # Receive compressed data from client
+                    if not self.compress_data:
+                        logger.error("Compression not initialized")
+                        break
+
+                    compressed_data = self.compress_data.receive_full_message(
+                        conn=conn, expected_length=expected_length
+                    )
+
+                    if not compressed_data:
+                        logger.warning("Failed to receive compressed data from client")
+                        break
+
+                    logger.debug(
+                        f"Received {len(compressed_data)} bytes of compressed data"
+                    )
+
+                    # Process the data
+                    with no_grad_context:
+                        # Decompress received data
+                        output, original_size = self.compress_data.decompress_data(
+                            compressed_data=compressed_data
+                        )
+
+                        # Process data using the experiment's model
+                        processed_result, processing_time = self._process_data(
+                            experiment=experiment,
+                            output=output,
+                            original_size=original_size,
+                            split_layer_index=split_layer_index,
+                        )
+
+                        # Update metrics
+                        self.metrics.update(processing_time)
+
+                    logger.debug(f"Processed data in {processing_time:.4f}s")
+
+                    # Compress the processed result to send back
+                    compressed_result, result_size = self.compress_data.compress_data(
+                        processed_result
+                    )
+
+                    # Send result back to client
+                    self._send_result(
+                        conn, result_size, processing_time, compressed_result
+                    )
+                    logger.debug(
+                        f"Sent result of size {result_size} bytes back to client"
+                    )
+
+                except Exception as e:
+                    logger.error(f"Error processing client data: {e}", exc_info=True)
+                    break
+
+    def _send_result(
+        self,
+        conn: socket.socket,
+        result_size: int,
+        processing_time: float,
+        compressed_result: bytes,
+    ) -> None:
+        """
+        Send the processed result back to the client using framed protocol.
+
+        The response protocol uses:
+        1. 4-byte length prefix for result size
+        2. 4-byte field for processing time (as padded string)
+        3. Variable-length compressed result data
+        """
+        try:
+            # Send result size as header (4 bytes)
+            size_bytes = result_size.to_bytes(LENGTH_PREFIX_SIZE, "big")
+            conn.sendall(size_bytes)
+
+            # Send processing time as fixed-length bytes (4 bytes)
+            # Format as a string, pad/truncate to exactly 4 bytes
+            time_str = str(processing_time).ljust(LENGTH_PREFIX_SIZE)
+            time_bytes = time_str[:LENGTH_PREFIX_SIZE].encode()
+            conn.sendall(time_bytes)
+
+            # Send compressed result data
+            conn.sendall(compressed_result)
+
+        except Exception as e:
+            logger.error(f"Error sending result: {e}")
+            raise
 
     def _update_compression(self, config: dict) -> None:
-        """Update compression settings from received configuration."""
+        """
+        Update compression settings from received configuration.
+
+        Compression settings affect the tradeoff between:
+        - Network bandwidth usage
+        - CPU utilization for compression/decompression
+        - Memory usage during transfer
+        """
         if "compression" in config:
-            logger.debug("Updating compression settings from received config")
+            logger.debug(f"Updating compression settings: {config['compression']}")
             self.compress_data = DataCompression(config["compression"])
         else:
             logger.warning(
@@ -305,7 +572,12 @@ class Server:
             )
 
     def cleanup(self) -> None:
-        """Clean up server resources and close the socket."""
+        """
+        Clean up server resources and close the socket.
+
+        Ensures graceful shutdown with proper resource release
+        and final metrics logging.
+        """
         logger.info("Starting server cleanup...")
         if self.server_socket:
             try:
@@ -319,15 +591,25 @@ class Server:
         if logging_server:
             shutdown_logging_server(logging_server)
 
+        # Log final metrics if any requests were processed
+        if self.metrics.total_requests > 0:
+            logger.info(
+                f"Final metrics: {self.metrics.total_requests} requests processed, "
+                f"average processing time: {self.metrics.avg_processing_time:.4f}s"
+            )
 
-if __name__ == "__main__":
+
+def parse_arguments() -> argparse.Namespace:
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Run server for split computing")
     parser.add_argument(
+        "-l",
         "--local",
         action="store_true",
         help="Run experiment locally instead of as a network server",
     )
     parser.add_argument(
+        "-c",
         "--config",
         type=str,
         help="Path to configuration file (required for local mode)",
@@ -337,6 +619,12 @@ if __name__ == "__main__":
 
     if args.local and not args.config:
         parser.error("--config is required when running in local mode")
+
+    return args
+
+
+if __name__ == "__main__":
+    args = parse_arguments()
 
     server = Server(local_mode=args.local, config_path=args.config)
     try:

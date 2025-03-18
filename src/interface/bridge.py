@@ -1,4 +1,4 @@
-# src/interface/bridge.py
+"""Interface module for split computing experiments"""
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass

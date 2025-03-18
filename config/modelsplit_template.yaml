@@ -1,64 +1,173 @@
-# config/modelsplit_template.yaml
-
-# Update this template with the appropriate configurations for your model split inference experiment
-
+# ================================================================
 # MODEL SPLIT CONFIGURATION TEMPLATE
-# ---------------------------------
+# ================================================================
 # This template defines the configuration for split inference experiments.
-# Rename this file to match your model (e.g., alexnetsplit.yaml, yolosplit.yaml)
+#
+# QUICK START:
+# 1. Copy this file to a new file (e.g., alexnetsplit.yaml)
+# 2. Update the required fields (marked with [REQUIRED])
+# 3. Run the experiment with: python host.py --config config/your_config.yaml
+# ================================================================
 
+# ================================================================
 # DEFAULT CONFIGURATIONS
-# ---------------------
+# ================================================================
 default:
-  device: <device>               # Options: 'cuda' (GPU), 'cpu' (CPU). Default is cuda.
-  font_path: <font_path>         # Path to font file for visualization; e.g., fonts/DejaVuSans-Bold.ttf.
-  save_layer_images: <save_layer_images> # Whether to save intermediate layer images at each split. Default is false.
+  device: "cuda"                      # [OPTIONAL] Computing device: 'cuda' (GPU) or 'cpu'. Default: 'cuda' if available, else 'cpu'
+  save_layer_images: false            # [OPTIONAL] Save intermediate layer images. Default: false
+  collect_metrics: false              # [OPTIONAL] Collect detailed metrics per layer (time-consuming for cpu systems). Default: false
 
+# ================================================================
 # LOGGING CONFIGURATIONS
+# ================================================================
 logging:
-  log_level: <log_level>         # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL. Default is INFO.
-  log_file: <log_file>           # Central log file for application-wide logging. Default is logs/app.log
+  log_level: "INFO"                   # [OPTIONAL] Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL. Default: INFO
+  log_file: "logs/app.log"            # [OPTIONAL] Central log file. Default: logs/app.log
 
+# ================================================================
 # MODEL CONFIGURATIONS
-# -------------------
+# ================================================================
 model:
-  model_name: <model_name>       # REQUIRED: Model architecture name (e.g., 'alexnet', 'yolov8s')
-  version: null                  # Model version if applicable. Default is null.
-  pretrained: false              # Whether to use pretrained weights. Default is false.
-  weight_path: null              # Path to custom weights file; e.g., 'path/to/weights/best.pt' for YOLOv8. Default is null.
-  input_size: <input_size>       # REQUIRED: Input tensor dimensions [channels, height, width]. Common sizes: [3, 224, 224] for AlexNet, [3, 640, 640] for YOLOv8.
-  split_layer: <split_layer>     # OPTIONAL: Layer index where model will be split. -1 by default to run all layers and find the best split. Note: Must be less than total_layers.
-  save_layers: <save_layers>     # Layer indices to save intermediate outputs. Useful for debugging and visualization.
-  num_classes: <num_classes>     # Number of output classes. null: Use model's default. Example: 1000 for ImageNet, 2 for binary classification.
-  mode: <mode>                   # Model operation mode. Options: 'eval' (recommended for split inference), 'train'.
-  depth: <depth>                         # Depth for recursive model layer exploration. Default is 2.
-  flush_buffer_size: <flush_buffer_size> # Number of inferences before results storage. Default is 100.
-  warmup_iterations: <warmup_iterations> # Iterations to stabilize performance metrics. Default is 10.
-  log_file: <log_file>                   # Separate log file for model operations. Rename to match your model (e.g., alexnetsplit.log).
+  # Basic Model Settings
+  model_name: "resnet50"              # [REQUIRED] Model architecture name (e.g., 'alexnet', 'resnet50', 'yolov8s')
+  pretrained: true                    # [OPTIONAL] Use pretrained weights. Default: false
+  weight_path: null                   # [OPTIONAL] Custom weights file path. Default: null (use pretrained if available)
+  
+  # Input/Output Settings
+  input_size: [3, 224, 224]           # [REQUIRED] Input dimensions [channels, height, width]
+  num_classes: null                   # [OPTIONAL] Number of output classes. Default: model's default (e.g., 1000 for ImageNet)
+  
+  # Split Settings
+  split_layer: 5                      # [RECOMMENDED] Layer index for model splitting. Default: -1 (auto-determine)
+  save_layers: null                   # [OPTIONAL] Layer indices to save outputs. Default: null
+  
+  # Advanced Settings
+  version: null                       # [OPTIONAL] Model version. Default: null
+  mode: "eval"                        # [OPTIONAL] Model mode: 'eval' or 'train'. Default: 'eval'
+  depth: 2                            # [OPTIONAL] Depth for layer exploration. Default: 2
+  flush_buffer_size: 100              # [OPTIONAL] Buffer size for result storage. Default: 100
+  warmup_iterations: 10               # [OPTIONAL] Iterations before metrics collection. Default: 10
+  log_file: "logs/model.log"          # [OPTIONAL] Model-specific log file. Default: logs/{model_name}.log
 
+# ================================================================
 # DATASET CONFIGURATIONS
-# ---------------------
+# ================================================================
 dataset:
-  module: <module>              # REQUIRED: Python module name for dataset. Examples: 'imagenet', 'onion'. Defined in src/experiment_design/datasets/
-  class: <class>                # REQUIRED: Dataset class name. Examples: 'ImageNetDataset', 'OnionDataset'.
-  args:
-    root: <root>                # REQUIRED: Dataset root directory. Example: 'data/imagenet', 'data/onion'.
-    class_names: <class_names>  # Class names or path to class names file. Examples: 'data/imagenet/imagenet_classes.txt', ["with_weeds", "without_weeds"].
-    img_directory: <img_directory>     # Directory containing images. Example: 'data/imagenet/sample_images'.
-    transform: <transform>             # Custom transformations. null: Use default transforms for the model.
-    max_samples: <max_samples>         # Maximum number of samples to process. -1: Process all available samples.
+  name: "imagenet"                    # [REQUIRED] Dataset name (e.g., 'imagenet', 'onion', 'custom')
+  root: "data/imagenet"               # [REQUIRED] Dataset root directory
+  class_names: "data/imagenet/imagenet_classes.txt"  # [OPTIONAL] Class names file or list. Default: module-specific
+  img_directory: "data/imagenet/sample_images"  # [OPTIONAL] Image directory. Default: {root}/images
+  transform: null                     # [OPTIONAL] Custom transformations. Default: model-appropriate transforms
+  max_samples: -1                     # [OPTIONAL] Maximum samples to process. Default: -1 (all samples)
 
+# ================================================================
 # DATALOADER CONFIGURATIONS
-# ------------------------
+# ================================================================
 dataloader:
-  batch_size: <batch_size>          # Number of samples per batch. Recommended: 1 for split inference.
-  shuffle: <shuffle>                # Whether to shuffle the dataset. Recommended: false for consistent results.
-  num_workers: <num_workers>        # Number of parallel data loading workers. Adjust based on CPU cores available.
-  collate_fn: <collate_fn>          # Collate function name. Options: "imagenet_collate", "onion_collate", null
+  batch_size: 1                       # [OPTIONAL] Batch size. Default: 1 (recommended for split inference)
+  shuffle: false                      # [OPTIONAL] Shuffle dataset. Default: false
+  num_workers: 2                      # [OPTIONAL] Data loading workers. Default: 2
+  collate_fn: null                    # [OPTIONAL] Collate function name. Default: null (standard collation)
 
+# ================================================================
 # COMPRESSION CONFIGURATIONS
-# ------------------------
+# ================================================================
 compression:
-  clevel: <compression_level>  # Compression level [0 - 9] with 9 being maximum compression as default from blosc2.
-  filter: <compression_filter> # Compression filter. Options: SHUFFLE, BITSHUFFLE, DELTA, ZSTD.
-  codec: <compression_codec>   # Compression codec. Options: ZSTD, BLOSCLZ, LZ4, etc.
+  clevel: 5                           # [OPTIONAL] Compression level [0-9]. Default: 5
+  filter: "SHUFFLE"                   # [OPTIONAL] Filter: SHUFFLE, BITSHUFFLE, DELTA, ZSTD. Default: SHUFFLE
+  codec: "ZSTD"                       # [OPTIONAL] Codec: ZSTD, BLOSCLZ, LZ4. Default: ZSTD
+
+# ================================================================
+# EXAMPLES
+# ================================================================
+
+# EXAMPLE 1: AlexNet with ImageNet
+# -------------------------------
+# model:
+#   model_name: "alexnet"
+#   pretrained: true
+#   input_size: [3, 224, 224]
+#   split_layer: 5
+#
+# dataset:
+#   name: "imagenet"
+#   root: "data/imagenet"
+#   class_names: "data/imagenet/imagenet_classes.txt"
+#   img_directory: "data/imagenet/sample_images"
+
+# EXAMPLE 2: YOLOv8 Object Detection
+# ---------------------------------
+# model:
+#   model_name: "yolov8s"
+#   pretrained: true
+#   input_size: [3, 640, 640]
+#   split_layer: 8
+#
+# dataset:
+#   name: "coco"
+#   root: "data/coco"
+#   img_directory: "data/coco/images"
+
+# EXAMPLE 3: Custom Model with Custom Dataset
+# -----------------------------------------
+# model:
+#   model_name: "custom_model"
+#   pretrained: false
+#   weight_path: "data/weights/custom_weights.pt"
+#   input_size: [3, 256, 256]
+#   num_classes: 10
+#   split_layer: 3
+#
+# dataset:
+#   name: "custom"
+#   root: "data/custom_dataset"
+#   max_samples: 100
+
+# ================================================================
+# COMMON CONFIGURATIONS BY MODEL TYPE
+# ================================================================
+
+# Classification Models
+# -------------------
+# AlexNet:    input_size=[3, 224, 224], typical split_layer=5
+# ResNet50:   input_size=[3, 224, 224], typical split_layer=4
+# VGG16:      input_size=[3, 224, 224], typical split_layer=7
+# MobileNet:  input_size=[3, 224, 224], typical split_layer=5
+# EfficientNet: input_size=[3, 224, 224], typical split_layer=6
+
+# Object Detection Models
+# ---------------------
+# YOLOv8:     input_size=[3, 640, 640], typical split_layer=8
+# YOLOv5:     input_size=[3, 640, 640], typical split_layer=7
+# FasterRCNN: input_size=[3, 800, 800], typical split_layer=5
+
+# ================================================================
+# VALIDATION AND TROUBLESHOOTING
+# ================================================================
+
+# Common Errors
+# ------------
+# 1. "Model not found" error:
+#    - Check model_name spelling
+#    - Verify required packages are installed (e.g., ultralytics for YOLO)
+#
+# 2. "Split layer out of range" error:
+#    - Ensure split_layer is less than total model layers
+#    - Try running with split_layer=-1 to see available layers
+#
+# 3. "Dataset not found" error:
+#    - Verify dataset module exists in src/experiment_design/datasets/
+#    - Check dataset root directory exists and has correct permissions
+#
+# 4. "CUDA out of memory" error:
+#    - Reduce batch_size to 1
+#    - Try a different split_layer (earlier layers require less GPU memory)
+#    - Reduce input_size dimensions
+
+# Validation Checklist
+# ------------------
+# ✓ Required fields are set
+# ✓ Dataset paths are correct and accessible
+# ✓ Model name is valid 
+# ✓ Split layer is within valid range for model
+# ✓ Compression settings are appropriate for network conditions

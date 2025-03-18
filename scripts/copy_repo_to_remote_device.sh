@@ -96,7 +96,7 @@ EXCLUDES=(
     ".git"
     "__pycache__"
     "venv"
-    "data/imagenet"
+    # "data/imagenet"
     "data/imagenet2_tr"
     "data/imagenet10_tr"
     "data/imagenet50_tr"
