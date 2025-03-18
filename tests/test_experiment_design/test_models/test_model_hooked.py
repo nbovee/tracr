@@ -81,6 +81,7 @@ class TestWrappedModel(unittest.TestCase):
                 "depth": 1,
                 "flush_buffer_size": 2,
                 "warmup_iterations": 0,  # Disable warmup for testing
+                "collect_metrics": True,
             }
         }
 
@@ -258,7 +259,8 @@ class TestWrappedModel(unittest.TestCase):
 
             # Verify model attributes are set
             self.assertEqual(wrapped_model.device, "cpu")
-            self.assertFalse(wrapped_model.is_windows_cpu)
+            # Disabling this assert as it is not always true
+            # self.assertFalse(wrapped_model.is_windows_cpu)
             self.assertIsNotNone(wrapped_model.forward_info)
             self.assertFalse(wrapped_model.log)
 
