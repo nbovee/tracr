@@ -61,6 +61,11 @@ conflicts = [
 [tool.ruff.lint]
 ignore = ["F841"]
 
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+]
+
 [tool.uv.sources]
 torch = [
   { index = "pytorch-cpu", extra = "cpu", marker = "platform_system != 'Darwin'" },
