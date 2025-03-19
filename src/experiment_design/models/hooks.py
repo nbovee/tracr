@@ -164,9 +164,9 @@ def create_forward_posthook(
                     end_time = time.perf_counter()
                     start_time = wrapped_model.layer_times[layer_index]
                     elapsed_time = end_time - start_time
-                    wrapped_model.forward_info[layer_index][
-                        "inference_time"
-                    ] = elapsed_time
+                    wrapped_model.forward_info[layer_index]["inference_time"] = (
+                        elapsed_time
+                    )
 
         # Handle output banking and early exit
         if wrapped_model.start_i == 0:

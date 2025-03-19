@@ -16,7 +16,7 @@ from ..core import (
 )
 from .discovery import LAN
 from ..network.ssh import SSHKeyHandler, SSHConfig, create_ssh_client
-from ..network.protocols import SSH_PORT, SSH_CONNECTIVITY_TIMEOUT, DEFAULT_PORT
+from ..network.protocols import SSH_PORT, SSH_CONNECTIVITY_TIMEOUT, DEFAULT_PORT # noqa: F401
 from ..utils.utils import get_repo_root
 
 logger = logging.getLogger("split_computing_logger")

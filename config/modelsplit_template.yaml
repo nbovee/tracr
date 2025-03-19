@@ -13,7 +13,7 @@
 # DEFAULT CONFIGURATIONS
 # ================================================================
 default:
-  device: "cuda"                      # [OPTIONAL] Computing device: 'cuda' (GPU) or 'cpu'. Default: 'cuda' if available, else 'cpu'
+  device: "cuda"                      # [OPTIONAL] Computing device: 'cuda' (NVIDIA GPU), 'mps' (Apple Silicon GPU), or 'cpu'. Default: 'cuda' if available, 'mps' on Apple Silicon if available, else 'cpu'
   save_layer_images: false            # [OPTIONAL] Save intermediate layer images. Default: false
   collect_metrics: false              # [OPTIONAL] Collect detailed metrics per layer (time-consuming for cpu systems). Default: false
 

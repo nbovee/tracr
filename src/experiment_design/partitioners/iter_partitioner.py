@@ -29,5 +29,5 @@ class CyclePartitioner(Partitioner):
         logger.debug("CyclePartitioner called")
         value = next(self.counter)
         for i in range(self.repeats):
-            logger.debug(f"Yielding value {value} (repeat {i+1}/{self.repeats})")
+            logger.debug(f"Yielding value {value} (repeat {i + 1}/{self.repeats})")
             yield value

@@ -25,17 +25,17 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api import (
+from src.api import ( # noqa: E402
     DataCompression,
     DeviceManager,
     ExperimentManager,
     DeviceType,
     start_logging_server,
     shutdown_logging_server,
-    DataCompression,
+    DataCompression, # noqa: F811
     read_yaml_file,
 )
-from src.api.network.protocols import (
+from src.api.network.protocols import ( # noqa: E402
     LENGTH_PREFIX_SIZE,
     ACK_MESSAGE,
     SERVER_COMPRESSION_SETTINGS,
@@ -61,11 +61,43 @@ def get_device(requested_device: str = "cuda") -> str:
         logger.info("CPU device explicitly requested")
         return "cpu"
 
-    if requested_device in ("cuda", "gpu", "mps") and torch.cuda.is_available():
+    if requested_device == "cuda" and torch.cuda.is_available():
         logger.info("CUDA is available and will be used")
         return "cuda"
 
-    logger.warning("CUDA requested but not available, falling back to CPU")
+    # Check for MPS (Apple Silicon GPUs)
+    if (
+        requested_device == "mps"
+        and hasattr(torch.backends, "mps")
+        and torch.backends.mps.is_available()
+    ):
+        logger.info("MPS (Apple Silicon GPU) is available and will be used")
+        return "mps"
+
+    # If we're here, requested GPU is not available - try alternatives
+    if requested_device in ("cuda", "gpu", "mps"):
+        # If any GPU was requested, try all available options in priority order
+        if torch.cuda.is_available():
+            logger.info(
+                f"{requested_device.upper()} requested but not available, using CUDA instead"
+            )
+            return "cuda"
+
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            logger.info(
+                f"{requested_device.upper()} requested but not available, using MPS (Apple Silicon GPU) instead"
+            )
+            return "mps"
+
+        logger.warning(
+            f"{requested_device.upper()} requested but no GPU available, falling back to CPU"
+        )
+        return "cpu"
+
+    # For any other requested device, fall back to CPU
+    logger.warning(
+        f"Requested device '{requested_device}' not recognized, falling back to CPU"
+    )
     return "cpu"
 
 
@@ -353,7 +385,7 @@ class Server:
             # Deserialize using pickle
             try:
                 config = pickle.loads(config_data)
-                logger.debug(f"Successfully received and parsed configuration")
+                logger.debug("Successfully received and parsed configuration")
                 return config
             except Exception as e:
                 logger.error(f"Failed to deserialize config: {e}")

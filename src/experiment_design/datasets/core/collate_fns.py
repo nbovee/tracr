@@ -20,7 +20,7 @@ CollateOutput = Any  # Result of collation
 
 
 def safe_collate(
-    func: Callable[[BatchItems], CollateOutput]
+    func: Callable[[BatchItems], CollateOutput],
 ) -> Callable[[BatchItems], CollateOutput]:
     """Decorator that adds standardized error handling to collate functions.
 
@@ -44,7 +44,7 @@ def safe_collate(
 
 @safe_collate
 def imagenet_collate(
-    batch: List[Tuple[torch.Tensor, int, str]]
+    batch: List[Tuple[torch.Tensor, int, str]],
 ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[str, ...]]:
     """Collate function for ImageNet-style datasets.
 
@@ -57,7 +57,7 @@ def imagenet_collate(
 
 @safe_collate
 def onion_collate(
-    batch: List[Tuple[torch.Tensor, Image.Image, str]]
+    batch: List[Tuple[torch.Tensor, Image.Image, str]],
 ) -> Tuple[torch.Tensor, Tuple[Image.Image, ...], Tuple[str, ...]]:
     """Collate function for Onion datasets.
 

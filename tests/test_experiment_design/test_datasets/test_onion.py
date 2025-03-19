@@ -1,13 +1,13 @@
 """Tests for the Onion dataset implementation."""
 
 import os
-import sys
+import sys # noqa: F401
 import pytest
 from pathlib import Path
 import torch
 import torchvision.transforms as T
 from PIL import Image
-import numpy as np
+import numpy as np # noqa: F401
 
 # Fix the path to include the project root, not just the parent directory
 project_root = os.path.dirname(
@@ -15,8 +15,8 @@ project_root = os.path.dirname(
 )
 
 
-from src.experiment_design.datasets.onion import OnionDataset, load_onion_dataset
-from src.experiment_design.datasets.core.exceptions import DatasetPathError
+from src.experiment_design.datasets.onion import OnionDataset, load_onion_dataset  # noqa: E402
+from src.experiment_design.datasets.core.exceptions import DatasetPathError  # noqa: E402
 
 
 # Constants for test data

@@ -15,8 +15,8 @@ project_root = os.path.dirname(
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from src.experiment_design.models.model_hooked import WrappedModel
-from src.experiment_design.models.hooks import HookExitException
+from src.experiment_design.models.model_hooked import WrappedModel  # noqa: E402
+from src.experiment_design.models.hooks import HookExitException  # noqa: E402
 
 # Setup test logger
 logging.basicConfig(level=logging.ERROR)
@@ -505,7 +505,6 @@ class TestWrappedModel(unittest.TestCase):
             patch.object(wrapped_model, "_setup_inference_id") as mock_setup_id,
             patch.object(wrapped_model, "_handle_results"),
         ):
-
             # Configure the mock to return our expected output
             mock_exec_forward.return_value = expected_output
 

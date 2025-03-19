@@ -332,7 +332,7 @@ class WrappedModel(BaseModel, ModelInterface):
         """Process forward pass results and update performance metrics."""
         total_time = self.timer() - start_time
         self.inference_info["total_time"] = total_time
-        logger.debug(f"Total forward pass time: {total_time/1e9:.6f} seconds")
+        logger.debug(f"Total forward pass time: {total_time / 1e9:.6f} seconds")
 
         # Store layer metrics for current inference.
         current_forward_info = copy.deepcopy(self.forward_info)
