@@ -221,7 +221,6 @@ class TestHookAndModelIntegration(unittest.TestCase):
                 return_value=EarlyOutput(banked_output),
             ),
         ):
-
             # Configure the mock to raise our exception
             mock_exec_forward.side_effect = test_exception
 

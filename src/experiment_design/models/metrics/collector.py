@@ -163,9 +163,9 @@ class MetricsCollector:
                         comm_energy = self._calculate_communication_energy(
                             layer_idx, tensor_size_bytes
                         )
-                        self.layer_metrics[layer_idx][
-                            "communication_energy"
-                        ] = comm_energy
+                        self.layer_metrics[layer_idx]["communication_energy"] = (
+                            comm_energy
+                        )
 
                 elif hasattr(tensor_output, "get_tensor_size"):
                     # For custom tensor objects that provide size information
@@ -181,9 +181,9 @@ class MetricsCollector:
                         comm_energy = self._calculate_communication_energy(
                             layer_idx, tensor_size_bytes
                         )
-                        self.layer_metrics[layer_idx][
-                            "communication_energy"
-                        ] = comm_energy
+                        self.layer_metrics[layer_idx]["communication_energy"] = (
+                            comm_energy
+                        )
             except Exception as e:
                 logger.warning(
                     f"Error calculating tensor size for layer {layer_idx}: {e}"

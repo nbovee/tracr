@@ -505,7 +505,6 @@ class TestWrappedModel(unittest.TestCase):
             patch.object(wrapped_model, "_setup_inference_id") as mock_setup_id,
             patch.object(wrapped_model, "_handle_results"),
         ):
-
             # Configure the mock to return our expected output
             mock_exec_forward.return_value = expected_output
 

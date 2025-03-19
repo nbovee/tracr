@@ -16,11 +16,11 @@ Example Usage:
     # Register your dataset
     from src.experiment_design.datasets.core import DatasetRegistry
     DatasetRegistry.register_dataset("my_custom")
-    
+
     # Load your dataset
     from src.experiment_design.datasets import available_datasets
     print(f"Available datasets: {available_datasets}")
-    
+
     # Create dataset instance
     dataset = load_custom_dataset(
         root="path/to/data",

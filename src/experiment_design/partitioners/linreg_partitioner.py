@@ -107,7 +107,7 @@ class RegressionPartitioner(Partitioner):
             os.remove(os.path.join(self._dir, f))
 
         for i in range(iterations):
-            logger.debug(f"Data creation iteration {i+1}/{iterations}")
+            logger.debug(f"Data creation iteration {i + 1}/{iterations}")
             model(torch.randn(1, *model.base_input_size), inference_id="profile")
             from_model = model.master_dict.pop("profile")["layer_information"].values()
             self._process_model_data(from_model)
@@ -169,7 +169,7 @@ class RegressionPartitioner(Partitioner):
                     pred = model.forward(v)
                     model.train_step(z, pred)
                 logger.debug(
-                    f"Training iteration {i+1}/{model.training_iterations}, Loss: {model.loss_history[-1]}"
+                    f"Training iteration {i + 1}/{model.training_iterations}, Loss: {model.loss_history[-1]}"
                 )
             model.scale_bias(mmax)
         return model
