@@ -380,17 +380,12 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) for deta
 
 ## Citation
 
-```bibtex
-@inproceedings{bovee2025splitracr,
-  author = {Bovee, Nicholas and Ali, Izhar and Patapanchala, Gopi and Bitla, Suraj and Ho, Shen Shyang},
-  title = {SplitTracr: A Flexible Performance Evaluation Tool for Cooperative Inference and Split Computing},
-  booktitle = {Proceedings of the International Conference on Performance Engineering (ICPE)},
-  year = {2025},
-  address = {Toronto, Canada},
-  month = {May},
-  publisher = {ACM/SPEC}
-}
-```
+Please cite the following DOIs if you use SplitTracr in your work:
+
+[10.1145/3680256.3721971 - Publication in ICPE Companion '25](https://doi.org/10.1145/3680256.3721971)
+[10.5281/zenodo.15048915 - Zenodo Repository Archive](https://doi.org/10.5281/zenodo.15048915)
+
+These are the same DOIs as in the CITATION.cff file. A BibTeX entry will be provided once the paper is published by ACM.
 
 ## References
 

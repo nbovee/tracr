@@ -1,0 +1,42 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: SplitTracr
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Nicholas
+    family-names: Bovee
+    affiliation: Rowan University
+    orcid: 'https://orcid.org/0009-0003-6094-920X'
+  - given-names: Izhar
+    family-names: Ali
+    orcid: 'https://orcid.org/0009-0006-9643-1869'
+    affiliation: Rowan University
+  - given-names: Suraj
+    family-names: Bitla
+    orcid: 'https://orcid.org/0009-0001-1146-1318'
+    affiliation: Rowan University
+  - given-names: Gopi Krishna
+    family-names: Patapanchala
+    affiliation: Rowan University
+    orcid: 'https://orcid.org/0009-0006-5345-6716'
+  - given-names: Shen Shyang
+    family-names: Ho
+    affiliation: Rowan University
+    orcid: 'https://orcid.org/0000-0002-0353-7159'
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.15048914
+    description: Zenodo Repository Archive
+  - type: doi
+    value: 10.1145/3680256.3721971
+    description: Publication in ICPE Companion '25
+repository-code: 'https://github.com/nbovee/tracr'
+abstract: >-
+  A Flexible Performance Evaluation Tool for Cooperative
+  Inference and Split Computing
+license: MIT
