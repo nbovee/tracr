@@ -382,8 +382,9 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) for deta
 
 Please cite the following DOIs if you use SplitTracr in your work:
 
-[10.1145/3680256.3721971 - Publication in ICPE Companion '25](https://doi.org/10.1145/3680256.3721971)
-[10.5281/zenodo.15048915 - Zenodo Repository Archive](https://doi.org/10.5281/zenodo.15048915)
+**Upcoming publication in ICPE Companion '25**: [https://doi.org/10.1145/3680256.3721971](https://doi.org/10.1145/3680256.3721971)
+
+**Zenodo Repository Archive**: [https://doi.org/10.5281/zenodo.15048915](https://doi.org/10.5281/zenodo.15048915)
 
 These are the same DOIs as in the CITATION.cff file. A BibTeX entry will be provided once the paper is published by ACM.
 
