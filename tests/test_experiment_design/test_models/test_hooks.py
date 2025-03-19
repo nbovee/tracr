@@ -15,7 +15,7 @@ project_root = os.path.dirname(
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from src.experiment_design.models.hooks import (
+from src.experiment_design.models.hooks import (   # noqa: E402
     EarlyOutput,
     HookExitException,
     create_forward_prehook,
@@ -139,7 +139,7 @@ class TestHookCreation(unittest.TestCase):
         banked_output = {"0": torch.ones(1, 16, 32, 32)}
 
         # Create a function that returns the banked output (similar to EarlyOutput behavior)
-        tensor_func = lambda: banked_output
+        tensor_func = lambda: banked_output # noqa: E731
 
         # Create a pre-hook for layer 0
         pre_hook = create_forward_prehook(

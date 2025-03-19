@@ -1,7 +1,7 @@
 """Core experiment infrastructure for split computing"""
 
 import logging
-import sys
+import sys # noqa: F401
 import time
 from dataclasses import dataclass, field
 from pathlib import Path

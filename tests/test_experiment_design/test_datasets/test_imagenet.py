@@ -14,11 +14,11 @@ project_root = os.path.dirname(
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from src.experiment_design.datasets.imagenet import (
+from src.experiment_design.datasets.imagenet import (   # noqa: E402
     ImageNetDataset,
     load_imagenet_dataset,
 )
-from src.experiment_design.datasets.core.exceptions import DatasetPathError
+from src.experiment_design.datasets.core.exceptions import DatasetPathError   # noqa: E402
 
 
 # Constants for test data
@@ -217,4 +217,4 @@ class TestImageNetDataset:
                     )  # Allow some flexibility
             else:
                 # Skip this part of the test if class file doesn't exist
-                pytest.skip(f"Class file not found for imagenet2_tr")
+                pytest.skip("Class file not found for imagenet2_tr")

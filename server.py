@@ -25,17 +25,17 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api import (
+from src.api import ( # noqa: E402
     DataCompression,
     DeviceManager,
     ExperimentManager,
     DeviceType,
     start_logging_server,
     shutdown_logging_server,
-    DataCompression,
+    DataCompression, # noqa: F811
     read_yaml_file,
 )
-from src.api.network.protocols import (
+from src.api.network.protocols import ( # noqa: E402
     LENGTH_PREFIX_SIZE,
     ACK_MESSAGE,
     SERVER_COMPRESSION_SETTINGS,
@@ -385,7 +385,7 @@ class Server:
             # Deserialize using pickle
             try:
                 config = pickle.loads(config_data)
-                logger.debug(f"Successfully received and parsed configuration")
+                logger.debug("Successfully received and parsed configuration")
                 return config
             except Exception as e:
                 logger.error(f"Failed to deserialize config: {e}")
