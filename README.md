@@ -44,7 +44,7 @@
    ```bash
    git clone https://github.com/nbovee/tracr.git && cd tracr
    python3 -m venv venv && source venv/bin/activate
-   pip install -r requirements.txt
+   pip install -r requirements.txt # alternatively, use the requirements-cu###.txt file for your cuda version.
    ```
 
 2. **Configure devices** by copying and editing the template
