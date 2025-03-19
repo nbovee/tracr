@@ -327,7 +327,10 @@ Select optimal split points based on:
 <summary>Unit Testing</summary>
 - If issues present themselves, the provided unit tests may have some insight to the error. Please run the following, and refine to individual files for further details:
   
-  ```python -m unittest discovery -s ./tests```
+  ```python -m unittest discover -s ./tests```
+  or if using uv, the command will be:
+
+  ```uv run -m unittest discover -s ./tests```
 </details>
 
 <summary>Connection Issues</summary>
