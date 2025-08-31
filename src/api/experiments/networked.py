@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Tuple, Optional
 import torch
 from tqdm import tqdm
 
-from ..network import create_network_client, DataCompression
+from ..network import create_network_client, EncryptedDataCompression
 from .base import BaseExperiment, ProcessingTimes
 
 logger = logging.getLogger("split_computing_logger")
@@ -60,16 +60,23 @@ class NetworkedExperiment(BaseExperiment):
             logger.error(f"Failed to create network client: {e}", exc_info=True)
             raise
 
-        # Initialize data compression for efficient tensor transmission over the network
+        # Initialize encrypted data compression for secure tensor transmission over the network
         try:
-            compression_config = self.config.get("compression", {})
+            # Extract encryption key from config if provided
+            encryption_key = None
+            encryption_config = self.config.get("encryption", {})
+            if encryption_config.get("enabled", False) and "test_key" in encryption_config:
+                # Convert test key string to bytes (pad or truncate to 32 bytes)
+                test_key = encryption_config["test_key"]
+                encryption_key = (test_key.encode() * 8)[:32]  # Ensure exactly 32 bytes
+            
             logger.info(
-                f"Initializing data compression with config: {compression_config}"
+                f"Initializing encrypted data compression with config: compression={self.config.get('compression', {})}, encryption={encryption_config}"
             )
-            self.compress_data = DataCompression(compression_config)
-            logger.info("Data compression initialized successfully")
+            self.compress_data = EncryptedDataCompression(self.config, encryption_key=encryption_key)
+            logger.info("Encrypted data compression initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize data compression: {e}", exc_info=True)
+            logger.error(f"Failed to initialize encrypted data compression: {e}", exc_info=True)
             raise
 
         # Check if we can monitor battery usage for energy profiling
@@ -155,8 +162,19 @@ class NetworkedExperiment(BaseExperiment):
             # Calculate actual network transmission time by subtracting server processing time
             travel_time = (travel_end - travel_start) - server_time
 
+            # ===== ACCURACY TRACKING =====
+            # Extract predicted class from processed result and update accuracy
+            if processed_result and isinstance(processed_result, dict) and "class_name" in processed_result:
+                predicted_class = processed_result["class_name"]
+                if isinstance(class_idx, (int, torch.Tensor)):
+                    true_class_idx = int(class_idx.item() if torch.is_tensor(class_idx) else class_idx)
+                    self._update_accuracy(predicted_class, true_class_idx)
+                    logger.debug(f"Updated accuracy: predicted='{predicted_class}', true_idx={true_class_idx}")
+
             # ===== RESULT VISUALIZATION (OPTIONAL) =====
-            if output_dir and self.config.get("default", {}).get("save_layer_images"):
+            save_enabled = self.config.get("default", {}).get("save_layer_images", False)
+            
+            if output_dir and save_enabled:
                 self._save_intermediate_results(
                     processed_result,
                     original_image,
@@ -207,6 +225,16 @@ class NetworkedExperiment(BaseExperiment):
         split_dir = None
         if self.paths and self.paths.images_dir:
             split_dir = self.paths.images_dir / f"split_{split_layer}"
+            
+            # Clear existing images from previous runs to avoid accumulation
+            if split_dir.exists():
+                existing_files = list(split_dir.glob("*.jpg"))
+                if existing_files:
+                    logger.info(f"Clearing {len(existing_files)} existing images from {split_dir}")
+                    for file in existing_files:
+                        file.unlink()
+                    logger.info(f"Cleared {len(existing_files)} existing images")
+            
             split_dir.mkdir(exist_ok=True)
             logger.info(f"Saving split layer images to {split_dir}")
         else:

@@ -64,126 +64,6 @@ class DecompressionError(CompressionError):
     pass
 
 
-class DataCompression:
-    """Handles tensor compression and decompression to minimize network transmission overhead."""
-
-    def __init__(self, config: Dict[str, Any]) -> None:
-        """Initialize compression handler with configuration for optimal tensor transmission."""
-        self.config = config
-        if BLOSC2_AVAILABLE:
-            # Configure optimal tensor compression parameters
-            self._filter = blosc2.Filter.SHUFFLE
-            self._codec = blosc2.Codec.ZSTD
-
-            # Override with user-specified filter if valid
-            if "filter" in self.config:
-                try:
-                    self._filter = blosc2.Filter[self.config["filter"]]
-                except (KeyError, AttributeError):
-                    logger.warning(
-                        f"Invalid blosc2 filter: {self.config['filter']}, using SHUFFLE"
-                    )
-
-            # Override with user-specified codec if valid
-            if "codec" in self.config:
-                try:
-                    self._codec = blosc2.Codec[self.config["codec"]]
-                except (KeyError, AttributeError):
-                    logger.warning(
-                        f"Invalid blosc2 codec: {self.config['codec']}, using ZSTD"
-                    )
-
-            if "clevel" not in self.config:
-                self.config["clevel"] = 3  # Default compression level
-
-    def compress_data(self, data: Any) -> Tuple[bytes, int]:
-        """
-        Compress tensor data for efficient network transmission.
-
-        === TENSOR SHARING PIPELINE - STAGE 1: COMPRESSION ===
-        Serializes and compresses tensors before network transmission to reduce bandwidth
-        requirements. This method is critical for efficient tensor sharing between devices.
-        """
-        try:
-            # First serialize the tensor data structure using pickle
-            serialized_data = pickle.dumps(data, protocol=HIGHEST_PROTOCOL)
-
-            # Apply compression algorithm based on available libraries
-            if BLOSC2_AVAILABLE:
-                compressed_data = blosc2.compress(
-                    serialized_data,
-                    clevel=self.config["clevel"],
-                    filter=self._filter,
-                    codec=self._codec,
-                )
-            else:
-                compressed_data = zlib.compress(
-                    serialized_data, level=self.config["clevel"]
-                )
-
-            return compressed_data, len(compressed_data)
-        except Exception as e:
-            logger.error(f"Tensor compression failed: {e}")
-            raise CompressionError(f"Failed to compress tensor data: {e}")
-
-    def decompress_data(self, compressed_data: bytes) -> Any:
-        """
-        Decompress received tensor data from network transmission.
-
-        === TENSOR SHARING PIPELINE - STAGE 3: DECOMPRESSION ===
-        Decompresses and deserializes tensor data received from the network,
-        recovering the original tensor structure for computational processing.
-        """
-        try:
-            # Apply decompression algorithm based on available libraries
-            if BLOSC2_AVAILABLE:
-                decompressed = blosc2.decompress(compressed_data)
-            else:
-                decompressed = zlib.decompress(compressed_data)
-
-            # Deserialize data back to tensor structure
-            return pickle.loads(decompressed)
-        except Exception as e:
-            logger.error(f"Tensor decompression failed: {e}")
-            raise DecompressionError(f"Failed to decompress tensor data: {e}")
-
-    def receive_full_message(self, conn: socket.socket, expected_length: int) -> bytes:
-        """
-        Receive a complete tensor data message of expected length from a socket.
-
-        === TENSOR SHARING PIPELINE - STAGE 2: DATA RECEPTION ===
-        Handles fragmentation of large tensors by receiving in chunks until the complete
-        tensor is received or a connection error occurs.
-        """
-        data = bytearray()
-        received = 0
-
-        while received < expected_length:
-            try:
-                remaining = expected_length - received
-                chunk = conn.recv(min(BUFFER_SIZE, remaining))
-
-                if not chunk:
-                    logger.error(
-                        f"Connection closed while receiving tensor data ({received}/{expected_length} bytes received)"
-                    )
-                    raise NetworkError("Connection closed while receiving tensor data")
-
-                data.extend(chunk)
-                received += len(chunk)
-
-            except socket.timeout:
-                logger.error("Socket timed out while receiving tensor data")
-                raise NetworkError("Socket timed out while receiving tensor data")
-            except ConnectionError as e:
-                logger.error(f"Connection error while receiving tensor data: {e}")
-                raise NetworkError(f"Connection error: {e}")
-            except Exception as e:
-                logger.error(f"Error receiving tensor data: {e}")
-                raise NetworkError(f"Error receiving tensor data: {e}")
-
-        return bytes(data)
-
 
 class SplitComputeClient:
     """Manages client-side network operations for distributed tensor computation."""
@@ -196,11 +76,17 @@ class SplitComputeClient:
         self.socket = None
         self.connected = False
 
-        # Initialize tensor compression with configuration settings
-        compression_config = self.config.get(
-            "compression", {"clevel": 3, "filter": "SHUFFLE", "codec": "ZSTD"}
-        )
-        self.compressor = DataCompression(compression_config)
+        # Initialize encrypted tensor compression with configuration settings
+        # Extract encryption key from config if provided
+        encryption_key = None
+        encryption_config = self.config.get("encryption", {})
+        if encryption_config.get("enabled", False) and "test_key" in encryption_config:
+            # Convert test key string to bytes (pad or truncate to 32 bytes)
+            test_key = encryption_config["test_key"]
+            encryption_key = (test_key.encode() * 8)[:32]  # Ensure exactly 32 bytes
+        
+        from .compression import EncryptedDataCompression
+        self.compressor = EncryptedDataCompression(self.config, encryption_key=encryption_key)
 
     def connect(self) -> bool:
         """

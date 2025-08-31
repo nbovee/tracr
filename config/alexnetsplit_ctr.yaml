@@ -1,4 +1,4 @@
-# config/alexnetsplit.yaml
+# config/alexnetsplit_ctr.yaml
 
 # ================================================================
 # DEFAULT CONFIGURATIONS
@@ -31,7 +31,7 @@ model:
   depth: 2
   flush_buffer_size: 100
   warmup_iterations: 10
-  log_file: logs/alexnetsplit.log
+  log_file: logs/alexnetsplit_ctr.log
 
 # ================================================================
 # DATASET CONFIGURATIONS
@@ -62,10 +62,10 @@ compression:
   codec: ZSTD
 
 # ================================================================
-# ENCRYPTION CONFIGURATIONS
+# ENCRYPTION CONFIGURATIONS - AES-CTR MODE
 # ================================================================
 encryption:
-  enabled: false
-  algorithm: AES-CBC
+  enabled: true
+  algorithm: AES-CTR  # Using AES-CTR instead of AES-CBC
   key_size: 256
-  test_key: "12345678921234597890123456789012"
+  test_key: "12345678921234597890123456789012" 
