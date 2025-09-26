@@ -2,6 +2,8 @@
 #    uv pip compile pyproject.toml -o requirements.txt --no-deps --extra cpu --extra full
 blosc2==2.7.1
     # via tracr (pyproject.toml)
+cryptography==46.0.1
+    # via tracr (pyproject.toml)
 loguru==0.7.2
     # via tracr (pyproject.toml)
 pandas==2.2.3
