@@ -25,7 +25,7 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api import ( # noqa: E402
+from src.api import (  # noqa: E402
     DeviceManager,
     ExperimentManager,
     DeviceType,
@@ -33,8 +33,8 @@ from src.api import ( # noqa: E402
     shutdown_logging_server,
     read_yaml_file,
 )
-from src.api.network import EncryptedDataCompression
-from src.api.network.protocols import ( # noqa: E402
+from src.api.network import DataCompression, EncryptedDataCompression # noqa: E402
+from src.api.network.protocols import (  # noqa: E402
     LENGTH_PREFIX_SIZE,
     ACK_MESSAGE,
     SERVER_COMPRESSION_SETTINGS,
@@ -158,7 +158,7 @@ class Server:
         # Create config structure for EncryptedDataCompression
         compression_config = {
             "compression": SERVER_COMPRESSION_SETTINGS,
-            "encryption": {"enabled": False}  # Default to no encryption for server
+            "encryption": {"enabled": False},  # Default to no encryption for server
         }
         self.compress_data = EncryptedDataCompression(compression_config)
         logger.debug("Initialized compression with minimal settings")
@@ -609,9 +609,13 @@ class Server:
             encryption_key = (test_key.encode() * 8)[:32]  # Ensure exactly 32 bytes
 
         if "compression" in config or "encryption" in config:
-            logger.debug(f"Updating compression settings: {config.get('compression', 'default')}")
+            logger.debug(
+                f"Updating compression settings: {config.get('compression', 'default')}"
+            )
             logger.debug(f"Updating encryption settings: {encryption_config}")
-            self.compress_data = EncryptedDataCompression(config, encryption_key=encryption_key)
+            self.compress_data = EncryptedDataCompression(
+                config, encryption_key=encryption_key
+            )
         else:
             logger.warning(
                 "No compression or encryption settings in config, keeping minimal settings"

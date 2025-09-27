@@ -65,7 +65,6 @@ class DecompressionError(CompressionError):
     pass
 
 
-
 class SplitComputeClient:
     """Manages client-side network operations for distributed tensor computation."""
 
@@ -87,7 +86,9 @@ class SplitComputeClient:
                 test_key = encryption_config["test_key"]
                 encryption_key = (test_key.encode() * 8)[:32]
 
-            self.compressor = EncryptedDataCompression(self.config, encryption_key=encryption_key)
+            self.compressor = EncryptedDataCompression(
+                self.config, encryption_key=encryption_key
+            )
         else:
             self.compressor = DataCompression(compression_config)
 

@@ -1,7 +1,7 @@
 """Core experiment infrastructure for split computing"""
 
 import logging
-import sys # noqa: F401
+import sys  # noqa: F401
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -89,7 +89,7 @@ class BaseExperiment(ExperimentInterface):
 
         # Initialize timing and metrics data structures
         self.layer_timing_data = {}
-        
+
         # Initialize accuracy tracking
         self.total_predictions = 0
         self.correct_predictions = 0
@@ -315,13 +315,13 @@ class BaseExperiment(ExperimentInterface):
 
     def _update_accuracy(self, predicted_class: str, true_class_idx: int) -> None:
         """Update accuracy tracking with a new prediction.
-        
+
         Args:
             predicted_class: The predicted class name from the model.
             true_class_idx: The ground truth class index.
         """
         self.total_predictions += 1
-        
+
         # Get true class name from index
         class_names = self._load_class_names()
         if 0 <= true_class_idx < len(class_names):
@@ -330,10 +330,12 @@ class BaseExperiment(ExperimentInterface):
                 self.correct_predictions += 1
                 logger.debug(f"✅ Correct prediction: {predicted_class}")
             else:
-                logger.debug(f"❌ Incorrect prediction: {predicted_class} (true: {true_class})")
+                logger.debug(
+                    f"❌ Incorrect prediction: {predicted_class} (true: {true_class})"
+                )
         else:
             logger.warning(f"Invalid true class index: {true_class_idx}")
-    
+
     def _get_accuracy(self) -> float:
         """Calculate current accuracy percentage."""
         if self.total_predictions == 0:
@@ -356,7 +358,7 @@ class BaseExperiment(ExperimentInterface):
             # battery_energy: Energy consumption in mWh (if available).
         """
         accuracy = self._get_accuracy()
-        
+
         logger.info(
             "\n"
             "==================================================\n"

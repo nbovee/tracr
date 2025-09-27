@@ -14,11 +14,11 @@ project_root = os.path.dirname(
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from src.experiment_design.datasets.imagenet import (   # noqa: E402
+from src.experiment_design.datasets.imagenet import (  # noqa: E402
     ImageNetDataset,
     load_imagenet_dataset,
 )
-from src.experiment_design.datasets.core.exceptions import DatasetPathError   # noqa: E402
+from src.experiment_design.datasets.core.exceptions import DatasetPathError  # noqa: E402
 
 
 # Constants for test data
@@ -38,7 +38,11 @@ def imagenet_dataset():
         max_samples=10,  # Limit samples for faster tests
     )
 
-@pytest.mark.skipif(not Path(IMAGENET_DIR).exists(), reason="Imagenet directory not found; relevant tests skipped.")
+
+@pytest.mark.skipif(
+    not Path(IMAGENET_DIR).exists(),
+    reason="Imagenet directory not found; relevant tests skipped.",
+)
 class TestImageNetDataset:
     """Test suite for ImageNetDataset class."""
 

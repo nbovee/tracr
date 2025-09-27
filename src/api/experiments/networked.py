@@ -75,7 +75,9 @@ class NetworkedExperiment(BaseExperiment):
                 logger.info(
                     f"Initializing encrypted data compression with {compression_config=}, {encryption_config=}"
                 )
-                self.compress_data = EncryptedDataCompression(self.config, encryption_key=encryption_key)
+                self.compress_data = EncryptedDataCompression(
+                    self.config, encryption_key=encryption_key
+                )
             else:
                 logger.info(
                     f"Initializing unencrypted data compression with {compression_config=}"
@@ -172,12 +174,20 @@ class NetworkedExperiment(BaseExperiment):
 
             # ===== ACCURACY TRACKING =====
             # Extract predicted class from processed result and update accuracy
-            if processed_result and isinstance(processed_result, dict) and "class_name" in processed_result:
+            if (
+                processed_result
+                and isinstance(processed_result, dict)
+                and "class_name" in processed_result
+            ):
                 predicted_class = processed_result["class_name"]
                 if isinstance(class_idx, (int, torch.Tensor)):
-                    true_class_idx = int(class_idx.item() if torch.is_tensor(class_idx) else class_idx)
+                    true_class_idx = int(
+                        class_idx.item() if torch.is_tensor(class_idx) else class_idx
+                    )
                     self._update_accuracy(predicted_class, true_class_idx)
-                    logger.debug(f"Updated accuracy: predicted='{predicted_class}', true_idx={true_class_idx}")
+                    logger.debug(
+                        f"Updated accuracy: predicted='{predicted_class}', true_idx={true_class_idx}"
+                    )
 
             # ===== RESULT VISUALIZATION (OPTIONAL) =====
             if output_dir and self.config.get("default", {}).get("save_layer_images"):
@@ -231,16 +241,18 @@ class NetworkedExperiment(BaseExperiment):
         split_dir = None
         if self.paths and self.paths.images_dir:
             split_dir = self.paths.images_dir / f"split_{split_layer}"
-            
+
             # Clear existing images from previous runs to avoid accumulation
             if split_dir.exists():
                 existing_files = list(split_dir.glob("*.jpg"))
                 if existing_files:
-                    logger.info(f"Clearing {len(existing_files)} existing images from {split_dir}")
+                    logger.info(
+                        f"Clearing {len(existing_files)} existing images from {split_dir}"
+                    )
                     for file in existing_files:
                         file.unlink()
                     logger.info(f"Cleared {len(existing_files)} existing images")
-            
+
             split_dir.mkdir(exist_ok=True)
             logger.info(f"Saving split layer images to {split_dir}")
         else:

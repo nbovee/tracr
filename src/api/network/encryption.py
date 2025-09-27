@@ -18,16 +18,19 @@ logger = logging.getLogger("split_computing_logger")
 
 class EncryptionError(Exception):
     """Base exception for encryption-related errors."""
+
     pass
 
 
 class DecryptionError(EncryptionError):
     """Exception raised when tensor decryption fails."""
+
     pass
 
 
 class KeyManagementError(EncryptionError):
     """Exception raised when key management operations fail."""
+
     pass
 
 
@@ -36,21 +39,21 @@ class TensorEncryption:
     Handles AES-CBC and AES-CTR encryption and decryption of tensor data for secure transmission.
 
     This class provides AES-CBC (Advanced Encryption Standard - Cipher Block Chaining) and
-    AES-CTR (Counter Mode) encryption for securing tensor data during transmission between 
+    AES-CTR (Counter Mode) encryption for securing tensor data during transmission between
     client and server in split computing architectures.
 
     AES-CBC provides confidentiality but not authentication. Each encryption operation
     uses a randomly generated Initialization Vector (IV) to ensure semantic security.
-    
+
     AES-CTR provides confidentiality with no padding overhead and potential for parallel
     processing. Each encryption operation uses a unique nonce + counter combination.
     """
 
     def __init__(
-        self, 
-        encryption_key: Optional[bytes] = None, 
+        self,
+        encryption_key: Optional[bytes] = None,
         salt: Optional[bytes] = None,
-        mode: str = "CBC"
+        mode: str = "CBC",
     ):
         """
         Initialize the AES encryption module with a key and mode.
@@ -65,11 +68,11 @@ class TensorEncryption:
         self.encryption_ready = True
         self.block_size = 128  # AES block size in bits (16 bytes)
         self.mode = mode.upper()  # Normalize mode to uppercase
-        
+
         # Validate mode
         if self.mode not in ["CBC", "CTR"]:
             raise ValueError(f"Unsupported encryption mode: {mode}. Use 'CBC' or 'CTR'")
-        
+
         # Initialize counter for CTR mode
         self.counter = 0
 
@@ -77,7 +80,9 @@ class TensorEncryption:
         if encryption_key is None:
             # Generate a secure random key for AES-256
             self.encryption_key = os.urandom(32)  # 256-bit key
-            logger.info(f"Generated new random AES-256 encryption key for {self.mode} mode")
+            logger.info(
+                f"Generated new random AES-256 encryption key for {self.mode} mode"
+            )
         else:
             # Validate key length
             if len(encryption_key) != 32:
@@ -121,10 +126,10 @@ class TensorEncryption:
                 salt=salt,
                 iterations=100000,  # High iteration count for security
             )
-            derived_key = kdf.derive(password.encode('utf-8'))
-            
+            derived_key = kdf.derive(password.encode("utf-8"))
+
             return cls(encryption_key=derived_key, salt=salt, mode=mode)
-            
+
         except Exception as e:
             logger.error(f"Key derivation failed: {e}")
             raise KeyManagementError(f"Failed to derive key from password: {e}")
@@ -153,10 +158,7 @@ class TensorEncryption:
             iv = os.urandom(16)  # AES block size (128 bits = 16 bytes)
 
             # Create AES cipher in CBC mode
-            cipher = Cipher(
-                algorithms.AES(self.encryption_key),
-                modes.CBC(iv)
-            )
+            cipher = Cipher(algorithms.AES(self.encryption_key), modes.CBC(iv))
             encryptor = cipher.encryptor()
 
             # Apply PKCS7 padding to make data multiple of block size
@@ -167,7 +169,9 @@ class TensorEncryption:
             # Encrypt the padded data
             encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
 
-            logger.debug(f"AES-CBC: Encrypted {len(data)} bytes to {len(encrypted_data)} bytes")
+            logger.debug(
+                f"AES-CBC: Encrypted {len(data)} bytes to {len(encrypted_data)} bytes"
+            )
             return encrypted_data, iv
 
         except Exception as e:
@@ -199,10 +203,7 @@ class TensorEncryption:
                 raise DecryptionError("Invalid IV length, expected 16 bytes")
 
             # Create AES cipher in CBC mode with the provided IV
-            cipher = Cipher(
-                algorithms.AES(self.encryption_key),
-                modes.CBC(iv)
-            )
+            cipher = Cipher(algorithms.AES(self.encryption_key), modes.CBC(iv))
             decryptor = cipher.decryptor()
 
             # Decrypt the data
@@ -213,7 +214,9 @@ class TensorEncryption:
             data = unpadder.update(padded_data)
             data += unpadder.finalize()
 
-            logger.debug(f"AES-CBC: Decrypted {len(encrypted_data)} bytes to {len(data)} bytes")
+            logger.debug(
+                f"AES-CBC: Decrypted {len(encrypted_data)} bytes to {len(data)} bytes"
+            )
             return data
 
         except Exception as e:
@@ -244,21 +247,20 @@ class TensorEncryption:
             nonce = os.urandom(12)
             counter_bytes = self.counter.to_bytes(4, "big")
             iv = nonce + counter_bytes
-            
+
             # Create AES cipher in CTR mode (no padding needed)
-            cipher = Cipher(
-                algorithms.AES(self.encryption_key),
-                modes.CTR(iv)
-            )
+            cipher = Cipher(algorithms.AES(self.encryption_key), modes.CTR(iv))
             encryptor = cipher.encryptor()
 
             # Encrypt the data (no padding needed for CTR)
             encrypted_data = encryptor.update(data) + encryptor.finalize()
-            
+
             # Increment counter for next use
             self.counter += 1
 
-            logger.debug(f"AES-CTR: Encrypted {len(data)} bytes to {len(encrypted_data)} bytes")
+            logger.debug(
+                f"AES-CTR: Encrypted {len(data)} bytes to {len(encrypted_data)} bytes"
+            )
             return encrypted_data, iv
 
         except Exception as e:
@@ -289,16 +291,15 @@ class TensorEncryption:
                 raise DecryptionError("Invalid IV length, expected 16 bytes")
 
             # Create AES cipher in CTR mode with the provided IV
-            cipher = Cipher(
-                algorithms.AES(self.encryption_key),
-                modes.CTR(iv)
-            )
+            cipher = Cipher(algorithms.AES(self.encryption_key), modes.CTR(iv))
             decryptor = cipher.decryptor()
 
             # Decrypt the data (no padding removal needed for CTR)
             data = decryptor.update(encrypted_data) + decryptor.finalize()
 
-            logger.debug(f"AES-CTR: Decrypted {len(encrypted_data)} bytes to {len(data)} bytes")
+            logger.debug(
+                f"AES-CTR: Decrypted {len(encrypted_data)} bytes to {len(data)} bytes"
+            )
             return data
 
         except Exception as e:
@@ -414,10 +415,12 @@ class KeyManager:
             KeyManagementError: If key loading fails
         """
         try:
-            with open(key_path, 'rb') as key_file:
+            with open(key_path, "rb") as key_file:
                 key = key_file.read()
                 if len(key) != 32:
-                    raise KeyManagementError(f"Invalid key length: {len(key)}, expected 32 bytes")
+                    raise KeyManagementError(
+                        f"Invalid key length: {len(key)}, expected 32 bytes"
+                    )
                 logger.info(f"Successfully loaded key from {key_path}")
                 return key
         except Exception as e:
@@ -437,7 +440,7 @@ class KeyManager:
         """
         try:
             os.makedirs(os.path.dirname(key_path), exist_ok=True)
-            with open(key_path, 'wb') as key_file:
+            with open(key_path, "wb") as key_file:
                 key_file.write(key)
             # Set restrictive permissions (owner read/write only)
             os.chmod(key_path, 0o600)

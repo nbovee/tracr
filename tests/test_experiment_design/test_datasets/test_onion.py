@@ -1,13 +1,13 @@
 """Tests for the Onion dataset implementation."""
 
 import os
-import sys # noqa: F401
+import sys  # noqa: F401
 import pytest
 from pathlib import Path
 import torch
 import torchvision.transforms as T
 from PIL import Image
-import numpy as np # noqa: F401
+import numpy as np  # noqa: F401
 
 # Fix the path to include the project root, not just the parent directory
 project_root = os.path.dirname(
@@ -34,7 +34,10 @@ def onion_dataset():
         max_samples=10,  # Limit samples for faster tests
     )
 
-@pytest.mark.skipif(not Path(ONION_DIR).exists(), reason="Directory not found, skipping dataset tests.")
+
+@pytest.mark.skipif(
+    not Path(ONION_DIR).exists(), reason="Directory not found, skipping dataset tests."
+)
 class TestOnionDataset:
     """Test suite for OnionDataset class."""
 

@@ -26,11 +26,13 @@ logger = logging.getLogger("split_computing_logger")
 
 class CompressionError(Exception):
     """Base exception for compression-related errors."""
+
     pass
 
 
 class DecompressionError(CompressionError):
     """Exception raised when decompression fails."""
+
     pass
 
 
@@ -88,7 +90,7 @@ class DataCompression:
                 clevel=self.config.clevel,
                 filter=self._filter,
                 codec=self._codec,
-                typesize=1, # avoids an alignment issue
+                typesize=1,  # avoids an alignment issue
             )
             return compressed_data, len(compressed_data)
         except Exception as e:
@@ -221,15 +223,17 @@ class DataCompression:
 class EncryptedDataCompression(DataCompression):
     """
     Handles tensor compression and encryption for secure network transmission.
-    
+
     This class combines compression and AES-CBC encryption to provide both
     bandwidth optimization and security for tensor data transmission in
     split computing scenarios.
-    
+
     Data flow: tensor → pickle → blosc2 → AES-CBC → network
     """
 
-    def __init__(self, config: Dict[str, Any], encryption_key: Optional[bytes] = None) -> None:
+    def __init__(
+        self, config: Dict[str, Any], encryption_key: Optional[bytes] = None
+    ) -> None:
         """
         Initialize encrypted compression with compression and encryption settings.
 
@@ -239,25 +243,27 @@ class EncryptedDataCompression(DataCompression):
         """
         # Initialize base compression
         super().__init__(config.get("compression", {}))
-        
+
         # Initialize encryption
         encryption_config = config.get("encryption", {})
-        
+
         if encryption_config.get("enabled", False):
             self.encryption_enabled = True
-            
+
             # Get encryption mode from config
             encryption_mode = encryption_config.get("algorithm", "AES-CBC")
             if encryption_mode == "AES-CTR":
                 mode = "CTR"
             else:
                 mode = "CBC"  # Default to CBC for backward compatibility
-            
+
             # Initialize encryption with provided key and mode
             self.encryptor = TensorEncryption(encryption_key=encryption_key, mode=mode)
-            
+
             logger.info(f"ENCRYPTION ENABLED: AES-256-{mode} initialized")
-            logger.info(f"Key fingerprint: {encryption_key[:8].hex() if encryption_key else 'auto-generated'}...")
+            logger.info(
+                f"Key fingerprint: {encryption_key[:8].hex() if encryption_key else 'auto-generated'}..."
+            )
             logger.info(f"Initialized encrypted data compression with AES-{mode}")
         else:
             self.encryption_enabled = False
@@ -272,7 +278,7 @@ class EncryptedDataCompression(DataCompression):
         === SECURE TENSOR SHARING - COMPRESSION + ENCRYPTION PHASE ===
         Process:
         1. Serialize tensor data with pickle
-        2. Compress with Blosc2 for bandwidth efficiency  
+        2. Compress with Blosc2 for bandwidth efficiency
         3. Encrypt with AES-CBC for security (if enabled)
         4. Return encrypted+compressed data with metadata
 
@@ -283,29 +289,35 @@ class EncryptedDataCompression(DataCompression):
         try:
             # First compress the data
             compressed_data, compressed_size = super().compress_data(data)
-            
+
             if not self.encryption_enabled or not self.encryptor:
                 # Return compressed data without encryption
-                logger.debug(f"COMPRESSION ONLY: {compressed_size} bytes (no encryption)")
+                logger.debug(
+                    f"COMPRESSION ONLY: {compressed_size} bytes (no encryption)"
+                )
                 return compressed_data, compressed_size
-            
+
             # Encrypt the compressed data
             encrypted_data, iv = self.encryptor.encrypt(compressed_data)
-            
+
             # Package encrypted data with IV for transmission
             # Format: [IV_LENGTH(4 bytes)][IV][ENCRYPTED_DATA]
             iv_length = len(iv).to_bytes(4, "big")
             packaged_data = iv_length + iv + encrypted_data
-            
+
             # Visible encryption logging
             encryption_mode = self.encryptor.get_mode()
-            logger.debug(f"ENCRYPTION: Compressed {compressed_size} bytes → Encrypted {len(packaged_data)} bytes")
+            logger.debug(
+                f"ENCRYPTION: Compressed {compressed_size} bytes → Encrypted {len(packaged_data)} bytes"
+            )
             logger.debug(f"IV: {iv.hex()[:16]}...")
             logger.debug(f"Encrypted data preview: {encrypted_data[:32].hex()}...")
-            logger.info(f"AES-{encryption_mode}: Encrypted tensor data: {compressed_size} → {len(packaged_data)} bytes")
-            
+            logger.info(
+                f"AES-{encryption_mode}: Encrypted tensor data: {compressed_size} → {len(packaged_data)} bytes"
+            )
+
             return packaged_data, len(packaged_data)
-            
+
         except Exception as e:
             logger.error(f"Encrypted compression failed: {e}")
             raise CompressionError(f"Failed to encrypt and compress tensor data: {e}")
@@ -330,43 +342,52 @@ class EncryptedDataCompression(DataCompression):
         try:
             if not self.encryption_enabled or not self.encryptor:
                 # Data is only compressed, not encrypted
-                logger.debug(f"DECOMPRESSION ONLY: {len(encrypted_compressed_data)} bytes (no encryption)")
+                logger.debug(
+                    f"DECOMPRESSION ONLY: {len(encrypted_compressed_data)} bytes (no encryption)"
+                )
                 return super().decompress_data(encrypted_compressed_data)
-            
+
             # Extract IV and encrypted data
             # Format: [IV_LENGTH(4 bytes)][IV][ENCRYPTED_DATA]
             iv_length = int.from_bytes(encrypted_compressed_data[:4], "big")
-            iv = encrypted_compressed_data[4:4+iv_length]
-            encrypted_data = encrypted_compressed_data[4+iv_length:]
-            
+            iv = encrypted_compressed_data[4 : 4 + iv_length]
+            encrypted_data = encrypted_compressed_data[4 + iv_length :]
+
             # Visible decryption logging
-            logger.debug(f"DECRYPTION: Received {len(encrypted_compressed_data)} encrypted bytes")
+            logger.debug(
+                f"DECRYPTION: Received {len(encrypted_compressed_data)} encrypted bytes"
+            )
             logger.debug(f"IV: {iv.hex()[:16]}...")
             logger.debug(f"Encrypted data preview: {encrypted_data[:32].hex()}...")
-            
+
             # Decrypt to get compressed data
             compressed_data = self.encryptor.decrypt(encrypted_data, iv)
-            
+
             # Show decryption result
             encryption_mode = self.encryptor.get_mode()
-            logger.debug(f"DECRYPTION: Decrypted to {len(compressed_data)} compressed bytes")
-            logger.info(f"AES-{encryption_mode}: Decrypted tensor data: {len(encrypted_data)} → {len(compressed_data)} bytes")
-            
+            logger.debug(
+                f"DECRYPTION: Decrypted to {len(compressed_data)} compressed bytes"
+            )
+            logger.info(
+                f"AES-{encryption_mode}: Decrypted tensor data: {len(encrypted_data)} → {len(compressed_data)} bytes"
+            )
+
             # Decompress to get original tensor data
             return super().decompress_data(compressed_data)
-            
+
         except (EncryptionError, DecryptionError) as e:
             logger.error(f"Decryption failed: {e}")
             raise DecompressionError(f"Failed to decrypt tensor data: {e}")
         except Exception as e:
             logger.error(f"Encrypted decompression failed: {e}")
-            raise DecompressionError(f"Failed to decrypt and decompress tensor data: {e}")
-
+            raise DecompressionError(
+                f"Failed to decrypt and decompress tensor data: {e}"
+            )
 
     def get_encryption_key(self) -> Optional[bytes]:
         """
         Get the encryption key for sharing between client and server.
-        
+
         Returns:
             The encryption key bytes if encryption is enabled, None otherwise
         """
@@ -377,7 +398,7 @@ class EncryptedDataCompression(DataCompression):
     def set_encryption_key(self, key: bytes) -> None:
         """
         Set a new encryption key (for key synchronization between client/server).
-        
+
         Args:
             key: 32-byte AES-256 encryption key
         """
