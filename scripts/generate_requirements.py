@@ -18,6 +18,7 @@ def generate_requirements_files():
     original_cwd = Path.cwd()
     try:
         import os
+
         os.chdir(project_root)
 
         # Configuration for different requirements files
@@ -25,32 +26,32 @@ def generate_requirements_files():
             {
                 "file": "requirements.txt",
                 "extras": ["cpu", "full"],
-                "description": "CPU version with full dependencies"
+                "description": "CPU version with full dependencies",
             },
             {
                 "file": "requirements-cu118.txt",
                 "extras": ["cu118", "full"],
-                "description": "CUDA 11.8 version with full dependencies"
+                "description": "CUDA 11.8 version with full dependencies",
             },
             {
                 "file": "requirements-cu121.txt",
                 "extras": ["cu121", "full"],
-                "description": "CUDA 12.1 version with full dependencies"
+                "description": "CUDA 12.1 version with full dependencies",
             },
             {
                 "file": "requirements-cu124.txt",
                 "extras": ["cu124", "full"],
-                "description": "CUDA 12.4 version with full dependencies"
+                "description": "CUDA 12.4 version with full dependencies",
             },
             {
                 "file": "requirements-cu126.txt",
                 "extras": ["cu126", "full"],
-                "description": "CUDA 12.6 version with full dependencies"
+                "description": "CUDA 12.6 version with full dependencies",
             },
             {
                 "file": "requirements-cu128.txt",
                 "extras": ["cu128", "full"],
-                "description": "CUDA 12.8 version with full dependencies"
+                "description": "CUDA 12.8 version with full dependencies",
             },
         ]
 
@@ -62,9 +63,13 @@ def generate_requirements_files():
 
         for config in configs:
             cmd = [
-                "uv", "pip", "compile", "pyproject.toml",
-                "-o", config["file"],
-                "--no-deps"
+                "uv",
+                "pip",
+                "compile",
+                "pyproject.toml",
+                "-o",
+                config["file"],
+                "--no-deps",
             ]
 
             # Add extra flags for each extra dependency
@@ -84,7 +89,9 @@ def generate_requirements_files():
 
             print("-" * 30)
 
-        print(f"\nSummary: {success_count}/{total_count} requirements files generated successfully")
+        print(
+            f"\nSummary: {success_count}/{total_count} requirements files generated successfully"
+        )
 
         if success_count == total_count:
             print("All requirements files generated successfully!")
@@ -119,6 +126,7 @@ def main():
         sys.exit(1)
 
     print("\nRequirements generation completed.")
+
 
 if __name__ == "__main__":
     main()
