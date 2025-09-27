@@ -34,7 +34,7 @@ def onion_dataset():
         max_samples=10,  # Limit samples for faster tests
     )
 
-
+@pytest.mark.skipif(not Path(ONION_DIR).exists(), reason="Directory not found, skipping dataset tests.")
 class TestOnionDataset:
     """Test suite for OnionDataset class."""
 

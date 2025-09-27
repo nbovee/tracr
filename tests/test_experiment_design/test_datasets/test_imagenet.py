@@ -38,7 +38,7 @@ def imagenet_dataset():
         max_samples=10,  # Limit samples for faster tests
     )
 
-
+@pytest.mark.skipif(not Path(IMAGENET_DIR).exists(), reason="Imagenet directory not found; relevant tests skipped.")
 class TestImageNetDataset:
     """Test suite for ImageNetDataset class."""
 
