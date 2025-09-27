@@ -256,13 +256,13 @@ class EncryptedDataCompression(DataCompression):
             # Initialize encryption with provided key and mode
             self.encryptor = TensorEncryption(encryption_key=encryption_key, mode=mode)
             
-            logger.info(f"🔐 ENCRYPTION ENABLED: AES-256-{mode} initialized")
-            logger.info(f"🔐 Key fingerprint: {encryption_key[:8].hex() if encryption_key else 'auto-generated'}...")
+            logger.info(f"ENCRYPTION ENABLED: AES-256-{mode} initialized")
+            logger.info(f"Key fingerprint: {encryption_key[:8].hex() if encryption_key else 'auto-generated'}...")
             logger.info(f"Initialized encrypted data compression with AES-{mode}")
         else:
             self.encryption_enabled = False
             self.encryptor = None
-            logger.info("❌ ENCRYPTION DISABLED: Using compression only")
+            logger.info("ENCRYPTION DISABLED: Using compression only")
             logger.info("Initialized data compression without encryption")
 
     def compress_data(self, data: Any) -> Tuple[bytes, int]:
@@ -286,7 +286,7 @@ class EncryptedDataCompression(DataCompression):
             
             if not self.encryption_enabled or not self.encryptor:
                 # Return compressed data without encryption
-                logger.debug(f"📦 COMPRESSION ONLY: {compressed_size} bytes (no encryption)")
+                logger.debug(f"COMPRESSION ONLY: {compressed_size} bytes (no encryption)")
                 return compressed_data, compressed_size
             
             # Encrypt the compressed data
@@ -299,10 +299,10 @@ class EncryptedDataCompression(DataCompression):
             
             # Visible encryption logging
             encryption_mode = self.encryptor.get_mode()
-            logger.debug(f"🔒 ENCRYPTION: Compressed {compressed_size} bytes → Encrypted {len(packaged_data)} bytes")
-            logger.debug(f"🔒 IV: {iv.hex()[:16]}...")
-            logger.debug(f"🔒 Encrypted data preview: {encrypted_data[:32].hex()}...")
-            logger.info(f"🔒 AES-{encryption_mode}: Encrypted tensor data: {compressed_size} → {len(packaged_data)} bytes")
+            logger.debug(f"ENCRYPTION: Compressed {compressed_size} bytes → Encrypted {len(packaged_data)} bytes")
+            logger.debug(f"IV: {iv.hex()[:16]}...")
+            logger.debug(f"Encrypted data preview: {encrypted_data[:32].hex()}...")
+            logger.info(f"AES-{encryption_mode}: Encrypted tensor data: {compressed_size} → {len(packaged_data)} bytes")
             
             return packaged_data, len(packaged_data)
             
@@ -330,7 +330,7 @@ class EncryptedDataCompression(DataCompression):
         try:
             if not self.encryption_enabled or not self.encryptor:
                 # Data is only compressed, not encrypted
-                logger.debug(f"📦 DECOMPRESSION ONLY: {len(encrypted_compressed_data)} bytes (no encryption)")
+                logger.debug(f"DECOMPRESSION ONLY: {len(encrypted_compressed_data)} bytes (no encryption)")
                 return super().decompress_data(encrypted_compressed_data)
             
             # Extract IV and encrypted data
@@ -340,17 +340,17 @@ class EncryptedDataCompression(DataCompression):
             encrypted_data = encrypted_compressed_data[4+iv_length:]
             
             # Visible decryption logging
-            logger.debug(f"🔓 DECRYPTION: Received {len(encrypted_compressed_data)} encrypted bytes")
-            logger.debug(f"🔓 IV: {iv.hex()[:16]}...")
-            logger.debug(f"🔓 Encrypted data preview: {encrypted_data[:32].hex()}...")
+            logger.debug(f"DECRYPTION: Received {len(encrypted_compressed_data)} encrypted bytes")
+            logger.debug(f"IV: {iv.hex()[:16]}...")
+            logger.debug(f"Encrypted data preview: {encrypted_data[:32].hex()}...")
             
             # Decrypt to get compressed data
             compressed_data = self.encryptor.decrypt(encrypted_data, iv)
             
             # Show decryption result
             encryption_mode = self.encryptor.get_mode()
-            logger.debug(f"🔓 DECRYPTION: Decrypted to {len(compressed_data)} compressed bytes")
-            logger.info(f"🔓 AES-{encryption_mode}: Decrypted tensor data: {len(encrypted_data)} → {len(compressed_data)} bytes")
+            logger.debug(f"DECRYPTION: Decrypted to {len(compressed_data)} compressed bytes")
+            logger.info(f"AES-{encryption_mode}: Decrypted tensor data: {len(encrypted_data)} → {len(compressed_data)} bytes")
             
             # Decompress to get original tensor data
             return super().decompress_data(compressed_data)
