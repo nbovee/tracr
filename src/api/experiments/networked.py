@@ -180,9 +180,7 @@ class NetworkedExperiment(BaseExperiment):
                     logger.debug(f"Updated accuracy: predicted='{predicted_class}', true_idx={true_class_idx}")
 
             # ===== RESULT VISUALIZATION (OPTIONAL) =====
-            save_enabled = self.config.get("default", {}).get("save_layer_images", False)
-            
-            if output_dir and save_enabled:
+            if output_dir and self.config.get("default", {}).get("save_layer_images"):
                 self._save_intermediate_results(
                     processed_result,
                     original_image,
