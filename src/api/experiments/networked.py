@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Tuple, Optional
 import torch
 from tqdm import tqdm
 
-from ..network import create_network_client, EncryptedDataCompression
+from ..network import create_network_client, DataCompression, EncryptedDataCompression
 from .base import BaseExperiment, ProcessingTimes
 
 logger = logging.getLogger("split_computing_logger")
@@ -60,23 +60,31 @@ class NetworkedExperiment(BaseExperiment):
             logger.error(f"Failed to create network client: {e}", exc_info=True)
             raise
 
-        # Initialize encrypted data compression for secure tensor transmission over the network
+        # Initialize data compression for tensor transmission over the network
         try:
-            # Extract encryption key from config if provided
-            encryption_key = None
             encryption_config = self.config.get("encryption", {})
-            if encryption_config.get("enabled", False) and "test_key" in encryption_config:
-                # Convert test key string to bytes (pad or truncate to 32 bytes)
-                test_key = encryption_config["test_key"]
-                encryption_key = (test_key.encode() * 8)[:32]  # Ensure exactly 32 bytes
-            
-            logger.info(
-                f"Initializing encrypted data compression with config: compression={self.config.get('compression', {})}, encryption={encryption_config}"
-            )
-            self.compress_data = EncryptedDataCompression(self.config, encryption_key=encryption_key)
-            logger.info("Encrypted data compression initialized successfully")
+            compression_config = self.config.get("compression", {})
+
+            if encryption_config.get("enabled", False):
+                encryption_key = None
+                if "test_key" in encryption_config:
+                    # Convert test key string to bytes (pad or truncate to 32 bytes)
+                    test_key = encryption_config["test_key"]
+                    encryption_key = (test_key.encode() * 8)[:32]
+
+                logger.info(
+                    f"Initializing encrypted data compression with {compression_config=}, {encryption_config=}"
+                )
+                self.compress_data = EncryptedDataCompression(self.config, encryption_key=encryption_key)
+            else:
+                logger.info(
+                    f"Initializing unencrypted data compression with {compression_config=}"
+                )
+                self.compress_data = DataCompression(compression_config)
+            logger.info("Data compression initialized successfully")
+
         except Exception as e:
-            logger.error(f"Failed to initialize encrypted data compression: {e}", exc_info=True)
+            logger.error(f"Failed to initialize data compression: {e}", exc_info=True)
             raise
 
         # Check if we can monitor battery usage for energy profiling
