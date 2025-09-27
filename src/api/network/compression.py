@@ -8,7 +8,7 @@ to optimize network transmission in distributed computation environments.
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple, cast
 
-import blosc2  # type: ignore
+import blosc2
 import logging
 import pickle
 import socket
@@ -218,7 +218,7 @@ class DataCompression:
             raise NetworkError(f"Failed to send tensor result: {e}")
 
 
-class EncryptedDataCompression:
+class EncryptedDataCompression(DataCompression):
     """
     Handles tensor compression and encryption for secure network transmission.
     
@@ -232,13 +232,13 @@ class EncryptedDataCompression:
     def __init__(self, config: Dict[str, Any], encryption_key: Optional[bytes] = None) -> None:
         """
         Initialize encrypted compression with compression and encryption settings.
-        
+
         Args:
             config: Configuration dictionary containing compression and encryption settings
             encryption_key: Optional pre-shared encryption key. If None, generates a new key.
         """
         # Initialize base compression
-        self.compressor = DataCompression(config.get("compression", {}))
+        super().__init__(config.get("compression", {}))
         
         # Initialize encryption
         encryption_config = config.get("encryption", {})
@@ -282,7 +282,7 @@ class EncryptedDataCompression:
         """
         try:
             # First compress the data
-            compressed_data, compressed_size = self.compressor.compress_data(data)
+            compressed_data, compressed_size = super().compress_data(data)
             
             if not self.encryption_enabled or not self.encryptor:
                 # Return compressed data without encryption
@@ -331,7 +331,7 @@ class EncryptedDataCompression:
             if not self.encryption_enabled or not self.encryptor:
                 # Data is only compressed, not encrypted
                 print(f"📦 DECOMPRESSION ONLY: {len(encrypted_compressed_data)} bytes (no encryption)")
-                return self.compressor.decompress_data(encrypted_compressed_data)
+                return super().decompress_data(encrypted_compressed_data)
             
             # Extract IV and encrypted data
             # Format: [IV_LENGTH(4 bytes)][IV][ENCRYPTED_DATA]
@@ -353,7 +353,7 @@ class EncryptedDataCompression:
             logger.info(f"🔓 AES-{encryption_mode}: Decrypted tensor data: {len(encrypted_data)} → {len(compressed_data)} bytes")
             
             # Decompress to get original tensor data
-            return self.compressor.decompress_data(compressed_data)
+            return super().decompress_data(compressed_data)
             
         except (EncryptionError, DecryptionError) as e:
             logger.error(f"Decryption failed: {e}")
@@ -362,14 +362,6 @@ class EncryptedDataCompression:
             logger.error(f"Encrypted decompression failed: {e}")
             raise DecompressionError(f"Failed to decrypt and decompress tensor data: {e}")
 
-    def receive_full_message(self, conn: socket.socket, expected_length: int) -> bytes:
-        """
-        Receive complete encrypted tensor data from network connection.
-        
-        Delegates to the base compressor's receive functionality since
-        the encryption/decryption happens at a higher level.
-        """
-        return self.compressor.receive_full_message(conn, expected_length)
 
     def get_encryption_key(self) -> Optional[bytes]:
         """
