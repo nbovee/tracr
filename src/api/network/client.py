@@ -19,6 +19,7 @@ from .protocols import (
     DEFAULT_COMPRESSION_SETTINGS,
     DEFAULT_PORT,
 )
+from .compression import DataCompression, EncryptedDataCompression
 
 try:
     import blosc2
@@ -76,17 +77,19 @@ class SplitComputeClient:
         self.socket = None
         self.connected = False
 
-        # Initialize encrypted tensor compression with configuration settings
-        # Extract encryption key from config if provided
-        encryption_key = None
         encryption_config = self.config.get("encryption", {})
-        if encryption_config.get("enabled", False) and "test_key" in encryption_config:
-            # Convert test key string to bytes (pad or truncate to 32 bytes)
-            test_key = encryption_config["test_key"]
-            encryption_key = (test_key.encode() * 8)[:32]  # Ensure exactly 32 bytes
-        
-        from .compression import EncryptedDataCompression
-        self.compressor = EncryptedDataCompression(self.config, encryption_key=encryption_key)
+        compression_config = self.config.get("compression", {})
+
+        if encryption_config.get("enabled", False):
+            encryption_key = None
+            if "test_key" in encryption_config:
+                # Convert test key string to bytes (pad or truncate to 32 bytes)
+                test_key = encryption_config["test_key"]
+                encryption_key = (test_key.encode() * 8)[:32]
+
+            self.compressor = EncryptedDataCompression(self.config, encryption_key=encryption_key)
+        else:
+            self.compressor = DataCompression(compression_config)
 
     def connect(self) -> bool:
         """
