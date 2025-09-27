@@ -68,7 +68,7 @@ class DataCompression:
         self._filter = blosc2.Filter[self.config.filter]
         self._codec = blosc2.Codec[self.config.codec]
 
-    def compress_data(self, data: Any) -> Tuple[bytes, int]:
+    def compress_data(self, data: Any) -> Tuple[str | bytes, int]:
         """
         Compress tensor data for network transmission using Blosc2.
 
@@ -83,13 +83,12 @@ class DataCompression:
             # Serialize tensor to bytes using highest available pickle protocol
             serialized_data = pickle.dumps(data, protocol=HIGHEST_PROTOCOL)
 
-            # Apply Blosc2 compression with typesize=1 to avoid alignment issues
             compressed_data = blosc2.compress(
                 serialized_data,
                 clevel=self.config.clevel,
                 filter=self._filter,
                 codec=self._codec,
-                typesize=1,
+                typesize=1, # avoids an alignment issue
             )
             return compressed_data, len(compressed_data)
         except Exception as e:
