@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, Union, ClassVar
 import numpy as np
 import torch
 from PIL import Image
-from torchinfo import summary  # type: ignore
+from torchinfo import summary
 
 from src.interface import ModelInterface
 
