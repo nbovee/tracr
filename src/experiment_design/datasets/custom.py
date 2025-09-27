@@ -19,7 +19,7 @@ Example Usage:
 
     # Load your dataset
     from src.experiment_design.datasets import available_datasets
-    print(f"Available datasets: {available_datasets}")
+    logger.info(f"Available datasets: {available_datasets}")
 
     # Create dataset instance
     dataset = load_custom_dataset(
@@ -329,7 +329,7 @@ from src.experiment_design.datasets.core import DatasetRegistry
 # Example 1: Use the provided CustomDataset directly
 def example_basic_usage():
     "Example of basic usage with the provided CustomDataset."
-    print("\n===== Example 1: Basic Usage =====")
+    logger.info("\n===== Example 1: Basic Usage =====")
 
     # Step 1: Define data directories
     data_root = Path("data/custom_example")
@@ -346,15 +346,15 @@ def example_basic_usage():
         root=data_root, img_directory=img_dir, max_samples=100, create_dirs=True
     )
 
-    print(f"Created dataset with {len(dataset)} samples")
-    print(f"Available datasets: {DatasetRegistry.list_available()}")
+    logger.info(f"Created dataset with {len(dataset)} samples")
+    logger.info(f"Available datasets: {DatasetRegistry.list_available()}")
 
     # Step 4: Create a DataLoader using the custom collate function
     dataloader = DataLoader(
         dataset, batch_size=16, shuffle=True, collate_fn=custom_collate
     )
 
-    print(f"Created dataloader with {len(dataloader)} batches")
+    logger.info(f"Created dataloader with {len(dataloader)} batches")
 
 
 # Example 2: Create your own custom dataset
@@ -365,7 +365,7 @@ class MySpecializedDataset(CustomDataset):
         "Initialize with extra parameters."
         super().__init__(*args, **kwargs)
         self.additional_param = additional_param
-        print(f"Specialized dataset initialized with {additional_param=}")
+        logger.info(f"Specialized dataset initialized with {additional_param=}")
 
     def __getitem__(self, index):
         "Override to add special processing."
@@ -385,7 +385,7 @@ def load_specialized_dataset(
     root, img_directory, transform=None, max_samples=-1, additional_param=None, **kwargs
 ):
     "Factory function to create a MySpecializedDataset."
-    print(f"Loading specialized dataset from {root}/{img_directory}")
+    logger.info(f"Loading specialized dataset from {root}/{img_directory}")
 
     # Use default transform if none is provided
     if transform is None:
@@ -429,7 +429,7 @@ def create_specialized_transform(img_size=224, add_effects=False, **kwargs):
 
 def example_specialized_dataset():
     "Example of creating and using a specialized dataset."
-    print("\n===== Example 2: Specialized Dataset =====")
+    logger.info("\n===== Example 2: Specialized Dataset =====")
 
     # Step 1: Register your custom transform
     TransformFactory.register_transform(
@@ -470,8 +470,8 @@ def example_specialized_dataset():
     }
 
     dataset = DatasetRegistry.load(dataset_config)
-    print(f"Created specialized dataset with {len(dataset)} samples")
-    print(f"Transform type: {type(dataset.transform)}")
+    logger.info(f"Created specialized dataset with {len(dataset)} samples")
+    logger.info(f"Transform type: {type(dataset.transform)}")
 
 
 if __name__ == "__main__":
@@ -479,5 +479,5 @@ if __name__ == "__main__":
     example_basic_usage()
     example_specialized_dataset()
 
-    print("\nAll examples completed successfully!")
+    logger.info("\nAll examples completed successfully!")
 """

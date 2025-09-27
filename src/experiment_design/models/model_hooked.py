@@ -140,9 +140,8 @@ class WrappedModel(BaseModel, ModelInterface):
             self.cleanup()
         except Exception as e:
             # Use sys.stderr since logger might be gone during shutdown
-            import sys
 
-            print(f"Error during WrappedModel cleanup: {e}", file=sys.stderr)
+            logger.error(f"Error during WrappedModel cleanup: {e}")
 
     def _setup_model(self) -> None:
         """Configure model by analyzing layers and registering hooks."""
