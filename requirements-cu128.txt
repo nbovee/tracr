@@ -10,6 +10,8 @@ pandas==2.3.2
     # via tracr (pyproject.toml)
 paramiko==4.0.0
     # via tracr (pyproject.toml)
+psutil==7.1.0
+    # via tracr (pyproject.toml)
 pyyaml==6.0.3
     # via tracr (pyproject.toml)
 rich==14.1.0
