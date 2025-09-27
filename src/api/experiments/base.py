@@ -637,7 +637,7 @@ class BaseExperiment(ExperimentInterface):
             # Get energy metrics for this tensor split point (computation cost)
             split_energy_metrics = self._aggregate_split_energy_metrics(split_idx)
             logger.info(
-                f"Split {split_idx} aggregated energy metrics: {split_energy_metrics}"
+                f"{split_idx=} aggregated energy metrics: {split_energy_metrics}"
             )
 
             # Only include layers up to and including the split point

@@ -33,7 +33,7 @@ from src.api import (  # noqa: E402
     shutdown_logging_server,
     read_yaml_file,
 )
-from src.api.network import DataCompression, EncryptedDataCompression # noqa: E402
+from src.api.network import DataCompression, EncryptedDataCompression  # noqa: E402
 from src.api.network.protocols import (  # noqa: E402
     LENGTH_PREFIX_SIZE,
     ACK_MESSAGE,
@@ -134,7 +134,9 @@ class Server:
         self.local_mode = local_mode
         self.config_path = config_path
         self.metrics = ServerMetrics()
-        self.compress_data: Optional[Union[DataCompression, EncryptedDataCompression]] = None
+        self.compress_data: Optional[
+            Union[DataCompression, EncryptedDataCompression]
+        ] = None
 
         self._load_config_and_setup_device()
         # Setup compression if in networked mode
@@ -611,7 +613,9 @@ class Server:
                 test_key = encryption_config["test_key"]
                 encryption_key = (test_key.encode() * 8)[:32]
 
-            logger.debug(f"Updating EncryptedDataCompression settings: {encryption_config}")
+            logger.debug(
+                f"Updating EncryptedDataCompression settings: {encryption_config}"
+            )
             self.compress_data = EncryptedDataCompression(
                 config, encryption_key=encryption_key
             )
@@ -621,7 +625,9 @@ class Server:
                 logger.debug(f"Updating DataCompression settings: {compression_config}")
                 self.compress_data = DataCompression(compression_config)
             else:
-                logger.warning("No specified compression settings, keeping current compression")
+                logger.warning(
+                    "No specified compression settings, keeping current compression"
+                )
 
     def cleanup(self) -> None:
         """

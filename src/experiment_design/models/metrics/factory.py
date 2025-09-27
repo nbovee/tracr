@@ -45,7 +45,7 @@ def create_power_monitor(
         raise MonitoringInitError(f"Failed to initialize power monitor: {str(e)}")
 
 
-def _detect_device_type() -> str:
+def _detect_device_type() -> Literal["nvidia", "jetson", "cpu"]:
     """Detect the hardware platform through progressive feature detection.
 
     Performs platform detection in priority order:
