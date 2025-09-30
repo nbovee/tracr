@@ -16,7 +16,7 @@ import argparse
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple, Any, Dict, Generator
+from typing import Optional, Tuple, Any, Dict, Generator, Union
 
 import torch
 
@@ -25,17 +25,16 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from src.api import ( # noqa: E402
-    DataCompression,
+from src.api import (  # noqa: E402
     DeviceManager,
     ExperimentManager,
     DeviceType,
     start_logging_server,
     shutdown_logging_server,
-    DataCompression, # noqa: F811
     read_yaml_file,
 )
-from src.api.network.protocols import ( # noqa: E402
+from src.api.network import DataCompression, EncryptedDataCompression  # noqa: E402
+from src.api.network.protocols import (  # noqa: E402
     LENGTH_PREFIX_SIZE,
     ACK_MESSAGE,
     SERVER_COMPRESSION_SETTINGS,
@@ -135,7 +134,9 @@ class Server:
         self.local_mode = local_mode
         self.config_path = config_path
         self.metrics = ServerMetrics()
-        self.compress_data: Optional[DataCompression] = None
+        self.compress_data: Optional[
+            Union[DataCompression, EncryptedDataCompression]
+        ] = None
 
         self._load_config_and_setup_device()
         # Setup compression if in networked mode
@@ -156,8 +157,10 @@ class Server:
 
     def _setup_compression(self) -> None:
         """Initialize compression with minimal settings for optimal performance."""
+        # Use basic DataCompression by default for better compatibility
+        # Will be upgraded to EncryptedDataCompression if client config requires it
         self.compress_data = DataCompression(SERVER_COMPRESSION_SETTINGS)
-        logger.debug("Initialized compression with minimal settings")
+        logger.debug("Initialized basic compression (no encryption by default)")
 
     def start(self) -> None:
         """Start the server in either networked or local mode."""
@@ -520,7 +523,7 @@ class Server:
                     with no_grad_context:
                         # Decompress received data
                         output, original_size = self.compress_data.decompress_data(
-                            compressed_data=compressed_data
+                            encrypted_compressed_data=compressed_data
                         )
 
                         # Process data using the experiment's model
@@ -588,20 +591,43 @@ class Server:
 
     def _update_compression(self, config: dict) -> None:
         """
-        Update compression settings from received configuration.
+        Update compression and encryption settings from received configuration.
 
-        Compression settings affect the tradeoff between:
-        - Network bandwidth usage
+        Settings affect the tradeoff between:
+        - Network bandwidth usage (compression)
         - CPU utilization for compression/decompression
         - Memory usage during transfer
+        - Security (encryption)
         """
-        if "compression" in config:
-            logger.debug(f"Updating compression settings: {config['compression']}")
-            self.compress_data = DataCompression(config["compression"])
-        else:
-            logger.warning(
-                "No compression settings in config, keeping minimal settings"
+        encryption_config = config.get("encryption", {})
+        compression_config = config.get("compression", {})
+
+        # Check if encryption is actually enabled
+        encryption_enabled = encryption_config.get("enabled", False)
+
+        if encryption_enabled:
+            # Extract encryption key from client config if provided
+            encryption_key = None
+            if "test_key" in encryption_config:
+                # Convert test key string to bytes (pad or truncate to 32 bytes)
+                test_key = encryption_config["test_key"]
+                encryption_key = (test_key.encode() * 8)[:32]
+
+            logger.debug(
+                f"Updating EncryptedDataCompression settings: {encryption_config}"
             )
+            self.compress_data = EncryptedDataCompression(
+                config, encryption_key=encryption_key
+            )
+        else:
+            # Use basic DataCompression when no encryption is needed
+            if compression_config:
+                logger.debug(f"Updating DataCompression settings: {compression_config}")
+                self.compress_data = DataCompression(compression_config)
+            else:
+                logger.warning(
+                    "No specified compression settings, keeping current compression"
+                )
 
     def cleanup(self) -> None:
         """

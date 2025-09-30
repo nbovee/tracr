@@ -58,6 +58,15 @@ class LocalExperiment(BaseExperiment):
             )
             total_time = time.time() - start_time
 
+            # Update accuracy with prediction and ground truth
+            if (
+                processed_result
+                and "class_name" in processed_result
+                and class_idx is not None
+            ):
+                predicted_class = processed_result["class_name"]
+                self._update_accuracy(predicted_class, class_idx)
+
             # Only save visualization if output_dir is provided
             if output_dir and self.config.get("default", {}).get("save_layer_images"):
                 self._save_intermediate_results(
@@ -89,6 +98,18 @@ class LocalExperiment(BaseExperiment):
         split_dir = None
         if self.paths and self.paths.images_dir:
             split_dir = self.paths.images_dir / f"split_{split_layer}"
+
+            # Clear existing images from previous runs to avoid accumulation
+            if split_dir.exists():
+                existing_files = list(split_dir.glob("*.jpg"))
+                if existing_files:
+                    logger.info(
+                        f"Clearing {len(existing_files)} existing images from {split_dir}"
+                    )
+                    for file in existing_files:
+                        file.unlink()
+                    logger.info(f"Cleared {len(existing_files)} existing images")
+
             split_dir.mkdir(exist_ok=True)
             logger.info(f"Saving split layer images to {split_dir}")
         else:

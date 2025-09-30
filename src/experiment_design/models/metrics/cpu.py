@@ -54,8 +54,8 @@ class CPUPowerMonitor(PowerMonitor):
         self._cumulative_memory_utilization = []
 
         # Start background collection on Windows
-        if self._os_type == "Windows":
-            self._start_background_metrics_collection()
+        # if self._os_type == "Windows":
+        #     self._start_background_metrics_collection()
 
         logger.info(f"CPU power monitor initialized on {self._os_type}")
         logger.info(f"CPU: {self._cpu_name}, estimated TDP: {self._tdp}W")

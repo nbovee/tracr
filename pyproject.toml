@@ -1,6 +1,6 @@
 [project]
 name = "tracr"
-version = "0.4.2"
+version = "0.5.0"
 description = "An experimental framework for computational offloading and distributed neural network inference through split computing"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,6 +19,9 @@ dependencies = [
   "pyyaml>=6.0.2",
   "pandas>=2.2.3",
   "tqdm>=4.67.0",
+  "cryptography>=43.0.0",
+  "psutil>=7.0.0",
+  "openpyxl>=3.1.5",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +46,16 @@ cu124 = [
   "torchvision>=0.20",
   "torchaudio>=2.5",
 ]
+cu126 = [
+  "torch>=2.5",
+  "torchvision>=0.20",
+  "torchaudio>=2.5",
+]
+cu128 = [
+  "torch>=2.5",
+  "torchvision>=0.20",
+  "torchaudio>=2.5",
+]
 full = [
   "ultralytics>=8.3.28",
 ]
@@ -55,11 +68,13 @@ conflicts = [
     { extra = "cu118" },
     { extra = "cu121" },
     { extra = "cu124" },
+    { extra = "cu126" },
+    { extra = "cu128" },
   ],
 ]
 
 [tool.ruff.lint]
-ignore = ["F841"]
+# ignore = ["F841"]
 
 [dependency-groups]
 dev = [
@@ -72,12 +87,16 @@ torch = [
   { index = "pytorch-cu118", extra = "cu118" },
   { index = "pytorch-cu121", extra = "cu121" },
   { index = "pytorch-cu124", extra = "cu124" },
+  { index = "pytorch-cu126", extra = "cu126" },
+  { index = "pytorch-cu128", extra = "cu128" },
 ]
 torchvision = [
   { index = "pytorch-cpu", extra = "cpu", marker = "platform_system != 'Darwin'" },
   { index = "pytorch-cu118", extra = "cu118" },
   { index = "pytorch-cu121", extra = "cu121" },
   { index = "pytorch-cu124", extra = "cu124" },
+  { index = "pytorch-cu126", extra = "cu126" },
+  { index = "pytorch-cu128", extra = "cu128" },
 ]
 
 torchaudio = [
@@ -85,6 +104,9 @@ torchaudio = [
   { index = "pytorch-cu118", extra = "cu118" },
   { index = "pytorch-cu121", extra = "cu121" },
   { index = "pytorch-cu124", extra = "cu124" },
+  { index = "pytorch-cu126", extra = "cu126" },
+  { index = "pytorch-cu128", extra = "cu128" },
+
 ]
 
 [[tool.uv.index]]
@@ -107,33 +129,16 @@ name = "pytorch-cu124"
 url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
 [tool.ruff]
 line-length = 88
 indent-width = 4
-
-# [build-system]
-# requires = ["hatchling"]
-# build-backend = "hatchling.build"
-
-# [project.scripts]
-# tracr-server = "server:main"
-# tracr-client = "host:main"
-
-# [tool.hatch.build]
-# packages = ["src"]
-# include = [
-#     "server.py",
-#     "host.py",
-# ]
-# exclude = [
-#     "data/",
-#     "tests/",
-#     "venv/",
-#     "logs/",
-#     "*.pyc",
-#     "__pycache__",
-#     "*.egg-info",
-# ]
-
-# [tool.hatch.build.targets.wheel]
-# packages = ["src/"] 

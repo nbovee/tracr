@@ -3,7 +3,7 @@
 import logging
 from typing import List, Tuple
 
-import cv2  # type: ignore
+import cv2
 import numpy as np
 import torch
 

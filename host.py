@@ -460,7 +460,7 @@ def main() -> None:
 
     host = None
     try:
-        print(f"Initializing experiment with config from {config_path}...")
+        logger.info(f"Initializing experiment with config from {config_path}...")
 
         # Load config to check if we should modify it
         config = read_yaml_file(str(config_path))
@@ -470,34 +470,34 @@ def main() -> None:
             config["experiment"] = {}
         if "type" not in config["experiment"]:
             config["experiment"]["type"] = "networked"
-            print("Setting experiment type to 'networked'")
+            logger.info("Setting experiment type to 'networked'")
 
         host = ExperimentHost(str(config_path))
 
-        print("Starting experiment...")
+        logger.info("Starting experiment...")
         host.run_experiment()
 
         if args.copy_results and host:
-            print("Copying results to server...")
+            logger.info("Copying results to server...")
             success = host._copy_results_to_server()
             if success:
-                print("Results successfully copied to server")
+                logger.info("Results successfully copied to server")
             else:
-                print("Failed to copy results to server")
+                logger.error("Failed to copy results to server")
 
     except KeyboardInterrupt:
-        print("\nExperiment interrupted by user")
+        logger.info("\nExperiment interrupted by user")
         logger.info("Experiment interrupted by user")
     except Exception as e:
-        print(f"Error: {e}")
+        logger.error(f"Error: {e}")
         logger.error(f"Experiment failed: {e}", exc_info=True)
     finally:
         if host:
-            print("Cleaning up...")
+            logger.info("Cleaning up...")
             host.cleanup()
-            print("Done.")
+            logger.info("Done.")
         else:
-            print("Exiting without cleanup (host was not initialized)")
+            logger.warning("Exiting without cleanup (host was not initialized)")
 
 
 if __name__ == "__main__":

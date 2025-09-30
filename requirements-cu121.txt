@@ -2,11 +2,17 @@
 #    uv pip compile pyproject.toml -o requirements-cu121.txt --no-deps --extra cu121 --extra full
 blosc2==3.2.0
     # via tracr (pyproject.toml)
+cryptography==46.0.1
+    # via tracr (pyproject.toml)
 loguru==0.7.3
+    # via tracr (pyproject.toml)
+openpyxl==3.1.5
     # via tracr (pyproject.toml)
 pandas==2.2.3
     # via tracr (pyproject.toml)
 paramiko==3.5.1
+    # via tracr (pyproject.toml)
+psutil==7.1.0
     # via tracr (pyproject.toml)
 pyyaml==6.0.2
     # via tracr (pyproject.toml)
